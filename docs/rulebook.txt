@@ -1,0 +1,884 @@
+
+Tiers of Existence
+
+                                  Rulebook
+
+
+© 2005-2013 Corbin Campbell
+
+All Rights Reserved
+
+
+                                Introduction
+
+
+Tiers of Existence is the game of dimensional epitome. Combining game
+elements such as tactical cardplay, innovative game board design and
+traditional 'roll the dice and move a token.' With an unprecedented level
+of nuance for a board game, Tiers of Existence is a game family and friends
+can truly enjoy.
+
+The traditional roll and move game mechanics provide older players a level
+of comfort while learning the newer style of gameplay. Fate Harvest cards
+allow multiple strategies in conjunction with the squares of the game
+boards.
+
+The blend of novel and traditional gameplay allows veteran players to
+reminisce whether playing casually or competitively with family and
+friends.
+
+Play time is adjustable in two ways. One way is to reduce the number of
+tokens required in a Staging Pile by 1, to help the game proceed more
+quickly, or increase the number of tokens required by 1, to increase the
+length of the game. The second way is to allow an additional Tier token in
+play on each Tier, which can also speed up the game a little bit.
+
+
+                                  Objective
+
+
+The goal of the game is to achieve the fifth dimension, from whence one
+controls reality, existence, and the fate of the universe.
+
+The first player to land on You Win! on the 4th Tier wins the game
+(signifying that the player has achieved 5th dimensional existence).
+
+However, you must land precisely on the You Win! square to win. If you roll
+a number that would take you past that square, you go around the 4th Tier
+game board again.
+
+
+                       A Note on Increasing Dimension
+
+
+A point represents a zero dimension. A line represents a single dimension.
+A plane represents two dimensions.  A cube represents three dimensions.
+Energy represents the fourth dimension.  Only living beings can perceive
+the dimensions, and only intelligent life is able to transcend them through
+the fifth dimension, Time. Mastery of Time/Space is essential to conquering
+(or even just exploring) the universe.
+
+1st Dimension = 1st Tier
+2nd Dimension = 2nd Tier
+Etc.
+
+                              Table of Contents
+
+
+Objective and Dimensions     P. 1
+
+Preparing to Play            P. 2
+
+Ion Battery and Tokens       P. 3
+
+Rounds, Phases, and Turns    P. 4
+
+Typical Game Round           P. 5
+
+Marauders              P. 7
+
+Gameboard Rules        P. 8
+
+Fate Harvest Card Rules           P. 9
+
+Fate Harvest Card List       P. 11
+
+Parts List             P. 16
+
+Warning                P. 17
+
+Dedication             P. 17
+
+
+
+
+                              Preparing to Play
+
+
+Reviewing the Parts List before you play the game for the first time will
+help you become familiar with game terms. Please note that there may be
+redundancies in the Rulebook.
+
+Place all four game boards on the table (or tables, or floor, or wherever
+you have space to play).
+
+Appoint a Keeper of the Phase Clock and Turn Indicator, who keeps track of
+Phases and Turns using the provided Round Gear spinner.
+
+Put the dice on the 1st Tier game board. There should be one black die and
+one purple die.
+
+Each player chooses a color. If two or more players want the same color,
+they roll the dice. The player with the highest roll gets the desired
+color, and players with the lowest rolls must choose a different color.
+
+Get the Fate Harvest cards. You may remove the Color cards of colors that
+are not being played. However, since these are the only cards that can be
+traded, you may wish to keep them in the deck.
+
+Shuffle the Fate Harvest cards. Put the deck on the Phase Indicator or Turn
+Clock on the 1st Tier game mat.
+
+You may want to sort the playing pieces by color the first time you play.
+Plastic bags have been provided for this purpose. Please see the related
+Warning on the last page of this Rulebook.
+
+The bag with your chosen color playing pieces can be your Ion Battery, if
+you don't want to take all of them out of the bag.
+
+Take out one 1st Tier token (the 'armless' wood playing piece named Halma
+by The Game Crafter, as opposed to the 3rd Tier wood playing piece that has
+'arms' and is called Avatar by The Game Crafter) and place it on the
+Start/Birth Canal square at the upper left corner of the 1st Tier. Birth
+Canal is the only square on each Tier that has a tree.
+
+Put this Rulebook (and the spinner card) on the table, so that you can
+refer to the back cover's guide to Fate Harvest cards, if necessary.
+
+Put tokens, cards, and other materials you won't be using in the game box.
+
+To begin the game, the first player rolls both dice and moves their 1st
+Tier token.
+
+Put a hole in the center of the Round Gear where indicated (5" square
+reference card that has a 30 point star). Attach the spinner. The Keeper of
+the Phase Clock and Turn Indicator can use this spinner to keep track of
+Phases and Turns.
+
+
+                          Ion Batteries and Tokens
+
+
+The Ion Battery is your draw pile. Each player has their own Ion Battery.
+It contains all of your tokens that are not currently in use on the game
+boards. All of your tokens that are removed/destroyed are placed in your
+Ion Battery. Tokens removed from the Staging Pile are also placed back into
+the Ion Battery.  Matter is neither destroyed nor created!
+
+In the unlikely event that a player runs out of tokens of a certain Tier,
+they must wait until one of their Tier tokens in play has been destroyed in
+order to have a token to draw from the Ion Battery (you may not take tokens
+from someone else's Ion Battery!). Until that time, it is assumed that they
+have no power to create new tokens of that dimension. The same applies to
+Marauder tokens.
+
+
+                                Rules of Play
+
+                          Rounds, Phases, and Turns
+
+One Round of the game includes five Phases. During each Phase, each player
+takes a turn. The Round Gear gives the playing order of the colors for each
+Phase.
+
+The game includes a Round Gear (a square reference card to which you attach
+a spinner). The Round Gear represents one game Round, and the spinner is
+moved through each Turn and Phase (by the appointed Keeper of the Phase
+Clock and Turn Indicator).
+
+Players will only have a 1st Tier token when starting the game, and
+therefore the first Round of the game only has a 1st Tier Phase. When the
+1st Tier Phase ends, the Round is over.
+
+If a player does not have a token on a Tier, then they do not take a turn
+for that Tier.
+
+A token in play is a token that is on the board, but does not include the
+tokens in the Staging Piles.
+
+Whether or not you have a turn (in any given Phase) is determined by
+whether you have a token in play for that Phase.
+
+Each player's turn during a Phase consists of rolling the pair of dice,
+choosing a Tier token on that Phase's Tier, and moving that token the
+number of spaces indicated by the dice.
+
+Players' turns occur in the same order during the Marauder Phase, although
+players who have Marauders will only roll the purple die. Marauders do not
+get to roll the black die.
+
+Players must draw a Fate Harvest card when they land on Fate Harvest
+squares.
+
+Players may play one card per turn. E.g. If there are two players, there
+are two turns per Phase. Each player could play one card during their turn
+and one during the other player's turn, which is a total of two cards
+played by each player per Phase.
+
+However, a player only gets a turn on a Tier if they have a token on that
+Tier.
+
+All tokens continue moving around the Tier until they are destroyed or
+removed.
+
+Tokens may only move clockwise.
+
+The Nebula Staging Piles on the 1st Tier game board also indicate the order
+of turns for each Phase (from left to right).
+
+There are five Phases as indicated (in order) by the Phase Clock on the 1st
+Tier game board: Marauder, 4th Tier, 3rd Tier, 2nd Tier, 1st Tier.
+
+Move the spinner on the Round Gear to keep track of which Turn and Phase is
+being played. When a player finishes their Turn they (or the appointed
+Keeper of the Phase Clock and Turn Indicator) should turn the spinner to
+the next Turn (always clockwise).
+
+
+                             Typical Game Round
+
+
+                 Game Round begins with the Marauder Phase.
+         Marauder Phase:  Player One, Player Two, Player Three, etc.
+  Game Round continues with the 4th Tier Phase through the 1st Tier Phase.
+                                Tier Phases:
+          Fourth Tier:  Player One, Player Two, Player Three, etc.
+                  Third Tier:  Player One, Player Two, etc.
+     Second Tier:  ................same as above........................
+   First Tier:  ..................same as above...........................
+        Then back to the Marauder Phase to start the next game Round.
+
+There are three ways of advancing to higher Tiers:
+When a Tier token lands on a Wormhole of Construction on the 1st or 2nd
+Tier, you put your token in the Ion Battery, then start a token on the next
+Tier. On the 1st Tier, you must land on the square that says to move to the
+Wormhole of Construction.
+
+When a Tier token lands on a Nebula, it is placed in the Nebula Staging
+Pile. Once there are enough tokens in the Staging Pile, they are placed in
+your Ion Battery and you start a token of the next Tier.
+
+Some Fate Harvest cards add tokens to the Tiers.
+
+Number of Tier tokens required in a Nebula Staging Pile to create a token
+of the next Tier:
+1st Tier Nebula Staging Pile: 4 tokens
+2nd Tier Staging Pile: 3 tokens
+3rd Tier Staging Pile: 2 tokens
+On the 4th Tier, you must land on the You Win! Nebula square to win the
+game.
+
+Only two Tier tokens are allowed in play per player per Tier (on the 1st,
+2nd, and 3rd Tiers). Extra tokens must wait on the Hatchery.
+
+On the 4th Tier, only one Tier token is allowed to be in play per player.
+Any extra tokens must wait on the Hatchery.
+
+Only one Marauder token is allowed per Tier per player (except when an
+extra is added by a Fate Harvest card).
+
+On the First Tier, all tokens beyond the two in play and those in the
+Staging Pile remain in the player's Ion Battery (draw pile) until the token
+in play is destroyed, added to the Staging Pile by a Nebula, or moved up to
+the next Tier by a Wormhole of Construction.  When there are less than two
+1st Tier tokens in play on the 1st Tier, a new first dimension token is
+taken from the Ion Battery and placed on Start.
+
+Any extra Tier tokens (beyond the two in play for the Second and Third
+Tiers, or beyond the one in play on the Fourth Tier) must remain in that
+Tier's Hatchery until one of the tokens in play on that Tier has been
+destroyed, added to the Staging Pile, or 'moved' up to the next Tier by a
+Wormhole of Construction, at which point a token may be moved to the Birth
+Canal/Start square.
+
+Example:  Red Player goes first according to the order of the Turn
+Indicator, and Green Player goes second.
+
+However, if Green Player has a token in play on the Second Tier and one on
+the First Tier, and Red Player has only a token in play on the First Tier,
+then Green will take a turn on the Second Tier (highest Tier first). Red
+Player can't take a turn on the 2nd Tier, since they don't have a 2nd Tier
+token in play.
+
+Red will go first on the First Tier and Green will go second, according to
+the Turn Indicator order. After they finish their turns on the First Tier,
+completing the First Tier Phase, the Marauder Phase begins. Turns are
+resolved the same way as in the Tier Phases. Red would go first, if they
+have a Marauder, followed by Green.
+
+                                  Marauders
+
+
+After the Tier Phases, the Marauder Phase begins if there are any Marauders
+in play.
+
+If more than one player has a Marauder, they take turns according to the
+Turn Indicator.
+
+A player may only move one Marauder during their turn in the Marauder Phase
+(regardless of Tier).
+
+Marauders only use the purple die for movement.
+
+A player must choose which Marauder to move before they roll the purple
+die.
+
+If a player has only one Marauder, they must move it.
+
+Your Marauders destroy the tokens of other players by passing them.
+However, Marauders don't destroy your own tokens.
+
+If a Marauder lands on a space occupied by another token, that token is not
+destroyed.
+
+Marauders are considered tokens, too. All tokens continue moving around the
+Tier until they are destroyed or removed. Tokens may only move clockwise.
+
+Marauders are only affected when they land on Marauder Transports, Marauder
+Sensors, and Abysses. No other space on the board affects Marauders.
+Transports allow Marauders to move to a neighboring Tier. Sensors allow
+Marauders to move forward two spaces. Abysses completely destroy Marauders.
+
+Marauders cannot enter the Zone of Protection. Also, if a Marauder passes a
+token that is on the Breath of Reprieve (Reprieve) space, that token is not
+destroyed.
+
+
+                              Game Board Rules
+
+
+                    (what the text on the squares means)
+
+
+Abyss:  Abysses only destroy Marauders, with the exception of the Fourth
+Tier Infernal Abyss, which destroys all tokens.  Abysses do not affect
+dimensional Tier tokens, excepting the Infernal Abyss, which destroys all
+tokens.
+Birth Canal:  Where you start a token on that Tier. All Tier tokens and
+Marauders are started on this square.
+Birth Canal/Start:  On the 1st Tier, the Birth Canal also says "Start."
+When you start the game, you put a 1st Tier token on this square.
+(Breath of) Reprieve:  Any token occupying this space is safe from
+Marauders.
+Fate Harvest:  Draw a Fate Harvest card and do what it says.  Some cards
+can be held for later use while others must be played immediately. Once you
+play a card, you must put it in the discard pile.  Most cards can be played
+before or after you roll the dice.  In a case where a card conflicts with
+the Rules of Play, the card takes precedence.  Only one Fate Harvest card
+may be played per player per turn (regardless of whose turn).
+When you run out of cards, shuffle the discard pile, have the player to the
+left cut the deck, and put the cards back onto the Fate Harvest Pile.
+Hyperthrust:  Moves you a certain amount of spaces, destroying any
+opponents' tokens, Marauders included, that you pass along the way.  If
+your token lands on the same spot as an opponent's token, their token is
+not destroyed.
+Marauder Construction Facility:  If your token lands here, you may choose
+to build a Marauder, but only if you don't already have a Marauder on this
+Tier.  The Marauder is placed in the Birth Canal on this Tier.
+Marauder Sensor:  A Marauder that lands on this square gets to move two
+more squares.
+Marauder Transport:  If a Marauder lands here, it can be moved to the Birth
+Canal/Start space of a neighboring Tier.  For example, a Marauder on the
+Second Tier landing on a Marauder Transport may only move to the First or
+Third Tier, and not the Fourth Tier.  A Marauder landing here is not
+required to move to another Tier.
+Nebula:  If a Tier token lands on a Nebula, it is placed in that Tier's
+Staging Pile.
+Staging Pile:  Each Tier has a Staging Pile.  Tokens from that Tier are
+placed in its Staging Pile by a Nebula or other means.  When there are a
+certain number of tokens in the Staging Pile, they are removed and a token
+of the next dimension (Tier) is placed in the Birth Canal of the next Tier.
+Time Wrinkle:  Usually affects turns.
+Vortex of Regression:  A dimensional Tier token that lands here is moved to
+the Start/Birth Canal.
+Warp:  Usually affects movement.
+Wormhole of Construction:  If your token lands here, place it in your Ion
+Battery and place a token of the next dimension on the Birth Canal of the
+next Tier.
+Zone of Protection:  Shaded spaces through which a Marauder may not pass.
+Tokens in the Zone Of Protection are unaffected by most Fate Harvest cards
+played by other players. You may, however, play a Fate Harvest movement
+card to move one of your own tokens in the Z.O.P.
+
+Cards that affect tokens in the Zones of Protection are: Divine Assistance,
+Corpuscle Rot (Color card, Yellow), Galactic Roundabout, Plasma Burst
+(Color card, Red), and Graviton Rift (Color card, Black).
+
+
+Tier tokens in the Z.O.P. are otherwise protected from being sacrificed or
+destroyed.
+
+
+                           Fate Harvest Card Rules
+
+
+In Tiers of Existence, the Fate Harvest cards are an essential part of your
+strategy. Presented here are the rules governing the use of Fate Harvest
+cards.
+
+   1. Any time one of your Tier tokens (not Marauders) lands on a Fate
+      Harvest square, you draw a card.
+   2. Read the cards carefully.
+   3. When someone lands on a Fate Harvest square, the next player does not
+      take their turn until after the Fate Harvest card is played or held.
+   4. Only one Fate Harvest card may be played per player per Phase. In
+      other words, each player is limited to playing one Fate Harvest card
+      per Phase.
+   5. After you play a card, it's placed in the discard pile.
+   6. When the Fate Harvest pile is empty, shuffle the discard pile and
+      replenish Fate Harvest.
+   7. Some movement cards only allow the movement of Tier tokens, or tokens
+      of a particular Tier. Other movement cards allow the movement of any
+      token, meaning that you can move a Tier token or a Marauder token.
+   8. When you move a Marauder due to a movement card, the players of any
+      tokens passed other than yours are destroyed. Yours are immune to your
+      Marauder.
+   9. Although there is a limit of one Marauder in play per Tier, this limit
+      does not apply to Marauders added by Fate Harvest cards.
+  10. Only the Last Gasp! card and Hyperthrust square allow a Tier token to
+      destroy Marauders.
+  11. "Move any token," implies of any Tier, player, and type (includes
+      Marauders), unless otherwise noted. Note that this does not include
+      the Turn Indicator token nor the Phase Clock token.
+  12. Tokens in the Zone Of Protection are unaffected by most Fate Harvest
+      cards played by other players. You may, however, play a Fate Harvest
+      movement card to move one of your own tokens in the Z.O.P. Cards that
+      affect tokens in the Zones of Protection are: Divine Assistance,
+      Corpuscle Rot (Color card, Yellow), Galactic Roundabout, Plasma Burst
+      (Color card, Red), and Graviton Rift (Color card, Black).
+  13. Divine Assistance does not allow you to destroy the Turn Indicator
+      token nor the Phase Clock token.
+  14. Immediate cards must be played immediately. E.g. Your Tier token lands
+      on a Fate Harvest square and you draw a card. You read it. If it has
+      an "I" in the silver rectangle, it must be played immediately.
+  15. Held cards can be played immediately or held for later use in your
+      hand. If a card has an "H" in the silver rectangle, it can be held.
+  16. Turn cards "Must be played during your turn," implies your turn of any
+      Phase, unless otherwise noted. Cards with a "T" in the silver
+      rectangle can only be played during your turn.
+  17. Any time cards can be played during any turn of any Phase. If a card
+      has an "A" in the silver rectangle, it can be played at any time.
+  18. Color cards are specific to the player colors. Only the player of that
+      color may play the corresponding Color card. Color cards can be traded
+      for other Color cards, although you do not have to trade. You are not
+      required to trade a Color card to the player of that color when you do
+      trade, and can trade the Color card to anyone for another Color card.
+      You may not, under any circumstances, trade a Color card for anything
+      else. This is not a game of Poker. If a card has a "C" in the silver
+      rectangle, it's a Color card.
+  19. You may remove the Color cards of the colors that are not being
+      played, but this will reduce the number of cards that can be traded.
+  20. Precedence cards supersede other cards, as well as token movements.
+      All Precedence cards can be played at any time, including the
+      Annulment card which doesn't have the "A" in the silver rectangle.
+  21. "Precedence!" should be announced when playing a Precedence card so
+      that whoever is taking their turn stops and waits for the card to be
+      played. Precedence cards played after another card have to happen
+      before the other card (regardless of whether that card also has
+      Precedence).
+  22. When more than one card with Precedence is played, the cards are
+      enacted in reverse order. In other words, if two or more cards with
+      Precedence are played, the last played is enacted first and the first
+      played is enacted last. The only exception to this is when Annulment
+      is played, which takes precedence over any card played immediately
+      before it and any cards played after it. Since Annulment cancels the
+      card before it, other cards played after it are played as if that card
+      and Annulment didn't exist.
+  23. Precedence cards can also be played before or after a player rolls the
+      dice. If a player rolls the dice and another player plays a Precedence
+      card, the player who rolled the dice may not move their token until
+      after the card has been played and enacted. E.g. A player rolls the
+      purple die to move their Marauder token. You play a movement card that
+      has Precedence. Since the card has Precedence, you can move a Tier
+      token to safety that would have otherwise been destroyed by the
+      Marauder.
+  24. If there are any instances where the cards conflict with game board
+      squares, the cards are more important, except when Tier tokens are on
+      a Zone of Protection square.
+
+
+
+                           Fate Harvest Card List
+
+
+Singles
+
+
+                                Corpuscle Rot
+Yellow player destroys any 4th Tier token and starts a new token on the 1st
+and 2nd Tiers (2 tokens in total). This card can also destroy 4th Tier
+tokens on Zone of Protection squares. This card can be held for later use.
+This card can be traded. This card can only be played by the Yellow player,
+who may play it at any time.
+
+The atoms in most life forms have been part of other life forms before.
+Although reincarnation of the spirit is open to debate, the atoms in our
+bodies may have existed in other humans centuries and millennia ago. The
+same atoms may even have existed in dinosaurs for millions of years.
+
+                             Galactic Roundabout
+   Move every token (all tokens including Marauders and Tier tokens in the
+      Zone of Protection) forward two spaces. This card must be played
+                                immediately.
+
+    How fast does the Milky Way spin? Does it spin faster than human-made
+                           spacecraft can travel?
+
+                                 Dwarf Star
+  White player places a Marauder on the 4th Tier Birth Canal. This card can
+    be traded. This card can be held for later use. This card can only be
+          played by the White player, who may play it at any time.
+
+   Main Phase Red Dwarf stars exist for much longer than other star types.
+   Their relative stability on a galactic timescale suggests that advanced
+      life forms are more likely to evolve in Red Dwarf solar systems.
+
+                               Radiation Burst
+  All Staging Piles are emptied. This card can be held for later use. This
+                  card can only be played during your turn.
+
+  Pulsars can generate beams of gamma rays, which can destroy all life on a
+            planet if it's in the wrong place at the wrong time.
+
+                              Materialize Army
+ A Marauder joins you. Place a Marauder on any Tier's Birth Canal. This card
+  can be held for later use. This card can only be played during your turn.
+
+  Materializing (or coalescing) matter at long distances may eventually be
+                                  possible.
+
+                                Graviton Rift
+ The Black player removes any one token (of any type) from each Tier (up to
+  4 tokens in total). If there are no tokens on a Tier, no token is removed
+      from that Tier. This card can also destroy Tier tokens on Zone of
+   Protection squares. This card can be traded. This card can be held for
+  later use. This card can only be played by the Black player, who may play
+                  it at any time. This card has Precedence.
+
+                         What does "graviton" mean?
+
+                                Fluidic Wave
+  Blue player removes all tokens from the 1st Tier. This includes tokens in
+  play as well as tokens in Staging Piles, but does not include Tier tokens
+  in the Zone of Protection. This card can be traded. This card can be held
+   for later use. This card can only be played by the Blue player, who may
+               play it at any time. This card has Precedence.
+
+  Light travels in a way that exhibits properties of packets and waves, and
+  is subject to gravity. This is why light bends around planets, and cannot
+                             escape black holes.
+
+                              Parallel Phasing
+ Move any one of your tokens (of any type) forward four spaces and move any
+  other player's token forward four spaces. You may not move an opponent's
+      token if it's in the Zone of Protection. This card must be played
+                                immediately.
+
+   Parallel waves add together when in the same phase (mathematically) or
+    negate each other when in diametrically opposed phases (this applies
+                            primarily to fluids).
+
+                                Plasma Burst
+Red player chooses a Tier, then removes all tokens (of any type) from 3
+neighboring squares on that Tier. This card can also destroy Tier tokens on
+Zone of Protection squares. This card can be traded. This card can be held
+for later use. This card can only be played by the Red player during their
+turn (regardless of Tier Phase).
+
+ The plasma phase of any element that has a plasma phase is hotter than its
+                                 gas phase.
+
+                               Verdant Growth
+   The Green player starts a new token on the 1st, 2nd, and 3rd Tier Birth
+ Canals (3 tokens in total). This card can be traded. This card can be held
+   for later use. This card can only be played by the Green player during
+                   their turn (regardless of Tier Phase).
+
+ Planets where life flourishes are rarer than planets where life exists. One
+ reason for this is the number and quantity of elements that can be used by
+                                 life forms.
+
+
+Doubles
+
+
+                               Infernal Abyss
+  Sacrifice any one of your tokens (of any type) from any Tier. You may not
+  sacrifice any Tier tokens that are in the Zone of Protection. You should
+          cry, "Ahhhhhhh..." This card must be played immediately.
+
+ Only radiation escapes from Black Holes by following the magnetic pathways
+                         created by the Black Hole.
+
+                              Divine Assistance
+  Choose and destroy any one token (of any type, on any Tier, and including
+ those in Staging Piles). This card can also destroy Tier tokens on Zone of
+         Protection squares.  This card must be played immediately.
+
+  Divine assistance presumes that divinity cares, although the reasons for
+           interference from a deity may be unknowable to humans.
+
+                              Planetary Nebula
+  Place a 2nd Dimensional Token in your 2nd Tier Birth Canal. This card can
+ be held for later use. This card can only be played during your turn of the
+                               2nd Tier Phase.
+
+  Nebulae with high metallicity  and density produce planets with a higher
+                       probability of being habitable.
+
+                               Luckier Nebula
+ Place a 2nd Dimensional Token in your 2nd Tier Staging Pile. This card must
+                           be played immediately.
+
+    Nebulae are formed when a sun goes supernova, dispersing the elements
+     created by the sun as well as the elements of surrounding planets.
+
+                             Essence Assimilator
+   Place a Marauder on the 1st tier Birth Canal. This card must be played
+                                immediately.
+
+    If atoms can be teleported, you could theoretically project them to a
+                 location at faster than the speed of light.
+
+                      Skip, Hop, and Jump (Dimensional)
+     Move any token (of any type) forward 3 spaces. You may not move an
+  opponent's token if it's in the Zone of Protection. This card can be held
+ for later use. This card can only be played during your turn (regardless of
+                                Tier Phase).
+
+        What if interstellar travel required propulsion that attached
+   intermittently to other dimensions, and travel would be like skipping a
+    flat stone on still water, with each skip on a dimension accelerating
+    travel? Then it would truly only be a hop, skip, and a jump to other
+                                  galaxies.
+
+                              Materialize Help
+ A Marauder joins you.  Place a Marauder token on the 3rd Tier Birth Canal.
+                    This card must be played immediately.
+
+   If inorganic matter can be teleported, can functional organic matter be
+  teleported? Could an android be materialized on another planet and turned
+                                on remotely?
+
+                               Tactical Motion
+     Move any token (of any type) forward 2 spaces. You may not move an
+  opponent's token if it's in the Zone of Protection. This card may be held
+      for later use. This card may be played at any time. This card has
+                                 Precedence.
+
+  Could a technologically advanced species move planets, or is it easier to
+ travel to other planets in a galaxy? Moving a planet would require a lot of
+   energy, whereas colonizing another solar system would require a lot of
+                                    time.
+
+                               Insidious Flux
+ Choose a Staging Pile on any Tier. Destroy one token in that Staging Pile.
+  This card can be held for later use. This card can only be played during
+                    your turn (regardless of Tier Phase).
+
+              Will future technologies use flux and capacitors?
+
+                                 Phase Loss
+  You lose the next turn on this Tier. (e.g. if you've just completed your
+ move and landed on Fate Harvest on the 1st Tier, you lose your next turn on
+   the 1st Tier. You do not lose the next turn for other Tiers.) This card
+                         must be played immediately.
+
+   The wavelength of light from stars decays, or shortens, the further the
+                             star is from Earth.
+
+
+Triples
+
+
+                           Annulment (Antimatter)
+ You may cancel the effect of any card that is played by playing this card.
+  This card can be held for later use. This card takes Precedence over all
+                                other cards.
+
+   A large quantity of dark matter may exist between galaxies and at their
+  centers (possibly even more dark matter in galaxies than normal matter),
+  and is thought to have mass and gravitational properties. However, it is
+  unlike antimatter in that it does not react with normal matter to release
+                              bursts of energy.
+
+                               Evasive Action
+     Move any token (of any type) forward 2 spaces. You may not move an
+    opponent's token if it's in the Zone of Protection. This card must be
+                             played immediately.
+
+     Space is anything but empty, since all matter created exists in the
+ Universe, and due to the Law of Conservation, matter can neither be created
+ nor destroyed. Outside the bounds of our Universe, however, where there are
+  multiple dimensions interacting, matter is created with the birth of new
+    universes, and destroyed when the dimensions of a universe collapse.
+
+                                Lucky Nebula
+ Place a 1st Dimensional Token in your 1st Tier Staging Pile. This card must
+                           be played immediately.
+
+ A binary system occurs when two suns orbit each other. If suns can form in
+                   a nebula, planets can also form there.
+
+                                Tactical Step
+      Move any token (of any type) forward 1 space. You may not move an
+  opponent's token if it's in the Zone of Protection. This card can be held
+      for later use. This card may be played at any time. This card has
+                                 Precedence.
+
+  The fastest way to cross a galaxy is not a straight line due to galactic
+                                  rotation.
+
+                              Elemental Rebirth
+ Place a token on the Birth Canal of the 1st Tier. This card must be played
+                                immediately.
+
+  Suns create and recycle elements, although the heaviest elements can only
+                   be created in suns that go supernova..
+
+                           Cleansing (Atmospheric)
+   Choose an opponent.  That opponent must choose and discard one of their
+  cards. The person discarding chooses which card to discard. This card can
+    be held for later use. This card can only be played during your turn.
+
+   Mars has less gravity than the Earth, and in combination with the solar
+                    wind its atmosphere has washed away.
+
+                               Delayed Motion
+ Add +2 to your die roll.  This card must be played after your die roll, but
+       before you move the token. This card can be held for later use.
+
+  Neither suns nor galaxies are stationary, and the Law of Conservation of
+  Momentum indicates that the relative emptiness of space will not slow the
+  outward momentum of most matter from the center of the universe. Gravity,
+   supernova, other cosmic events, and humans can change the direction in
+                which matter is traveling in space, however.
+
+                               Emitting Nebula
+ Place a 1st Dimensional Token in your 1st Tier Staging Pile. This card can
+ be held for later use. This card can only be played during your turn of the
+                               1st Tier Phase.
+
+    Some nebulae have higher energy densities than others, and emit much
+                  greater quantities of energy into space.
+
+
+Quadruples
+
+
+                                  Last Gasp
+           When playing this card, you must exclaim, "Last Gasp!"
+  Move any one of your tokens (of any type) 8 spaces.  Any tokens you pass
+ are destroyed as well as the moved token (except any tokens in the Zone of
+ Protection, which are protected). This card can be held for later use. This
+  card may be played at any time (regardless of Tier Phase). This card has
+                                 Precedence.
+
+  In a couple billion years, the sun will have expanded enough to roast the
+           Earth, and will go supernova a few billion years later.
+
+                                Phase Control
+ Choose a Tier and go again on that Tier. You get an extra turn on the Tier
+   chosen, taken after your normal turn on that Tier. If you choose to go
+  again on a Tier for which your turn has already ended, play your turn on
+        that Tier immediately. This card must be played immediately.
+
+ In dimensions where light can exist, time exists. Time would continue exist
+          in our universe even if there were no stars and no light.
+
+                            Circulate (Elemental)
+ Move any Tier token to the next Zone of Protection on that Tier. This card
+    can be held for later use. This card must be played during your turn
+                         (regardless of Tier Phase).
+
+  During planetary formation, heavy elements sink and light elements rise.
+
+                       Sidestep (Extinction Avoidance)
+      Move any token (of any type) forward 1 space. You may not move an
+  opponent's token if it's in the Zone of Protection. This card can be held
+   for later use. This card must be played during your turn (regardless of
+                                Tier Phase).
+
+  As the evolution of species on Earth suggests, species with insufficient
+                    resources can't sidestep extinction.
+
+
+                        Tiers of Existence Parts List
+
+  Some replacement playing pieces may be available from TheGameCrafter.com.
+
+|Part            |Replacement Part|
+|                |@               |
+|                |thegamecrafter.c|
+|                |om              |
+|2x 4th Tier     |Large Bowling   |
+|tokens per color|Pin             |
+|4x 3rd Tier     |Avatar          |
+|tokens per color|                |
+|6x 2nd Tier     |Small Bowling   |
+|tokens per color|Pin             |
+|8x 1st Tier     |Halma           |
+|tokens per color|                |
+|4x Marauder     |                |
+|tokens per      |                |
+|color, specific |                |
+|to color        |                |
+|Green           |Eagle           |
+|Red             |Cave Troll      |
+|Black           |Orc Infantry    |
+|Yellow          |Machine Gun Mech|
+|                |or Laser Mech   |
+|White           |Rocket          |
+|Blue            |War Elephant    |
+|1x 16mm black   |16mm black die  |
+|die             |                |
+|1x 16mm purple  |16mm purple die |
+|die             |                |
+|8x Plastic      |8x plastic bags |
+|Baggies for     |5x7             |
+|tokens and dice |                |
+|2x 10"x16" game |N/A             |
+|mats w/ 1st &   |                |
+|2nd Tiers       |                |
+|1x 10"x10" game |N/A             |
+|mat w/ 4th Tier |                |
+|1x 10"x10" game |N/A             |
+|mat w/ 3rd Tier |                |
+|1x Rulebook     |N/A             |
+|70x Fate Harvest|N/A             |
+|Cards           |                |
+|1x spinner      |Spinner         |
+|1x 8"x8" spinner|N/A             |
+|card (Round     |                |
+|Gear)           |                |
+|1x Fate Harvest |72 card tuck box|
+|Card Box        |(art not        |
+|                |included)       |
+|Box Bottom Art  |N/A             |
+|Box Insert      |Box insert      |
+
+
+
+Warning: Please remember that young children shouldn't play with plastic
+bags nor small items like playing pieces and dice since they present a
+choking hazard. By keeping this game you agree:
+
+
+      That the game designer is not responsible for any harm caused by
+      anything that's supposed to be contained in the game box when
+      purchased.
+
+   1. That the game designer is not liable for any harm caused by anything
+      contained in the game box when it's received.
+   2. That anything added to the game box after it has been purchased is
+      certainly not the responsibility of the game designer.
+
+
+
+
+This Edition of Tiers of Existence has been self-published through
+www.thegamecrafter.com.
+
+
+
+                                 Dedication
+
+
+My deepest gratitude and most heartfelt thanks to valiant family and
+friends who helped playtest this game nearly a decade ago. My enduring love
+to family and friends who unflaggingly supported and encouraged me in the
+creation of this game throughout the arduous and time-consuming process of
+development.
+
+
+
