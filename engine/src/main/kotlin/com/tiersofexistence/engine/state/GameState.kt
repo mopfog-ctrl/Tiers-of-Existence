@@ -33,6 +33,17 @@ class GameState(
 
     val currentPhase: Phase get() = Phase.ROUND_ORDER[phaseIndex]
 
+    /** Players still owed a turn in [currentPhase], in the order they'll take it. */
+    private var turnQueue: ArrayDeque<PlayerColor> = ArrayDeque()
+
+    init {
+        turnQueue = ArrayDeque(turnOrder.turnsFor(currentPhase, players))
+    }
+
+    /** The color whose turn it currently is within [currentPhase], or null if the queue is empty
+     * (e.g. right after construction, before anyone has driven the game with [endTurn]/[skipEmptyPhases]). */
+    val currentTurn: PlayerColor? get() = turnQueue.firstOrNull()
+
     /** Advances to the next Phase, wrapping to a new Round after the 1st Tier Phase. */
     fun advancePhase() {
         players.values.forEach { it.hasPlayedCardThisPhase = false }
@@ -41,6 +52,31 @@ class GameState(
             phaseIndex = 0
             roundNumber += 1
         }
+        turnQueue = ArrayDeque(turnOrder.turnsFor(currentPhase, players))
+    }
+
+    /**
+     * Advances Phases (via [advancePhase]) until [currentPhase] has at least one eligible
+     * player, or the game's been won — "Phases skip when there's nothing to be done in them."
+     * Idempotent: a no-op if [currentTurn] is already non-null. Call this once to kick off
+     * turn-driving on a fresh [GameState] (a new game always starts on the empty Marauder
+     * Phase); [endTurn] calls it automatically afterward.
+     */
+    fun skipEmptyPhases() {
+        while (turnQueue.isEmpty() && winner == null) advancePhase()
+    }
+
+    /**
+     * Ends [currentTurn]'s turn and moves to the next eligible player, per "a player's turn on
+     * a Tier ends when they can no longer move nor play a card." Pass [grantAnotherTurn] = true
+     * for a chained extra turn (a "Go again" Time Wrinkle square, or the Phase Control card) —
+     * this keeps the same player active instead of advancing to the next color. Automatically
+     * skips to the next Phase with an eligible player once the queue empties (see
+     * [skipEmptyPhases]).
+     */
+    fun endTurn(grantAnotherTurn: Boolean = false) {
+        if (!grantAnotherTurn) turnQueue.removeFirstOrNull()
+        skipEmptyPhases()
     }
 
     fun declareWinner(color: PlayerColor) {

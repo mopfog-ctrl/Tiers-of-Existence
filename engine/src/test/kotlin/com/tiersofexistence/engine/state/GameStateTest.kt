@@ -55,4 +55,49 @@ class GameStateTest {
 
         assertEquals(listOf(PlayerColor.GREEN), secondTierTurns)
     }
+
+    @Test
+    fun `a fresh game has no current turn until skipEmptyPhases is called`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED, PlayerColor.GREEN))
+        assertEquals(Phase.Marauder, game.currentPhase)
+        assertEquals(null, game.currentTurn)
+    }
+
+    @Test
+    fun `skipEmptyPhases lands Round 1 directly on the 1st Tier Phase`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED, PlayerColor.GREEN))
+
+        game.skipEmptyPhases()
+
+        assertEquals(1, game.roundNumber)
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(PlayerColor.RED, game.currentTurn)
+    }
+
+    @Test
+    fun `endTurn advances color order, then Phase, and wraps to a new Round`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED, PlayerColor.GREEN))
+        game.skipEmptyPhases()
+        assertEquals(PlayerColor.RED, game.currentTurn)
+
+        game.endTurn()
+        assertEquals(PlayerColor.GREEN, game.currentTurn)
+
+        game.endTurn()
+        // Both players are done with the only eligible Phase (1st Tier) in Round 1 — wraps
+        // straight to Round 2's 1st Tier Phase too, since Marauder/4th/3rd/2nd are still empty.
+        assertEquals(2, game.roundNumber)
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(PlayerColor.RED, game.currentTurn)
+    }
+
+    @Test
+    fun `endTurn with grantAnotherTurn keeps the same player active`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED, PlayerColor.GREEN))
+        game.skipEmptyPhases()
+
+        game.endTurn(grantAnotherTurn = true)
+
+        assertEquals(PlayerColor.RED, game.currentTurn)
+    }
 }

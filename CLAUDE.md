@@ -43,8 +43,9 @@ Gradle multi-module project:
 
 - **`engine/`** — pure Kotlin/JVM module, no Android dependency. All game rules and state
   live here: token lifecycle (Ion Battery → Staging Pile → promotion, Hatchery overflow),
-  the full Fate Harvest card catalog, turn/phase order, dice. Fully unit-testable without
-  an Android SDK or emulator — `./gradlew :engine:test`.
+  the full Fate Harvest card catalog, turn/phase order, dice, and `TurnEngine` (roll → move →
+  resolve the landed square). Fully unit-testable without an Android SDK or emulator —
+  `./gradlew :engine:test`.
 - **`app/`** — Android/Compose UI module, depends on `engine`. Currently just a placeholder
   screen proving the dependency wires up.
 
@@ -75,9 +76,7 @@ AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
   only moves to an adjacent Tier — see `MarauderPoolTest`.
 - 4th Tier's You Win square must be landed on *exactly*; a roll that would move a token
   past it doesn't win — that token just continues around the loop again, same as any other
-  square. Not yet enforced anywhere in code (no turn-resolution logic exists yet — see
-  "Architecture" below), but confirmed by the user and worth keeping in mind once movement
-  is implemented.
+  square. Enforced in `TurnEngine.moveTierToken` (see `TurnEngineTest`).
 - A Marauder Transport square living inside a Zone of Protection (1st Tier's Zone 2, 4th
   Tier's Zone 5) is a confirmed exception to "Marauders cannot enter the Zone of Protection"
   — a Marauder may land there, but still can't affect any other token still in the Zone.
@@ -91,91 +90,6 @@ AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
   (all Precedence cards may be played any time), not from Annulment's own card text — see
   the comment on that card in `FateHarvestCatalog.kt`.
 
-## Known gaps: turn/phase resolution
-
-`rules/Phase.kt` and `rules/TurnOrder.kt` correctly model the *shape* of a Round (5 Phases,
-in the right order; who's eligible for a turn in a given Phase) but there's no
-turn-resolution logic yet — no code rolls dice, moves a token, or drives a turn end-to-end.
-Confirmed against the rulebook's "Rounds, Phases, and Turns" section and the 1st Tier's
-Phase Clock / Turn Indicator art and the Round Gear spinner (both match `Phase.ROUND_ORDER`
-exactly: Marauder, 4th, 3rd, 2nd, 1st). Followed up with a full-document sweep (not just
-that one section) specifically to check whether these are real rulebook gaps or just
-missing code — results below.
-
-- **"Phase-skipping" turned out not to need special-case code.** Earlier framing here was
-  wrong: it read as if `GameState.advancePhase()` needed new logic to skip empty Phases and
-  end Round 1 early. On closer reading it doesn't — 1st Tier is *always* the last Phase in
-  `ROUND_ORDER`, so "the Round is over" when the 1st Tier Phase ends is just the ordinary
-  end of every Round, not a special case for Round 1. A Phase with zero eligible players
-  already produces zero turns via `TurnOrder.turnsFor()` returning an empty list; a
-  turn-resolution loop just needs to call `advancePhase()` once per Phase regardless of
-  whether that Phase had any turns, and Round 1 falls out correctly on its own (Marauder/
-  4th/3rd/2nd naturally produce no turns before 1st Tier does). No dedicated skip logic is
-  needed. The rulebook itself is silent on anything beyond this (checked every "Round"
-  occurrence in the document) — e.g. it never says whether the physical Keeper visually
-  skips the spinner past an empty Phase or just passes through it quickly; that's a UI/table
-  presentation detail, not an engine one.
-- **No current-turn pointer — still a real gap, now spec'd by the user.** `GameState` tracks
-  which Phase and Round, but nothing tracks *whose turn within the Phase* it currently is
-  (the physical Turn Indicator token on the Round Gear spinner). Confirmed design, per the
-  user: **Phase precedes Turn** (outer loop = `ROUND_ORDER`, already correct), **turns
-  follow color/seating order** (already correct — `TurnOrder`'s constructor param, fixed for
-  the whole game), and **a player's turn on a Tier ends when they can no longer move nor
-  play a card** — corrected by the user from an earlier "no more moves" phrasing that missed
-  the card half. Two ways this keeps a turn open, both resolved before advancing to the next
-  color in `TurnOrder`:
-  - An extra-turn effect (a "Go again" Time Wrinkle square, or the Phase Control card's "go
-    again on that Tier: an extra turn taken after your normal turn there") keeps the *same*
-    player active for another roll+move.
-  - A held, `YOUR_TURN`-scoped card the player still wants to play (`CardScope.YOUR_TURN`)
-    must happen before their turn closes, since it can't be played later. `ANY_TIME`-scoped
-    cards are explicitly the exception the user flagged — "cards that can be played outside
-    of a turn" — they don't gate turn-ending at all, since any player can play one whenever,
-    independent of whose turn it is. `PlayerState.hasPlayedCardThisPhase` (already
-    per-Phase, not per-turn — see the resolved ambiguity above) is what actually caps this:
-    once a player's used their one card for the Phase, there's no card-related reason left
-    to keep their turn open, regardless of scope. **Correction:** playing is optional only
-    for `CardTiming.HELD` cards, not universally — the user's "they may choose not to play
-    any cards, even if they could" was about held cards specifically, and the rulebook is
-    explicit that the other timing exists: "Immediate cards must be played immediately...
-    If it has an 'I' in the silver rectangle, it must be played immediately" (rule #14).
-    `FateHarvestCatalog` already models this correctly (`CardTiming.IMMEDIATE`, 12 cards, vs.
-    `HELD`, 20 cards) and it's already cited on `PlayerState`'s doc comments — nothing to
-    fix in the data, just don't build turn-resolution as if every card play were a choice:
-    drawing an Immediate card forces it to resolve right then, no "pass" option, while a
-    Held card is the player's call whether to play now or hold for later. Turn-resolution
-    needs an explicit "player is done, advance" signal from whoever's driving the turn (the
-    UI, in the eventual app) to close out the Held-card-optional case — not just an
-    automatic computation of "no legal actions remain."
-
-  The rulebook's clearest illustration (the "Example," Rounds/Phases/Turns p.5) confirms a
-  player takes their turn on their highest eligible Tier first within a Round — already
-  correct, that's just `ROUND_ORDER`'s existing 4th→3rd→2nd→1st descent. What's still
-  missing is the actual state: a pointer into "we are currently on the Nth player's turn
-  within this Phase's eligible list," plus whatever represents "this player still has a
-  pending move or wants to play a held card" for the two cases above. Also needed for rule
-  #3 (another player may play a card "during" someone else's turn), and for two Marauder
-  Phase specifics: "A player must choose which Marauder to move before they roll the purple
-  die," and "if a player has only one Marauder, they must move it."
-- **Dice/phase wiring is fully specified by the rulebook, just not called yet.** Full sweep
-  found nothing more than what was already known: Tier Phase turns roll both dice as "the
-  pair," Marauder Phase rolls purple only, and Delayed Motion (+2, played after rolling but
-  before moving) is the only card that touches a roll directly. The rulebook has no rules at
-  all for doubles, re-rolls, or a roll overshooting a board edge — confirmed absent from the
-  whole document, not something still to research. `Dice.rollBlack()`/`rollPurple()` already
-  implement everything the rulebook specifies; they're just not called from anywhere yet.
-- **Resolved: Fate Harvest card-play limit is per-Phase, not per-turn.** Rule #4 ("only one
-  card per player per Phase") appeared to conflict with two other passages describing a
-  per-*turn* limit instead (the "Rounds, Phases, and Turns" section, rulebook.txt:203-206,
-  and the Fate Harvest square's own description, rulebook.txt:357-358). Resolved per the
-  user: the numbered "Fate Harvest Card Rules" section (rulebook.txt:402+, which explicitly
-  claims to be "the rules governing the use of Fate Harvest cards") is the actual card
-  rules; the other two are general Rules of Play / Game Board Rules narrative that merely
-  touches on the topic. The rulebook itself says "In a case where a card conflicts with the
-  Rules of Play, the card takes precedence" (rulebook.txt:356-357) — so Rule #4 wins.
-  `PlayerState.hasPlayedCardThisPhase`, reset each Phase in `GameState.advancePhase()`,
-  already implements this correctly; no code change was needed.
-
 - **Confirmed correct, no changes needed:** all 6 Precedence-flagged cards in
   `FateHarvestCatalog` (Graviton Rift, Fluidic Wave, Tactical Motion, Annulment, Tactical
   Step, Last Gasp) were cross-checked against every "has Precedence" mention in the
@@ -184,3 +98,33 @@ missing code — results below.
   no Tier tokens has no Tier Phase turns, while Marauder Phase eligibility is a fully
   separate, Tier-independent check (a Marauder can have a turn on a Tier with zero Tier
   tokens present).
+
+## Turn-resolution engine: base mechanics built, card effects deferred
+
+`rules/TurnEngine.kt` now does the roll → move → resolve-the-landed-square work, on top of
+`GameState`'s new turn-queue (`currentTurn`, `endTurn(grantAnotherTurn)`, `skipEmptyPhases()`)
+and `Dice.rollForPhase(phase)` (both dice summed for a Tier Phase, purple only for the
+Marauder Phase). This is the base mechanics layer the user asked for first; see
+`TurnEngine`'s class doc for the exact scope. Implemented: Tier token movement and landing
+effects for Nebula (staging pile + promotion), Vortex of Regression, Wormhole of
+Construction, You Win (exact-landing only), Infernal Abyss, Hyperthrust (pass-through
+destroy + chained landing resolution), Fate Harvest (draw + hold), and Marauder Construction
+Facility (flagged, build is a separate opt-in call); Marauder movement with pass-through
+destruction (Reprieve-protected), and the rulebook's "only Transport/Sensor/Abyss affect a
+Marauder" landing rules. `GameState.endTurn(grantAnotherTurn = true)` is the mechanism for
+"Go again" chaining — deciding *when* to pass that flag is left to whatever drives turns.
+
+Deliberately NOT implemented yet, so as not to guess at a much larger task — interpreting
+how each of the other ~30 Fate Harvest cards actually changes game state is future work:
+- Any individual card's effect beyond drawing/holding (Corpuscle Rot, Galactic Roundabout,
+  Divine Assistance, etc. — none of them do anything yet when "played").
+- Precedence-card interruption mid-roll (rule #23) — a live multi-player synchronization
+  concern for the eventual UI, not something a stateless engine function can represent.
+- Zone of Protection as real token state — landing on the entry square is reported but
+  nothing tracks a token as "now protected."
+- Warp's actual effect (genuinely ambiguous in the rulebook — "usually affects movement").
+- Two Time Wrinkle variants ("lose next turn on this Tier," "take an extra turn, First
+  Tier") that need deferred/cross-Phase state beyond what exists; "Go again" is supported.
+- A judgment call, not confirmed with the user: Reprieve's protection is applied for a
+  Marauder mover (matching the rulebook's literal wording) but not for Hyperthrust, whose
+  identically-worded pass-through-destroy text never mentions Reprieve.
