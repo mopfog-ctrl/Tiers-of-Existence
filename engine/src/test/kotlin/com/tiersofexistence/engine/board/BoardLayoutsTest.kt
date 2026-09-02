@@ -29,15 +29,21 @@ class BoardLayoutsTest {
     }
 
     @Test
-    fun `first tier has no Wormhole of Construction on the loop, a known open gap`() {
+    fun `first tier has no Wormhole of Construction on the main loop`() {
         val board = BoardLayouts.firstTier()
         assertTrue(board.squares.none { it.type == SquareType.WORMHOLE_OF_CONSTRUCTION })
     }
 
     @Test
-    fun `first tier has Zones 1 and 2 as off-loop protection zones`() {
+    fun `first tier Zone 2 has the Wormhole of Construction as its middle slot, Zone 1 is all plain`() {
         val board = BoardLayouts.firstTier()
-        assertEquals(listOf(1, 2), board.protectionZones.map { it.number }.sorted())
+        val zone1 = board.protectionZones.single { it.number == 1 }
+        val zone2 = board.protectionZones.single { it.number == 2 }
+
+        assertEquals(List(7) { SquareType.PLAIN }, zone1.squares)
+        assertEquals(7, zone2.squares.size)
+        assertEquals(SquareType.WORMHOLE_OF_CONSTRUCTION, zone2.squares[3])
+        assertTrue(zone2.squares.filterIndexed { i, _ -> i != 3 }.all { it == SquareType.PLAIN })
     }
 
     @Test
@@ -51,11 +57,13 @@ class BoardLayoutsTest {
     }
 
     @Test
-    fun `fourth tier Zone of Protection is numbered Fifth`() {
+    fun `fourth tier Zone of Protection is numbered Fifth, has 5 plain slots, no Wormhole`() {
         val board = BoardLayouts.fourthTier()
         val zone = board.squares.single { it.type == SquareType.ZONE_OF_PROTECTION }
         assertEquals(5, zone.magnitude)
-        assertEquals(listOf(5), board.protectionZones.map { it.number })
+
+        val protectionZone = board.protectionZones.single { it.number == 5 }
+        assertEquals(List(5) { SquareType.PLAIN }, protectionZone.squares)
     }
 
     @Test

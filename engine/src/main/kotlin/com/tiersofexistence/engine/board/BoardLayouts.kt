@@ -30,18 +30,14 @@ import com.tiersofexistence.engine.model.TierLevel
  *    Protection, sitting outside the main loop — matching the rulebook's "shaded spaces
  *    through which a Marauder may not pass" (plural). See [ProtectionZone]: modeled as a
  *    pocket off the main loop's numbered [SquareType.ZONE_OF_PROTECTION] entry square, not
- *    as a dice-driven sub-path. [ProtectionZone.capacity] is left `null` below — we could
- *    see the strip existed but not confidently count its squares from the photo.
+ *    as a dice-driven sub-path.
  *
- * 3. **Wormhole of Construction placement is still an open gap.** The rulebook says
- *    landing on "the square that says to move to the Wormhole of Construction" promotes a
- *    token immediately (1st/2nd Tier only) — a single square directly on the loop, not a
- *    separate pocket like the Zone of Protection. The user confirmed there's an arrow for
- *    it on the 1st Tier photo, but we couldn't confidently map that arrow to a specific
- *    outer-loop square/index from the photo — several of the [firstTier] squares below are
- *    a generic [SquareType.FATE_HARVEST] guess and one of those may actually be this
- *    square. Needs the user to point to which loop square it is (e.g. "the one between
- *    Hyperthrust and Reprieve") rather than us guessing further.
+ * 3. **Wormhole of Construction lives inside a Zone of Protection, not on the main loop.**
+ *    Initially assumed to be a plain loop square per the rulebook's "the square that says
+ *    to move to the Wormhole of Construction," but the user confirmed (1st Tier) it's
+ *    actually one of Zone 2's own 7 slots — 3 plain spaces, the Wormhole in the middle
+ *    (4th), then 3 more plain spaces. Zone 1 has no Wormhole: just 7 plain spaces. See
+ *    [firstTier]'s `protectionZones`.
  *
  * Zone of Protection numbering escalates by Tier per the photos (1st Tier has Zones 1 and
  * 2, 2nd Tier has Zone 3, 3rd Tier has Zone 4, 4th Tier has Zone 5) rather than restarting
@@ -92,7 +88,21 @@ object BoardLayouts {
             squares.mapIndexed { index, (type, note) ->
                 Square(index, type, magnitude = magnitudes[index], note = note)
             },
-            protectionZones = listOf(ProtectionZone(number = 1), ProtectionZone(number = 2)),
+            protectionZones = listOf(
+                ProtectionZone(number = 1, squares = List(7) { SquareType.PLAIN }),
+                ProtectionZone(
+                    number = 2,
+                    squares = listOf(
+                        SquareType.PLAIN,
+                        SquareType.PLAIN,
+                        SquareType.PLAIN,
+                        SquareType.WORMHOLE_OF_CONSTRUCTION,
+                        SquareType.PLAIN,
+                        SquareType.PLAIN,
+                        SquareType.PLAIN,
+                    ),
+                ),
+            ),
         )
     }
 
@@ -100,8 +110,9 @@ object BoardLayouts {
      * 4th Tier, digitized from the board photo. Only 8 squares — this Tier's board is a
      * small standalone loop, not a full-perimeter board like the others. Confidence:
      * medium-high, same caveat as [firstTier]. The 5 star-icon squares behind the Zone 5
-     * entry are its [ProtectionZone] (see class doc point 2) — capacity not confidently
-     * countable from the photo, left `null`.
+     * entry are its [ProtectionZone] — counted directly from the photo, all plain (the
+     * rulebook only allows Wormhole of Construction on the 1st/2nd Tier, so unlike the 1st
+     * Tier's Zone 2, none of these 5 is a Wormhole).
      */
     fun fourthTier(): TierBoard {
         val squares = listOf(
@@ -114,7 +125,11 @@ object BoardLayouts {
             Square(6, SquareType.VORTEX_OF_REGRESSION),
             Square(7, SquareType.YOU_WIN),
         )
-        return TierBoard(TierLevel.FOURTH, squares, protectionZones = listOf(ProtectionZone(number = 5)))
+        return TierBoard(
+            TierLevel.FOURTH,
+            squares,
+            protectionZones = listOf(ProtectionZone(number = 5, squares = List(5) { SquareType.PLAIN })),
+        )
     }
 
     /**

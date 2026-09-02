@@ -25,14 +25,17 @@ data class Square(
  * flavor text on the entry square. Entered by landing on the main loop's numbered
  * [SquareType.ZONE_OF_PROTECTION] square (see [Square.magnitude]).
  *
- * Deliberately NOT modeled as a dice-driven sub-path (no [List] of [Square]): the rulebook
- * never describes moving square-by-square once inside a Zone, only entering and later
- * leaving it (e.g. via specific Fate Harvest cards, rule #12). [capacity] is the number of
- * shaded slots visible on the board photo, where that could be counted with confidence;
- * null where it couldn't — don't invent a number here without confirming it against the
- * physical board.
+ * [squares] lists the zone's own slots in board order (usually [SquareType.PLAIN], i.e.
+ * "empty spaces" with no effect beyond the protection itself) — empty where a photo hasn't
+ * confirmed the count/contents yet. This is deliberately NOT a dice-driven sub-path the
+ * rulebook never describes moving square-by-square once inside a Zone, only entering and
+ * later leaving it (e.g. via specific Fate Harvest cards, rule #12); [squares] just records
+ * what's physically printed there. Notably, a Zone can itself contain a
+ * [SquareType.WORMHOLE_OF_CONSTRUCTION] slot (confirmed for the 1st Tier's Zone 2) — the
+ * rulebook's "square that says to move to the Wormhole of Construction" turned out to live
+ * inside a Zone of Protection, not on the main loop.
  */
-data class ProtectionZone(val number: Int, val capacity: Int? = null)
+data class ProtectionZone(val number: Int, val squares: List<SquareType> = emptyList())
 
 /**
  * The full loop of squares for one Tier board, plus its off-loop Zones of Protection. Main
