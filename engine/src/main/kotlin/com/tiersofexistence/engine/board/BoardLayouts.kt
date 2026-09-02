@@ -68,11 +68,11 @@ object BoardLayouts {
             add(SquareType.FATE_HARVEST to null)
             add(SquareType.ZONE_OF_PROTECTION to null) // "if you land here, enter First Zone of Protection"
             add(SquareType.WARP to null) // "Warp 5 spaces"
-            add(SquareType.MARAUDER_SENSOR to null)
             add(SquareType.NEBULA to null)
+            add(SquareType.FATE_HARVEST to null)
+            add(SquareType.TIME_WRINKLE to null) // variant text not yet confirmed
             add(SquareType.ABYSS to null)
             add(SquareType.MARAUDER_TRANSPORT to null)
-            add(SquareType.FATE_HARVEST to null)
             add(SquareType.HYPERTHRUST to null) // "Hyperthrust! Move 6 spaces, any tokens you pass are destroyed"
             add(SquareType.REPRIEVE to null)
             add(SquareType.NEBULA to null)
