@@ -105,12 +105,38 @@ class BoardLayoutsTest {
     }
 
     @Test
-    fun `current uses real boards for first, second, and fourth Tier, placeholder for third`() {
+    fun `third tier loop starts at Birth Canal and has 14 squares`() {
+        val board = BoardLayouts.thirdTier()
+        assertEquals(TierLevel.THIRD, board.tier)
+        assertEquals(14, board.size)
+        assertEquals(SquareType.BIRTH_CANAL, board.squareAt(0).type)
+    }
+
+    @Test
+    fun `third tier has Hyperthrust and Zone 4 entry magnitudes`() {
+        val board = BoardLayouts.thirdTier()
+        val hyperthrust = board.squares.single { it.type == SquareType.HYPERTHRUST }
+        assertEquals(9, hyperthrust.magnitude)
+
+        val zone = board.squares.single { it.type == SquareType.ZONE_OF_PROTECTION }
+        assertEquals(4, zone.magnitude)
+        assertEquals(listOf(4), board.protectionZones.map { it.number })
+    }
+
+    @Test
+    fun `third tier Zone 4 guess is plain then Fate Harvest, not yet user-confirmed`() {
+        val board = BoardLayouts.thirdTier()
+        val zone4 = board.protectionZones.single { it.number == 4 }
+        assertEquals(listOf(SquareType.PLAIN, SquareType.FATE_HARVEST), zone4.squares)
+    }
+
+    @Test
+    fun `current uses the real digitized board for every Tier`() {
         val boards = BoardLayouts.current()
         assertEquals(BoardLayouts.firstTier(), boards[TierLevel.FIRST])
         assertEquals(BoardLayouts.secondTier(), boards[TierLevel.SECOND])
+        assertEquals(BoardLayouts.thirdTier(), boards[TierLevel.THIRD])
         assertEquals(BoardLayouts.fourthTier(), boards[TierLevel.FOURTH])
-        assertEquals(BoardLayouts.placeholder(TierLevel.THIRD), boards[TierLevel.THIRD])
     }
 
     @Test

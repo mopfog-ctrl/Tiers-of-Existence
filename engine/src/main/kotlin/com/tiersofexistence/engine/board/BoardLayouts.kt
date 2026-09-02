@@ -5,12 +5,13 @@ import com.tiersofexistence.engine.model.TierLevel
 /**
  * Real per-Tier square sequences, digitized from photos of the four physical boards.
  *
- * Status per Tier — see the doc comment on each function below for details:
- * - [firstTier] and [fourthTier]: digitized from board photos (plus user corrections after
- *   the fact), medium-high confidence on the main loop's square-by-square order.
+ * Status per Tier — see the doc comment on each function below for details. All four
+ * Tiers now have real digitized boards:
+ * - [firstTier], [fourthTier], [thirdTier]: read off board photos (with corrections from
+ *   the user after the fact for the first two), medium-high confidence.
  * - [secondTier]: dictated square-by-square by the user rather than read off the photo —
- *   high confidence on the main loop; Zone 3's own slot contents aren't confirmed yet.
- * - 3rd Tier: still [placeholder], not yet dictated/digitized.
+ *   high confidence.
+ * Some Zone of Protection contents are still unconfirmed guesses — see each function's doc.
  *
  * Structural decisions made while digitizing, worth the user confirming against the
  * physical boards:
@@ -189,9 +190,53 @@ object BoardLayouts {
     }
 
     /**
-     * TODO(board-art): still not digitized — see class doc. [placeholder] below is NOT a
-     * real board; it exists only so square-effect logic has something to run against in
-     * tests until real 3rd Tier photo (clear enough to transcribe) is available.
+     * 3rd Tier, read directly off the board photo (unlike [secondTier]'s dictation) — the
+     * user says this photo should be easy to parse, and its layout is a clean scaled-down
+     * version of [firstTier]/[secondTier]'s pattern (Birth Canal top-left this time,
+     * Hatchery also top-left; clockwise: right along the top row, down the right column,
+     * left along the mirrored bottom row, up the left column). Confidence: medium-high on
+     * the 14-square main loop.
+     *
+     * Zone 4's own contents are a guess, NOT confirmed by the user yet: the photo shows a
+     * "Fourth Zone of Protection" icon directly below the entry square, then a Fate Harvest
+     * square below that, before the interior column rejoins the main loop at square 10
+     * (Marauder Transport, already on the main loop — not zone content). Guessed as 2 slots:
+     * a plain protection square (the icon itself) and Fate Harvest. Needs confirmation.
+     */
+    fun thirdTier(): TierBoard {
+        val squares = buildList {
+            add(SquareType.BIRTH_CANAL to null)
+            add(SquareType.HYPERTHRUST to null) // "Move 9 spaces, any tokens you pass are destroyed"
+            add(SquareType.ZONE_OF_PROTECTION to null) // "if you land here, enter Fourth Zone of Protection"
+            add(SquareType.REPRIEVE to null)
+            add(SquareType.MARAUDER_TRANSPORT to null)
+            add(SquareType.ABYSS to null)
+            add(SquareType.NEBULA to null)
+            add(SquareType.MARAUDER_CONSTRUCTION_FACILITY to null)
+            add(SquareType.MARAUDER_SENSOR to null)
+            add(SquareType.MARAUDER_TRANSPORT to null)
+            add(SquareType.ABYSS to null)
+            add(SquareType.VORTEX_OF_REGRESSION to null)
+            add(SquareType.MARAUDER_CONSTRUCTION_FACILITY to null)
+            add(SquareType.NEBULA to null)
+        }
+        val magnitudes = mapOf(1 to 9, 2 to 4)
+        return TierBoard(
+            TierLevel.THIRD,
+            squares.mapIndexed { index, (type, note) ->
+                Square(index, type, magnitude = magnitudes[index], note = note)
+            },
+            protectionZones = listOf(
+                ProtectionZone(number = 4, squares = listOf(SquareType.PLAIN, SquareType.FATE_HARVEST)),
+            ),
+        )
+    }
+
+    /**
+     * All four Tiers now have real digitized boards ([firstTier], [secondTier],
+     * [thirdTier], [fourthTier]) — this generic, NOT-a-real-board layout is kept only as a
+     * lightweight fallback/test fixture where a test wants a board without depending on the
+     * real per-Tier data (e.g. exercising square-effect logic generically).
      */
     fun placeholder(tier: TierLevel): TierBoard {
         val squares = buildList {
@@ -235,14 +280,13 @@ object BoardLayouts {
         TierLevel.entries.associateWith { placeholder(it) }
 
     /**
-     * The best board data currently available for each Tier: real digitized boards for the
-     * 1st, 2nd, and 4th, [placeholder] for the 3rd until it's digitized too. This is what
+     * The real digitized board for each Tier. This is what
      * [com.tiersofexistence.engine.state.GameState] defaults to.
      */
     fun current(): Map<TierLevel, TierBoard> = mapOf(
         TierLevel.FIRST to firstTier(),
         TierLevel.SECOND to secondTier(),
-        TierLevel.THIRD to placeholder(TierLevel.THIRD),
+        TierLevel.THIRD to thirdTier(),
         TierLevel.FOURTH to fourthTier(),
     )
 }
