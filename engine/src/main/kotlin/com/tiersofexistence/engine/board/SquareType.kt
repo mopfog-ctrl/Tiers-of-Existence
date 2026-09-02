@@ -59,4 +59,11 @@ enum class SquareType {
 
     /** 4th-Tier-only win square: must be landed on exactly to win the game. */
     YOU_WIN,
+
+    /**
+     * Seen on the 2nd Tier board ("PROTECTION REJECTED! MOVE TWO MORE SPACES"). Exact rule
+     * text/trigger not yet cross-checked against the rulebook body — flagged as a gap in
+     * [com.tiersofexistence.engine.board.BoardLayouts].
+     */
+    PROTECTION_REJECTED,
 }

@@ -2,8 +2,22 @@ package com.tiersofexistence.engine.board
 
 import com.tiersofexistence.engine.model.TierLevel
 
-/** One square on a Tier board's track. Index 0 is always the Birth Canal / Start square. */
-data class Square(val index: Int, val type: SquareType)
+/**
+ * One square on a Tier board's track. Index 0 is always the Birth Canal / Start square.
+ *
+ * @param magnitude Board-specific number printed on the square, where the type needs one:
+ *   spaces to move for [SquareType.WARP]/[SquareType.HYPERTHRUST], or the Zone number
+ *   (1st-5th, escalating by Tier) for [SquareType.ZONE_OF_PROTECTION].
+ * @param note Verbatim board text for effects not yet modeled as their own [SquareType]
+ *   (e.g. which of the several printed Time Wrinkle variants this is). Prefer promoting
+ *   a recurring [note] to a real [SquareType]/field once its rule is cross-checked.
+ */
+data class Square(
+    val index: Int,
+    val type: SquareType,
+    val magnitude: Int? = null,
+    val note: String? = null,
+)
 
 /**
  * The full loop of squares for one Tier board. Movement is clockwise and wraps from the

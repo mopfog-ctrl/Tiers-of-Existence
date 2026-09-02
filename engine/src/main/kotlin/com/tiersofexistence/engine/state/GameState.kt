@@ -19,7 +19,7 @@ import com.tiersofexistence.engine.rules.TurnOrder
 class GameState(
     val players: Map<PlayerColor, PlayerState>,
     val turnOrder: TurnOrder,
-    val boards: Map<TierLevel, TierBoard> = BoardLayouts.allPlaceholders(),
+    val boards: Map<TierLevel, TierBoard> = BoardLayouts.current(),
     val deck: FateHarvestDeck = FateHarvestDeck.newShuffled(),
 ) {
     var roundNumber: Int = 1

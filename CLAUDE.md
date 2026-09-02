@@ -19,12 +19,22 @@ Fate Harvest deck driving most of the strategy.
 The rulebook explains what each square *type* does (Nebula, Wormhole of Construction,
 Fate Harvest, Marauder Transport, Zone of Protection, etc. — see `SquareType`) but never
 gives the actual square-by-square sequence of any of the four physical boards; that only
-exists in the printed board artwork, which we don't have yet.
+exists in the printed board artwork.
 
-`engine/.../board/BoardLayouts.kt` ships a `placeholder()` layout — NOT the real boards —
-just so square-effect logic has something to run against in tests. Replace it with real
-per-Tier data (ideally from photos of the physical boards) before building real UI/gameplay
-around board positions.
+Update: the user provided photos of all four boards. `BoardLayouts.firstTier()` and
+`BoardLayouts.fourthTier()` are now digitized from those photos — medium-high confidence,
+but read directly off a flat photo and not yet verified against the physical boards, so
+treat as a first draft to spot-check rather than ground truth. See the doc comment on
+`BoardLayouts` for the two structural assumptions made while digitizing (loop = outer
+perimeter only; Wormhole of Construction position left as an open gap rather than guessed)
+and confirm those with the user before relying on them for real gameplay.
+
+2nd and 3rd Tier are still `placeholder()` — those two photos had denser interior detail
+(overlapping staging piles, a middle band of squares whose connection to the outer loop
+wasn't clear from the photo) that couldn't be transcribed with confidence. Needs clearer/
+cropped photos of those two boards specifically, or in-person verification, before
+digitizing for real. `GameState` defaults to `BoardLayouts.current()`, which mixes real
+data (1st/4th) with `placeholder()` (2nd/3rd) — swap in the rest as they're digitized.
 
 ## Architecture
 
