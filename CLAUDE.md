@@ -111,20 +111,37 @@ missing code — results below.
   (the physical Turn Indicator token on the Round Gear spinner). Confirmed design, per the
   user: **Phase precedes Turn** (outer loop = `ROUND_ORDER`, already correct), **turns
   follow color/seating order** (already correct — `TurnOrder`'s constructor param, fixed for
-  the whole game), and **a player's turn ends when they can make no more moves** — i.e. the
-  turn boundary for advancing to the next color isn't simply "one roll + one move." An
-  extra-turn effect (a "Go again" Time Wrinkle square, or the Phase Control card's "go again
-  on that Tier: an extra turn taken after your normal turn there") keeps the *same* player
-  active — resolve all of those before advancing to the next color in `TurnOrder`, not
-  immediately after the first roll+move. The rulebook's clearest illustration (the
-  "Example," Rounds/Phases/Turns p.5) confirms a player takes their turn on their highest
-  eligible Tier first within a Round — already correct, that's just `ROUND_ORDER`'s existing
-  4th→3rd→2nd→1st descent. What's still missing is the actual state: a pointer into "we are
-  currently on the Nth player's turn within this Phase's eligible list," plus whatever
-  represents "this player still has a pending move" for the chained-extra-turn case above.
-  Also needed for rule #3 (another player may play a card "during" someone else's turn), and
-  for two Marauder Phase specifics: "A player must choose which Marauder to move before they
-  roll the purple die," and "if a player has only one Marauder, they must move it."
+  the whole game), and **a player's turn on a Tier ends when they can no longer move nor
+  play a card** — corrected by the user from an earlier "no more moves" phrasing that missed
+  the card half. Two ways this keeps a turn open, both resolved before advancing to the next
+  color in `TurnOrder`:
+  - An extra-turn effect (a "Go again" Time Wrinkle square, or the Phase Control card's "go
+    again on that Tier: an extra turn taken after your normal turn there") keeps the *same*
+    player active for another roll+move.
+  - A held, `YOUR_TURN`-scoped card the player still wants to play (`CardScope.YOUR_TURN`)
+    must happen before their turn closes, since it can't be played later. `ANY_TIME`-scoped
+    cards are explicitly the exception the user flagged — "cards that can be played outside
+    of a turn" — they don't gate turn-ending at all, since any player can play one whenever,
+    independent of whose turn it is. `PlayerState.hasPlayedCardThisPhase` (already
+    per-Phase, not per-turn — see the resolved ambiguity above) is what actually caps this:
+    once a player's used their one card for the Phase, there's no card-related reason left
+    to keep their turn open, regardless of scope. Playing is always optional, per the
+    user — "they may choose not to play any cards, even if they could" — so this isn't the
+    engine forcing a decision when a legal play exists; it's the player choosing to pass on
+    it (holding a `HELD` card for a later Phase, or simply not playing at all that Phase).
+    Turn-resolution needs an explicit "player is done, advance" signal from whoever's
+    driving the turn (the UI, in the eventual app), not just an automatic computation of
+    "no legal actions remain."
+
+  The rulebook's clearest illustration (the "Example," Rounds/Phases/Turns p.5) confirms a
+  player takes their turn on their highest eligible Tier first within a Round — already
+  correct, that's just `ROUND_ORDER`'s existing 4th→3rd→2nd→1st descent. What's still
+  missing is the actual state: a pointer into "we are currently on the Nth player's turn
+  within this Phase's eligible list," plus whatever represents "this player still has a
+  pending move or wants to play a held card" for the two cases above. Also needed for rule
+  #3 (another player may play a card "during" someone else's turn), and for two Marauder
+  Phase specifics: "A player must choose which Marauder to move before they roll the purple
+  die," and "if a player has only one Marauder, they must move it."
 - **Dice/phase wiring is fully specified by the rulebook, just not called yet.** Full sweep
   found nothing more than what was already known: Tier Phase turns roll both dice as "the
   pair," Marauder Phase rolls purple only, and Delayed Motion (+2, played after rolling but
