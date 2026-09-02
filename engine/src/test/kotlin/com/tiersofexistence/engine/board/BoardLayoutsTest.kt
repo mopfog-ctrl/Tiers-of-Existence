@@ -95,6 +95,16 @@ class BoardLayoutsTest {
     }
 
     @Test
+    fun `second tier Zone 3 is plain, nebula, protection rejected, plain`() {
+        val board = BoardLayouts.secondTier()
+        val zone3 = board.protectionZones.single { it.number == 3 }
+        assertEquals(
+            listOf(SquareType.PLAIN, SquareType.NEBULA, SquareType.PROTECTION_REJECTED, SquareType.PLAIN),
+            zone3.squares,
+        )
+    }
+
+    @Test
     fun `current uses real boards for first, second, and fourth Tier, placeholder for third`() {
         val boards = BoardLayouts.current()
         assertEquals(BoardLayouts.firstTier(), boards[TierLevel.FIRST])

@@ -136,8 +136,7 @@ object BoardLayouts {
      * 2nd Tier, dictated square-by-square by the user (not read off the photo, unlike
      * [firstTier]/[fourthTier]) — high confidence. 22 squares, outer perimeter only.
      * Unlike the 1st Tier, the Wormhole of Construction here is a plain main-loop square
-     * (index 13), not tucked inside a Zone of Protection. Zone 3's own slot contents
-     * aren't confirmed yet — `protectionZones` below has the zone with no squares listed.
+     * (index 13), not tucked inside a Zone of Protection.
      */
     fun secondTier(): TierBoard {
         val squares = buildList {
@@ -170,7 +169,22 @@ object BoardLayouts {
             squares.mapIndexed { index, (type, note) ->
                 Square(index, type, magnitude = magnitudes[index], note = note)
             },
-            protectionZones = listOf(ProtectionZone(number = 3)),
+            // Entered at square 4 (confirmed, above) — the 4th of the 7 squares from Birth
+            // Canal to the bottom-right corner. The user also described the zone's far end
+            // as exiting "in the middle on the other side" (roughly opposite square, on the
+            // left side's run) — noted here, not yet modeled as a distinct square since
+            // ProtectionZone deliberately isn't a dice-driven sub-path (see class doc).
+            protectionZones = listOf(
+                ProtectionZone(
+                    number = 3,
+                    squares = listOf(
+                        SquareType.PLAIN,
+                        SquareType.NEBULA,
+                        SquareType.PROTECTION_REJECTED, // "Protection Rejected! Move two spaces"
+                        SquareType.PLAIN,
+                    ),
+                ),
+            ),
         )
     }
 
