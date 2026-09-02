@@ -69,11 +69,11 @@ object BoardLayouts {
             add(SquareType.FATE_HARVEST to null)
             add(SquareType.ZONE_OF_PROTECTION to null) // "if you land here, enter Second Zone of Protection"
             add(SquareType.ABYSS to null)
+            add(SquareType.FATE_HARVEST to null)
             add(SquareType.ZONE_OF_PROTECTION to null) // "if you land here, enter First Zone of Protection"
-            add(SquareType.FATE_HARVEST to null)
             add(SquareType.WARP to null) // "Warp 5 spaces"
-            add(SquareType.FATE_HARVEST to null)
-            add(SquareType.TIME_WRINKLE to "Go again")
+            add(SquareType.MARAUDER_SENSOR to null)
+            add(SquareType.NEBULA to null)
             add(SquareType.ABYSS to null)
             add(SquareType.MARAUDER_TRANSPORT to null)
             add(SquareType.FATE_HARVEST to null)
@@ -86,7 +86,7 @@ object BoardLayouts {
             add(SquareType.MARAUDER_TRANSPORT to null)
             add(SquareType.NEBULA to null)
         }
-        val magnitudes = mapOf(10 to 2, 12 to 1, 14 to 5, 20 to 6)
+        val magnitudes = mapOf(10 to 2, 13 to 1, 14 to 5, 20 to 6)
         return TierBoard(
             TierLevel.FIRST,
             squares.mapIndexed { index, (type, note) ->
