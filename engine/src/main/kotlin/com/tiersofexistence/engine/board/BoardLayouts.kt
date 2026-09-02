@@ -128,9 +128,10 @@ object BoardLayouts {
         return TierBoard(
             TierLevel.FOURTH,
             squares,
-            // Rulebook says "Marauders cannot enter the Zone of Protection" (Marauders
-            // section), yet this Transport sits inside one — worth cross-checking with
-            // rules-reference before implementing Marauder Transport behavior for Tier 4.
+            // Confirmed by the user: a Marauder Transport inside a Zone of Protection is a
+            // specific exception to "Marauders cannot enter the Zone of Protection"
+            // (rulebook, Marauders section) — a Marauder may land on this square, but still
+            // can't affect any other token still sitting in the Zone.
             protectionZones = listOf(ProtectionZone(number = 5, squares = listOf(SquareType.MARAUDER_TRANSPORT))),
         )
     }
