@@ -3,7 +3,9 @@
 Android adaptation of "Tiers of Existence," a 2013 physical board/card game (rulebook:
 `docs/rulebook.txt`, extracted from the original .doc — this is the source of truth for
 rules questions). 2-6 players, roll-and-move across four "Tier" boards, with a 70-card
-Fate Harvest deck driving most of the strategy.
+Fate Harvest deck driving most of the strategy. Thematically, per the user, a player's
+tokens represent a being's progression from very basic (1st Tier) toward a nearly fully
+formed being (4th Tier) — worth keeping in mind for token art/UI, not an engine mechanic.
 
 ## Assumptions made so far (confirm/revisit with the user)
 
@@ -104,18 +106,25 @@ missing code — results below.
   occurrence in the document) — e.g. it never says whether the physical Keeper visually
   skips the spinner past an empty Phase or just passes through it quickly; that's a UI/table
   presentation detail, not an engine one.
-- **No current-turn pointer — still a real gap.** `GameState` tracks which Phase and Round,
-  but nothing tracks *whose turn within the Phase* it currently is (the physical Turn
-  Indicator token on the Round Gear spinner). The rulebook's clearest illustration (the
-  "Example," Rounds/Phases/Turns p.5) confirms seating order is fixed for the whole game and
-  used every Phase (already correctly modeled by `TurnOrder`'s constructor param), and that
-  a player takes their turn on their highest eligible Tier first within a Round — which is
-  just `ROUND_ORDER`'s existing 4th→3rd→2nd→1st descent, already correct. What's still
-  missing is a pointer into "we are currently on the Nth player's turn within this Phase's
-  eligible list" — needed for sequencing turns and for rule #3 (another player may play a
-  card "during" someone else's turn). Also confirmed for the Marauder Phase specifically:
-  "A player must choose which Marauder to move before they roll the purple die," and "if a
-  player has only one Marauder, they must move it" — both need this same per-turn state.
+- **No current-turn pointer — still a real gap, now spec'd by the user.** `GameState` tracks
+  which Phase and Round, but nothing tracks *whose turn within the Phase* it currently is
+  (the physical Turn Indicator token on the Round Gear spinner). Confirmed design, per the
+  user: **Phase precedes Turn** (outer loop = `ROUND_ORDER`, already correct), **turns
+  follow color/seating order** (already correct — `TurnOrder`'s constructor param, fixed for
+  the whole game), and **a player's turn ends when they can make no more moves** — i.e. the
+  turn boundary for advancing to the next color isn't simply "one roll + one move." An
+  extra-turn effect (a "Go again" Time Wrinkle square, or the Phase Control card's "go again
+  on that Tier: an extra turn taken after your normal turn there") keeps the *same* player
+  active — resolve all of those before advancing to the next color in `TurnOrder`, not
+  immediately after the first roll+move. The rulebook's clearest illustration (the
+  "Example," Rounds/Phases/Turns p.5) confirms a player takes their turn on their highest
+  eligible Tier first within a Round — already correct, that's just `ROUND_ORDER`'s existing
+  4th→3rd→2nd→1st descent. What's still missing is the actual state: a pointer into "we are
+  currently on the Nth player's turn within this Phase's eligible list," plus whatever
+  represents "this player still has a pending move" for the chained-extra-turn case above.
+  Also needed for rule #3 (another player may play a card "during" someone else's turn), and
+  for two Marauder Phase specifics: "A player must choose which Marauder to move before they
+  roll the purple die," and "if a player has only one Marauder, they must move it."
 - **Dice/phase wiring is fully specified by the rulebook, just not called yet.** Full sweep
   found nothing more than what was already known: Tier Phase turns roll both dice as "the
   pair," Marauder Phase rolls purple only, and Delayed Motion (+2, played after rolling but
