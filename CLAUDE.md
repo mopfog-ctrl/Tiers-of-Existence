@@ -101,10 +101,23 @@ not bugs in what exists today:
 - **Dice aren't wired to phases at all.** `Dice.rollBlack()`/`rollPurple()` exist but nothing
   calls them. A Tier Phase turn rolls both dice together ("the pair"); the Marauder Phase
   rolls purple only.
-- **Rulebook self-contradiction, needs the user's call, not a guess:** Fate Harvest Card
-  Rule #4 says "only one card per player per Phase," but two other passages (the "Rounds,
-  Phases, and Turns" section and the Fate Harvest square description) describe a per-*turn*
-  limit instead (i.e. up to one card per turn you're involved in, including reactively
-  during another player's turn). `PlayerState.hasPlayedCardThisPhase` currently implements
-  the strict per-Phase reading — defensible since it's the explicit numbered rule, but the
-  other two passages weren't reconciled, just noted. Ask before changing this.
+- **Resolved: Fate Harvest card-play limit is per-Phase, not per-turn.** Rule #4 ("only one
+  card per player per Phase") appeared to conflict with two other passages describing a
+  per-*turn* limit instead (the "Rounds, Phases, and Turns" section, rulebook.txt:203-206,
+  and the Fate Harvest square's own description, rulebook.txt:357-358). Resolved per the
+  user: the numbered "Fate Harvest Card Rules" section (rulebook.txt:402+, which explicitly
+  claims to be "the rules governing the use of Fate Harvest cards") is the actual card
+  rules; the other two are general Rules of Play / Game Board Rules narrative that merely
+  touches on the topic. The rulebook itself says "In a case where a card conflicts with the
+  Rules of Play, the card takes precedence" (rulebook.txt:356-357) — so Rule #4 wins.
+  `PlayerState.hasPlayedCardThisPhase`, reset each Phase in `GameState.advancePhase()`,
+  already implements this correctly; no code change was needed.
+
+- **Confirmed correct, no changes needed:** all 6 Precedence-flagged cards in
+  `FateHarvestCatalog` (Graviton Rift, Fluidic Wave, Tactical Motion, Annulment, Tactical
+  Step, Last Gasp) were cross-checked against every "has Precedence" mention in the
+  rulebook's card list (rulebook.txt:546, 555, 657, 686, 717, 765) — exact match both ways.
+  `PlayerState.hasTierTurn(tier)`/`hasMarauderTurn()` also correctly model that a Tier with
+  no Tier tokens has no Tier Phase turns, while Marauder Phase eligibility is a fully
+  separate, Tier-independent check (a Marauder can have a turn on a Tier with zero Tier
+  tokens present).
