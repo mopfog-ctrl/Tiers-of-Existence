@@ -14,7 +14,7 @@ Fate Harvest deck driving most of the strategy.
   explicit in the text (see "Known gap" below) is marked as such in code comments — don't
   invent behavior for those without checking with the user first.
 
-## Board layouts: all four digitized
+## Board layouts: all four digitized and confirmed
 
 The rulebook explains what each square *type* does (Nebula, Wormhole of Construction,
 Fate Harvest, Marauder Transport, Zone of Protection, etc. — see `SquareType`) but never
@@ -24,23 +24,16 @@ existed in the printed board artwork.
 All four boards are now digitized in `BoardLayouts` (`firstTier()`, `secondTier()`,
 `thirdTier()`, `fourthTier()`, all used by `GameState`'s default `current()`), through
 several rounds of photos, zoomed crops, and the user directly dictating/correcting square
-order. See the `BoardLayouts` class doc comment for the structural rules that came out of
-this process (loop = outer perimeter only; Zone of Protection is real off-loop squares
-reached from a numbered entry square on the main loop, not a dice-driven sub-path; Wormhole
-of Construction's position on the loop varies by Tier — inside a Zone on the 1st Tier,
-directly on the main loop on the 2nd).
+order — including every Zone of Protection's contents. See the `BoardLayouts` class doc
+comment for the structural rules that came out of this process (loop = outer perimeter
+only; Zone of Protection is real off-loop squares reached from a numbered entry square on
+the main loop, not a dice-driven sub-path; Wormhole of Construction's position on the loop
+varies by Tier — inside a Zone on the 1st Tier, directly on the main loop on the 2nd).
 
-Two specific items are still open, called out in code where they live:
-- 2nd Tier: the user described Zone 3's far end as exiting "in the middle on the other
-  side" — not yet clear whether that's just the pocket's physical position on the board
-  (no code implication) or an actual second gameplay-relevant square. Ask before assuming.
-- 3rd Tier: Zone 4's contents (`Plain`, `Fate Harvest`) are a guess from the photo's
-  layout, not yet confirmed by the user the way every other zone's contents were.
-
-Take any Tier board's digitized data as "digitized and spot-checked so far," not
-untouchable ground truth — several earlier "confident" reads (based on a flat photo) turned
-out wrong once the user checked them against the physical board, so a further correction is
-plausible any time the user's description doesn't match what's in the code.
+Still worth treating this as "digitized and confirmed so far," not permanently settled —
+several earlier "confident" reads (based on a flat photo) turned out wrong once the user
+checked them against the physical board, so a further correction is plausible any time the
+user's description doesn't match what's in the code.
 
 ## Architecture
 

@@ -11,7 +11,7 @@ import com.tiersofexistence.engine.model.TierLevel
  *   the user after the fact for the first two), medium-high confidence.
  * - [secondTier]: dictated square-by-square by the user rather than read off the photo —
  *   high confidence.
- * Some Zone of Protection contents are still unconfirmed guesses — see each function's doc.
+ * Every Zone of Protection's contents are now confirmed by the user.
  *
  * Structural decisions made while digitizing, worth the user confirming against the
  * physical boards:
@@ -179,10 +179,10 @@ object BoardLayouts {
                 Square(index, type, magnitude = magnitudes[index], note = note)
             },
             // Entered at square 4 (confirmed, above) — the 4th of the 7 squares from Birth
-            // Canal to the bottom-right corner. The user also described the zone's far end
-            // as exiting "in the middle on the other side" (roughly opposite square, on the
-            // left side's run) — noted here, not yet modeled as a distinct square since
-            // ProtectionZone deliberately isn't a dice-driven sub-path (see class doc).
+            // Canal to the bottom-right corner. The user's earlier "exits in the middle on
+            // the other side" comment was purely describing the pocket's physical position
+            // on the board (equidistant from both sides' entry/exit points) — confirmed no
+            // gameplay-relevant square beyond what's listed here.
             protectionZones = listOf(
                 ProtectionZone(
                     number = 3,
@@ -205,11 +205,7 @@ object BoardLayouts {
      * left along the mirrored bottom row, up the left column). Confidence: medium-high on
      * the 14-square main loop.
      *
-     * Zone 4's own contents are a guess, NOT confirmed by the user yet: the photo shows a
-     * "Fourth Zone of Protection" icon directly below the entry square, then a Fate Harvest
-     * square below that, before the interior column rejoins the main loop at square 10
-     * (Marauder Transport, already on the main loop — not zone content). Guessed as 2 slots:
-     * a plain protection square (the icon itself) and Fate Harvest. Needs confirmation.
+     * Zone 4's contents are confirmed by the user: a blank (plain) space, then Fate Harvest.
      */
     fun thirdTier(): TierBoard {
         val squares = buildList {

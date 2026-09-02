@@ -124,7 +124,7 @@ class BoardLayoutsTest {
     }
 
     @Test
-    fun `third tier Zone 4 guess is plain then Fate Harvest, not yet user-confirmed`() {
+    fun `third tier Zone 4 is plain then Fate Harvest, confirmed by the user`() {
         val board = BoardLayouts.thirdTier()
         val zone4 = board.protectionZones.single { it.number == 4 }
         assertEquals(listOf(SquareType.PLAIN, SquareType.FATE_HARVEST), zone4.squares)
