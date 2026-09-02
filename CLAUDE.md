@@ -79,3 +79,32 @@ AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
 - A Marauder Transport square living inside a Zone of Protection (1st Tier's Zone 2, 4th
   Tier's Zone 5) is a confirmed exception to "Marauders cannot enter the Zone of Protection"
   — a Marauder may land there, but still can't affect any other token still in the Zone.
+
+## Known gaps: turn/phase resolution
+
+`rules/Phase.kt` and `rules/TurnOrder.kt` correctly model the *shape* of a Round (5 Phases,
+in the right order; who's eligible for a turn in a given Phase) but there's no
+turn-resolution logic yet — no code rolls dice, moves a token, or drives a turn end-to-end.
+Confirmed against the rulebook's "Rounds, Phases, and Turns" section and the 1st Tier's
+Phase Clock / Turn Indicator art and the Round Gear spinner (both match `Phase.ROUND_ORDER`
+exactly: Marauder, 4th, 3rd, 2nd, 1st). Specific gaps to close when building that logic,
+not bugs in what exists today:
+
+- **Phase-skipping isn't implemented.** `GameState.advancePhase()` just steps through all 5
+  `ROUND_ORDER` entries every Round; nothing skips a Phase with zero eligible players, and
+  nothing ends a Round early after the 1st Tier Phase the way Round 1 should ("the first
+  Round of the game only has a 1st Tier Phase. When the 1st Tier Phase ends, the Round is
+  over."). Whatever drives turns needs to do this explicitly.
+- **No current-turn pointer.** `GameState` tracks which Phase and Round, but nothing tracks
+  *whose turn within the Phase* it currently is (the physical Turn Indicator token on the
+  Round Gear spinner). Needed before turns can actually be sequenced.
+- **Dice aren't wired to phases at all.** `Dice.rollBlack()`/`rollPurple()` exist but nothing
+  calls them. A Tier Phase turn rolls both dice together ("the pair"); the Marauder Phase
+  rolls purple only.
+- **Rulebook self-contradiction, needs the user's call, not a guess:** Fate Harvest Card
+  Rule #4 says "only one card per player per Phase," but two other passages (the "Rounds,
+  Phases, and Turns" section and the Fate Harvest square description) describe a per-*turn*
+  limit instead (i.e. up to one card per turn you're involved in, including reactively
+  during another player's turn). `PlayerState.hasPlayedCardThisPhase` currently implements
+  the strict per-Phase reading — defensible since it's the explicit numbered rule, but the
+  other two passages weren't reconciled, just noted. Ask before changing this.

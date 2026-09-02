@@ -11,9 +11,16 @@ sealed class Phase {
     data class Tier(val tier: TierLevel) : Phase()
 
     companion object {
-        /** Full Phase order for one Round. Round 1 effectively only reaches [Tier] FIRST, since
-         * no player has tokens on higher Tiers or Marauders yet — [TurnOrder] naturally skips
-         * phases where nobody has a turn. */
+        /**
+         * Full Phase order for one Round. [TurnOrder.turnsFor] returns an empty list for a
+         * Phase where nobody has a turn, but nothing yet acts on that: `GameState.advancePhase`
+         * steps through [ROUND_ORDER] one entry at a time regardless, so turn-resolution logic
+         * must itself skip empty Phases and, per the rulebook ("the first Round of the game
+         * only has a 1st Tier Phase. When the 1st Tier Phase ends, the Round is over," Rounds/
+         * Phases/Turns p.4), end a Round early when the 1st Tier Phase closes with the higher
+         * Phases having had zero eligible players. Not yet implemented — a gap to close before
+         * relying on this for real gameplay, not something the current code already handles.
+         */
         val ROUND_ORDER: List<Phase> = listOf(
             Marauder,
             Tier(TierLevel.FOURTH),
