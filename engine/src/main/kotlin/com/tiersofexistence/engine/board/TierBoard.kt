@@ -20,10 +20,29 @@ data class Square(
 )
 
 /**
- * The full loop of squares for one Tier board. Movement is clockwise and wraps from the
- * last index back to 0.
+ * A Zone of Protection: "shaded spaces through which a Marauder may not pass" (rulebook,
+ * Game Board Rules) — real board real estate off to the side of the main loop, not just
+ * flavor text on the entry square. Entered by landing on the main loop's numbered
+ * [SquareType.ZONE_OF_PROTECTION] square (see [Square.magnitude]).
+ *
+ * Deliberately NOT modeled as a dice-driven sub-path (no [List] of [Square]): the rulebook
+ * never describes moving square-by-square once inside a Zone, only entering and later
+ * leaving it (e.g. via specific Fate Harvest cards, rule #12). [capacity] is the number of
+ * shaded slots visible on the board photo, where that could be counted with confidence;
+ * null where it couldn't — don't invent a number here without confirming it against the
+ * physical board.
  */
-data class TierBoard(val tier: TierLevel, val squares: List<Square>) {
+data class ProtectionZone(val number: Int, val capacity: Int? = null)
+
+/**
+ * The full loop of squares for one Tier board, plus its off-loop Zones of Protection. Main
+ * loop movement is clockwise and wraps from the last index back to 0.
+ */
+data class TierBoard(
+    val tier: TierLevel,
+    val squares: List<Square>,
+    val protectionZones: List<ProtectionZone> = emptyList(),
+) {
     init {
         require(squares.isNotEmpty()) { "Tier board for $tier must have at least one square" }
         require(squares[0].type == SquareType.BIRTH_CANAL) {

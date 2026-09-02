@@ -35,6 +35,12 @@ class BoardLayoutsTest {
     }
 
     @Test
+    fun `first tier has Zones 1 and 2 as off-loop protection zones`() {
+        val board = BoardLayouts.firstTier()
+        assertEquals(listOf(1, 2), board.protectionZones.map { it.number }.sorted())
+    }
+
+    @Test
     fun `fourth tier loop starts at Birth Canal, ends at You Win, and has 8 squares`() {
         val board = BoardLayouts.fourthTier()
         assertEquals(TierLevel.FOURTH, board.tier)
@@ -49,6 +55,7 @@ class BoardLayoutsTest {
         val board = BoardLayouts.fourthTier()
         val zone = board.squares.single { it.type == SquareType.ZONE_OF_PROTECTION }
         assertEquals(5, zone.magnitude)
+        assertEquals(listOf(5), board.protectionZones.map { it.number })
     }
 
     @Test

@@ -6,39 +6,46 @@ import com.tiersofexistence.engine.model.TierLevel
  * Real per-Tier square sequences, digitized from photos of the four physical boards.
  *
  * Status per Tier — see the doc comment on each function below for details:
- * - [firstTier] and [fourthTier]: digitized from board photos, medium-high confidence.
- * - 2nd and 3rd Tier: still [placeholder] — the provided photos were too dense/cluttered
- *   (nested interior bands, staging piles overlapping the loop) to transcribe with
- *   confidence. Needs clearer/cropped photos of those two boards, or in-person
- *   verification, before digitizing for real.
+ * - [firstTier] and [fourthTier]: digitized from board photos, medium-high confidence on
+ *   the main loop's square-by-square order.
+ * - 2nd and 3rd Tier: still [placeholder]. The user says these two photos should be
+ *   perfectly legible, so this is on us to get right, not a photo-quality problem — but a
+ *   flat, non-zoomable read of the photos wasn't reliable enough to transcribe with
+ *   confidence, especially since (per the user) the interior isn't purely decorative the
+ *   way we first assumed (see point 2 below), so getting the loop's shape wrong here is a
+ *   real risk, not just a square-content nit. Fastest unblock: have the user dictate the
+ *   square order directly (they're reading the physical board, we're reading a photo).
  *
- * Two structural decisions made while digitizing, both worth the user confirming against
- * the physical boards rather than trusting blindly:
+ * Structural decisions made while digitizing, worth the user confirming against the
+ * physical boards:
  *
- * 1. **Loop = outer perimeter only.** Each board's interior (Nebula Staging Piles, the
- *    Phase Clock/Turn Indicator, the Wormhole of Construction icon) is drawn overlapping
- *    the middle of the board, not on the ring of squares tokens actually step through.
- *    Landing on a [SquareType.NEBULA] square is what moves a token into the (off-board)
- *    staging pile pool — the pile itself isn't a square on the loop. Same reasoning
- *    applies to the Phase Clock/Turn Indicator (round-tracking props, not squares).
+ * 1. **Loop = outer perimeter only, for the main loop.** Nebula Staging Piles and the
+ *    Phase Clock/Turn Indicator are drawn overlapping the middle of the board, not on the
+ *    ring of squares tokens actually step through. Landing on a [SquareType.NEBULA] square
+ *    is what moves a token into the (off-board) staging pile pool — the pile itself isn't
+ *    a square on the loop.
  *
- * 2. **Wormhole of Construction placement is an open gap, not guessed.** The rulebook and
- *    [SquareType.WORMHOLE_OF_CONSTRUCTION] say landing on it promotes a token to the next
- *    Tier, and the 1st Tier photo shows a "IF YOU LAND HERE ENTER THE WORMHOLE OF
- *    CONSTRUCTION" card — but that card, and the Wormhole circle it points to, sit in the
- *    board's interior near the staging piles, not touching the outer loop at any point we
- *    could confidently identify. Rather than invent a guessed position on the loop, both
- *    Tier boards below omit it entirely; promotion via Wormhole of Construction is still an
- *    unimplemented gap. Don't add it to a board layout without confirming where on the
- *    loop it's actually reached from.
+ * 2. **Zone of Protection is real off-loop squares, not flavor text.** Corrected after
+ *    the user pointed out the "shaded strip" in the photos is the actual Zone of
+ *    Protection, sitting outside the main loop — matching the rulebook's "shaded spaces
+ *    through which a Marauder may not pass" (plural). See [ProtectionZone]: modeled as a
+ *    pocket off the main loop's numbered [SquareType.ZONE_OF_PROTECTION] entry square, not
+ *    as a dice-driven sub-path. [ProtectionZone.capacity] is left `null` below — we could
+ *    see the strip existed but not confidently count its squares from the photo.
  *
- * Zone of Protection squares below use [Square.magnitude] for the zone number; the
- * numbering escalates by Tier per the photos (1st Tier has Zones 1 and 2, 2nd Tier has
- * Zone 3, 3rd Tier has Zone 4, 4th Tier has Zone 5) rather than restarting each board.
- * Each photo shows a small "shaded" run of extra squares behind the zone's entry square
- * (e.g. a strip of star icons) that we're treating as flavor art for "this area is
- * protected," not extra squares a token individually steps through — same open-to-being-
- * wrong caveat as point 2 above.
+ * 3. **Wormhole of Construction placement is still an open gap.** The rulebook says
+ *    landing on "the square that says to move to the Wormhole of Construction" promotes a
+ *    token immediately (1st/2nd Tier only) — a single square directly on the loop, not a
+ *    separate pocket like the Zone of Protection. The user confirmed there's an arrow for
+ *    it on the 1st Tier photo, but we couldn't confidently map that arrow to a specific
+ *    outer-loop square/index from the photo — several of the [firstTier] squares below are
+ *    a generic [SquareType.FATE_HARVEST] guess and one of those may actually be this
+ *    square. Needs the user to point to which loop square it is (e.g. "the one between
+ *    Hyperthrust and Reprieve") rather than us guessing further.
+ *
+ * Zone of Protection numbering escalates by Tier per the photos (1st Tier has Zones 1 and
+ * 2, 2nd Tier has Zone 3, 3rd Tier has Zone 4, 4th Tier has Zone 5) rather than restarting
+ * each board; [Square.magnitude] on a `ZONE_OF_PROTECTION` square holds the zone number.
  */
 object BoardLayouts {
 
@@ -85,6 +92,7 @@ object BoardLayouts {
             squares.mapIndexed { index, (type, note) ->
                 Square(index, type, magnitude = magnitudes[index], note = note)
             },
+            protectionZones = listOf(ProtectionZone(number = 1), ProtectionZone(number = 2)),
         )
     }
 
@@ -92,7 +100,8 @@ object BoardLayouts {
      * 4th Tier, digitized from the board photo. Only 8 squares — this Tier's board is a
      * small standalone loop, not a full-perimeter board like the others. Confidence:
      * medium-high, same caveat as [firstTier]. The 5 star-icon squares behind the Zone 5
-     * entry are treated as the zone's flavor art, not extra loop squares (see class doc).
+     * entry are its [ProtectionZone] (see class doc point 2) — capacity not confidently
+     * countable from the photo, left `null`.
      */
     fun fourthTier(): TierBoard {
         val squares = listOf(
@@ -105,7 +114,7 @@ object BoardLayouts {
             Square(6, SquareType.VORTEX_OF_REGRESSION),
             Square(7, SquareType.YOU_WIN),
         )
-        return TierBoard(TierLevel.FOURTH, squares)
+        return TierBoard(TierLevel.FOURTH, squares, protectionZones = listOf(ProtectionZone(number = 5)))
     }
 
     /**
