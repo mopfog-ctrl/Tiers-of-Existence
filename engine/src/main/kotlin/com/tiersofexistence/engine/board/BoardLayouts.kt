@@ -110,6 +110,14 @@ object BoardLayouts {
      * behind the Zone 5 entry are decorative border art, not one square each (same mistake
      * as the purple background pattern elsewhere) — Zone 5 only has room for one real
      * square, and it's a Marauder Transport, still protected while inside the Zone.
+     *
+     * Confirmed by the user: that Zone 5 square is the *same physical board square* as
+     * main-loop index 3 (both are "Marauder Transport," directly below the entry card) —
+     * not two separate squares that happen to share a type. Landing there by ordinary dice
+     * movement is just a normal Marauder Transport; being sent there by the entry square
+     * (index 2) is what makes a token "in the Zone" and protected. Kept as two logically
+     * distinct entries here (main loop vs. `protectionZones`) since the engine needs to
+     * track that protected/not-protected distinction, even though they render as one square.
      */
     fun fourthTier(): TierBoard {
         val squares = listOf(
