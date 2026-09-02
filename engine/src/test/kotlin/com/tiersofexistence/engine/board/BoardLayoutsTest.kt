@@ -67,11 +67,39 @@ class BoardLayoutsTest {
     }
 
     @Test
-    fun `current uses real boards for first and fourth Tier, placeholders for second and third`() {
+    fun `second tier loop starts at Birth Canal and has 22 squares`() {
+        val board = BoardLayouts.secondTier()
+        assertEquals(TierLevel.SECOND, board.tier)
+        assertEquals(22, board.size)
+        assertEquals(SquareType.BIRTH_CANAL, board.squareAt(0).type)
+    }
+
+    @Test
+    fun `second tier has Warp, Zone 3 entry, and Hyperthrust magnitudes`() {
+        val board = BoardLayouts.secondTier()
+        val warp = board.squares.single { it.type == SquareType.WARP }
+        assertEquals(7, warp.magnitude)
+
+        val zone = board.squares.single { it.type == SquareType.ZONE_OF_PROTECTION }
+        assertEquals(3, zone.magnitude)
+        assertEquals(listOf(3), board.protectionZones.map { it.number })
+
+        val hyperthrust = board.squares.single { it.type == SquareType.HYPERTHRUST }
+        assertEquals(7, hyperthrust.magnitude)
+    }
+
+    @Test
+    fun `second tier has a Wormhole of Construction directly on the main loop`() {
+        val board = BoardLayouts.secondTier()
+        assertEquals(1, board.squares.count { it.type == SquareType.WORMHOLE_OF_CONSTRUCTION })
+    }
+
+    @Test
+    fun `current uses real boards for first, second, and fourth Tier, placeholder for third`() {
         val boards = BoardLayouts.current()
         assertEquals(BoardLayouts.firstTier(), boards[TierLevel.FIRST])
+        assertEquals(BoardLayouts.secondTier(), boards[TierLevel.SECOND])
         assertEquals(BoardLayouts.fourthTier(), boards[TierLevel.FOURTH])
-        assertEquals(BoardLayouts.placeholder(TierLevel.SECOND), boards[TierLevel.SECOND])
         assertEquals(BoardLayouts.placeholder(TierLevel.THIRD), boards[TierLevel.THIRD])
     }
 

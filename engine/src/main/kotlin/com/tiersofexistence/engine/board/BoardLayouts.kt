@@ -6,15 +6,11 @@ import com.tiersofexistence.engine.model.TierLevel
  * Real per-Tier square sequences, digitized from photos of the four physical boards.
  *
  * Status per Tier — see the doc comment on each function below for details:
- * - [firstTier] and [fourthTier]: digitized from board photos, medium-high confidence on
- *   the main loop's square-by-square order.
- * - 2nd and 3rd Tier: still [placeholder]. The user says these two photos should be
- *   perfectly legible, so this is on us to get right, not a photo-quality problem — but a
- *   flat, non-zoomable read of the photos wasn't reliable enough to transcribe with
- *   confidence, especially since (per the user) the interior isn't purely decorative the
- *   way we first assumed (see point 2 below), so getting the loop's shape wrong here is a
- *   real risk, not just a square-content nit. Fastest unblock: have the user dictate the
- *   square order directly (they're reading the physical board, we're reading a photo).
+ * - [firstTier] and [fourthTier]: digitized from board photos (plus user corrections after
+ *   the fact), medium-high confidence on the main loop's square-by-square order.
+ * - [secondTier]: dictated square-by-square by the user rather than read off the photo —
+ *   high confidence on the main loop; Zone 3's own slot contents aren't confirmed yet.
+ * - 3rd Tier: still [placeholder], not yet dictated/digitized.
  *
  * Structural decisions made while digitizing, worth the user confirming against the
  * physical boards:
@@ -137,9 +133,51 @@ object BoardLayouts {
     }
 
     /**
+     * 2nd Tier, dictated square-by-square by the user (not read off the photo, unlike
+     * [firstTier]/[fourthTier]) — high confidence. 22 squares, outer perimeter only.
+     * Unlike the 1st Tier, the Wormhole of Construction here is a plain main-loop square
+     * (index 13), not tucked inside a Zone of Protection. Zone 3's own slot contents
+     * aren't confirmed yet — `protectionZones` below has the zone with no squares listed.
+     */
+    fun secondTier(): TierBoard {
+        val squares = buildList {
+            add(SquareType.BIRTH_CANAL to null)
+            add(SquareType.WARP to null) // "Warp 7 spaces"
+            add(SquareType.ABYSS to null)
+            add(SquareType.ZONE_OF_PROTECTION to null) // "enter Third Zone of Protection"
+            add(SquareType.MARAUDER_CONSTRUCTION_FACILITY to null)
+            add(SquareType.FATE_HARVEST to null)
+            add(SquareType.MARAUDER_TRANSPORT to null)
+            add(SquareType.TIME_WRINKLE to "Take an extra turn, First Tier")
+            add(SquareType.REPRIEVE to null)
+            add(SquareType.FATE_HARVEST to null)
+            add(SquareType.NEBULA to null)
+            add(SquareType.MARAUDER_SENSOR to null)
+            add(SquareType.HYPERTHRUST to null) // "Move 7 spaces, any tokens you pass are destroyed"
+            add(SquareType.WORMHOLE_OF_CONSTRUCTION to null)
+            add(SquareType.MARAUDER_TRANSPORT to null)
+            add(SquareType.ABYSS to null)
+            add(SquareType.FATE_HARVEST to null)
+            add(SquareType.NEBULA to null)
+            add(SquareType.TIME_WRINKLE to "Go again")
+            add(SquareType.MARAUDER_CONSTRUCTION_FACILITY to null)
+            add(SquareType.FATE_HARVEST to null)
+            add(SquareType.NEBULA to null)
+        }
+        val magnitudes = mapOf(1 to 7, 3 to 3, 12 to 7)
+        return TierBoard(
+            TierLevel.SECOND,
+            squares.mapIndexed { index, (type, note) ->
+                Square(index, type, magnitude = magnitudes[index], note = note)
+            },
+            protectionZones = listOf(ProtectionZone(number = 3)),
+        )
+    }
+
+    /**
      * TODO(board-art): still not digitized — see class doc. [placeholder] below is NOT a
      * real board; it exists only so square-effect logic has something to run against in
-     * tests until real 2nd/3rd Tier photos (clear enough to transcribe) are available.
+     * tests until real 3rd Tier photo (clear enough to transcribe) is available.
      */
     fun placeholder(tier: TierLevel): TierBoard {
         val squares = buildList {
@@ -184,12 +222,12 @@ object BoardLayouts {
 
     /**
      * The best board data currently available for each Tier: real digitized boards for the
-     * 1st and 4th, [placeholder] for the 2nd and 3rd until those are digitized too. This is
-     * what [com.tiersofexistence.engine.state.GameState] defaults to.
+     * 1st, 2nd, and 4th, [placeholder] for the 3rd until it's digitized too. This is what
+     * [com.tiersofexistence.engine.state.GameState] defaults to.
      */
     fun current(): Map<TierLevel, TierBoard> = mapOf(
         TierLevel.FIRST to firstTier(),
-        TierLevel.SECOND to placeholder(TierLevel.SECOND),
+        TierLevel.SECOND to secondTier(),
         TierLevel.THIRD to placeholder(TierLevel.THIRD),
         TierLevel.FOURTH to fourthTier(),
     )
