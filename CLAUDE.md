@@ -81,6 +81,15 @@ AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
 - A Marauder Transport square living inside a Zone of Protection (1st Tier's Zone 2, 4th
   Tier's Zone 5) is a confirmed exception to "Marauders cannot enter the Zone of Protection"
   — a Marauder may land there, but still can't affect any other token still in the Zone.
+- Every field on all 32 unique Fate Harvest cards (name, rarity/copies, `timing`, `scope`,
+  `restrictedTo`, `hasPrecedence`, effect text) cross-checked card-by-card against the
+  rulebook's Fate Harvest Card List — zero discrepancies. Two things worth knowing, not
+  bugs: Infernal Abyss's rulebook text has an optional flavor cue ("You should cry,
+  'Ahhhhhhh...'") not reflected in the catalog's `effect` string, harmless since it's
+  flavor, not a mechanical requirement (unlike Last Gasp's mandatory exclamation, which
+  *is* encoded); and Annulment's `scope = ANY_TIME` comes from Fate Harvest Card Rule #20
+  (all Precedence cards may be played any time), not from Annulment's own card text — see
+  the comment on that card in `FateHarvestCatalog.kt`.
 
 ## Known gaps: turn/phase resolution
 

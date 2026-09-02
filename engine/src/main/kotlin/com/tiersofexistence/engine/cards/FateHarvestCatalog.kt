@@ -220,6 +220,11 @@ object FateHarvestCatalog {
             name = "Annulment (Antimatter)",
             rarity = TRIPLE,
             timing = HELD,
+            // scope = ANY_TIME even though Annulment's own card text doesn't say "any time"
+            // (unlike the other Precedence cards) — it doesn't need to, per rule #20: "All
+            // Precedence cards can be played at any time, including the Annulment card which
+            // doesn't have the 'A' in the silver rectangle." Don't "fix" this to null by
+            // pattern-matching only this card's own blurb.
             scope = ANY_TIME,
             hasPrecedence = true,
             effect = "Cancel the effect of any card that is played. Takes Precedence over all " +
