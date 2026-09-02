@@ -70,7 +70,7 @@ object BoardLayouts {
             add(SquareType.WARP to null) // "Warp 5 spaces"
             add(SquareType.NEBULA to null)
             add(SquareType.FATE_HARVEST to null)
-            add(SquareType.TIME_WRINKLE to null) // variant text not yet confirmed
+            add(SquareType.TIME_WRINKLE to "Go again")
             add(SquareType.ABYSS to null)
             add(SquareType.MARAUDER_TRANSPORT to null)
             add(SquareType.HYPERTHRUST to null) // "Hyperthrust! Move 6 spaces, any tokens you pass are destroyed"
