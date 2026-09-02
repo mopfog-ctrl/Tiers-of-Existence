@@ -12,14 +12,13 @@ sealed class Phase {
 
     companion object {
         /**
-         * Full Phase order for one Round. [TurnOrder.turnsFor] returns an empty list for a
-         * Phase where nobody has a turn, but nothing yet acts on that: `GameState.advancePhase`
-         * steps through [ROUND_ORDER] one entry at a time regardless, so turn-resolution logic
-         * must itself skip empty Phases and, per the rulebook ("the first Round of the game
-         * only has a 1st Tier Phase. When the 1st Tier Phase ends, the Round is over," Rounds/
-         * Phases/Turns p.4), end a Round early when the 1st Tier Phase closes with the higher
-         * Phases having had zero eligible players. Not yet implemented — a gap to close before
-         * relying on this for real gameplay, not something the current code already handles.
+         * Full Phase order for one Round. 1st Tier is always last, so "the first Round of the
+         * game only has a 1st Tier Phase. When the 1st Tier Phase ends, the Round is over"
+         * (Rounds/Phases/Turns p.4) needs no special-casing: [TurnOrder.turnsFor] already
+         * returns an empty list for a Phase with no eligible players (Marauder/4th/3rd/2nd in
+         * Round 1), and `GameState.advancePhase` walking every entry in [ROUND_ORDER] once per
+         * Round produces the right outcome on its own — a turn-resolution loop just needs to
+         * call it once per Phase regardless of whether that Phase had any turns.
          */
         val ROUND_ORDER: List<Phase> = listOf(
             Marauder,

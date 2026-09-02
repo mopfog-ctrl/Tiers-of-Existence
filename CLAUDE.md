@@ -87,20 +87,42 @@ in the right order; who's eligible for a turn in a given Phase) but there's no
 turn-resolution logic yet — no code rolls dice, moves a token, or drives a turn end-to-end.
 Confirmed against the rulebook's "Rounds, Phases, and Turns" section and the 1st Tier's
 Phase Clock / Turn Indicator art and the Round Gear spinner (both match `Phase.ROUND_ORDER`
-exactly: Marauder, 4th, 3rd, 2nd, 1st). Specific gaps to close when building that logic,
-not bugs in what exists today:
+exactly: Marauder, 4th, 3rd, 2nd, 1st). Followed up with a full-document sweep (not just
+that one section) specifically to check whether these are real rulebook gaps or just
+missing code — results below.
 
-- **Phase-skipping isn't implemented.** `GameState.advancePhase()` just steps through all 5
-  `ROUND_ORDER` entries every Round; nothing skips a Phase with zero eligible players, and
-  nothing ends a Round early after the 1st Tier Phase the way Round 1 should ("the first
-  Round of the game only has a 1st Tier Phase. When the 1st Tier Phase ends, the Round is
-  over."). Whatever drives turns needs to do this explicitly.
-- **No current-turn pointer.** `GameState` tracks which Phase and Round, but nothing tracks
-  *whose turn within the Phase* it currently is (the physical Turn Indicator token on the
-  Round Gear spinner). Needed before turns can actually be sequenced.
-- **Dice aren't wired to phases at all.** `Dice.rollBlack()`/`rollPurple()` exist but nothing
-  calls them. A Tier Phase turn rolls both dice together ("the pair"); the Marauder Phase
-  rolls purple only.
+- **"Phase-skipping" turned out not to need special-case code.** Earlier framing here was
+  wrong: it read as if `GameState.advancePhase()` needed new logic to skip empty Phases and
+  end Round 1 early. On closer reading it doesn't — 1st Tier is *always* the last Phase in
+  `ROUND_ORDER`, so "the Round is over" when the 1st Tier Phase ends is just the ordinary
+  end of every Round, not a special case for Round 1. A Phase with zero eligible players
+  already produces zero turns via `TurnOrder.turnsFor()` returning an empty list; a
+  turn-resolution loop just needs to call `advancePhase()` once per Phase regardless of
+  whether that Phase had any turns, and Round 1 falls out correctly on its own (Marauder/
+  4th/3rd/2nd naturally produce no turns before 1st Tier does). No dedicated skip logic is
+  needed. The rulebook itself is silent on anything beyond this (checked every "Round"
+  occurrence in the document) — e.g. it never says whether the physical Keeper visually
+  skips the spinner past an empty Phase or just passes through it quickly; that's a UI/table
+  presentation detail, not an engine one.
+- **No current-turn pointer — still a real gap.** `GameState` tracks which Phase and Round,
+  but nothing tracks *whose turn within the Phase* it currently is (the physical Turn
+  Indicator token on the Round Gear spinner). The rulebook's clearest illustration (the
+  "Example," Rounds/Phases/Turns p.5) confirms seating order is fixed for the whole game and
+  used every Phase (already correctly modeled by `TurnOrder`'s constructor param), and that
+  a player takes their turn on their highest eligible Tier first within a Round — which is
+  just `ROUND_ORDER`'s existing 4th→3rd→2nd→1st descent, already correct. What's still
+  missing is a pointer into "we are currently on the Nth player's turn within this Phase's
+  eligible list" — needed for sequencing turns and for rule #3 (another player may play a
+  card "during" someone else's turn). Also confirmed for the Marauder Phase specifically:
+  "A player must choose which Marauder to move before they roll the purple die," and "if a
+  player has only one Marauder, they must move it" — both need this same per-turn state.
+- **Dice/phase wiring is fully specified by the rulebook, just not called yet.** Full sweep
+  found nothing more than what was already known: Tier Phase turns roll both dice as "the
+  pair," Marauder Phase rolls purple only, and Delayed Motion (+2, played after rolling but
+  before moving) is the only card that touches a roll directly. The rulebook has no rules at
+  all for doubles, re-rolls, or a roll overshooting a board edge — confirmed absent from the
+  whole document, not something still to research. `Dice.rollBlack()`/`rollPurple()` already
+  implement everything the rulebook specifies; they're just not called from anywhere yet.
 - **Resolved: Fate Harvest card-play limit is per-Phase, not per-turn.** Rule #4 ("only one
   card per player per Phase") appeared to conflict with two other passages describing a
   per-*turn* limit instead (the "Rounds, Phases, and Turns" section, rulebook.txt:203-206,
