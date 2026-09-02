@@ -109,10 +109,10 @@ object BoardLayouts {
     /**
      * 4th Tier, digitized from the board photo. Only 8 squares — this Tier's board is a
      * small standalone loop, not a full-perimeter board like the others. Confidence:
-     * medium-high, same caveat as [firstTier]. The 5 star-icon squares behind the Zone 5
-     * entry are its [ProtectionZone] — counted directly from the photo, all plain (the
-     * rulebook only allows Wormhole of Construction on the 1st/2nd Tier, so unlike the 1st
-     * Tier's Zone 2, none of these 5 is a Wormhole).
+     * medium-high, same caveat as [firstTier]. Corrected per the user: the star icons
+     * behind the Zone 5 entry are decorative border art, not one square each (same mistake
+     * as the purple background pattern elsewhere) — Zone 5 only has room for one real
+     * square, and it's a Marauder Transport, still protected while inside the Zone.
      */
     fun fourthTier(): TierBoard {
         val squares = listOf(
@@ -128,7 +128,10 @@ object BoardLayouts {
         return TierBoard(
             TierLevel.FOURTH,
             squares,
-            protectionZones = listOf(ProtectionZone(number = 5, squares = List(5) { SquareType.PLAIN })),
+            // Rulebook says "Marauders cannot enter the Zone of Protection" (Marauders
+            // section), yet this Transport sits inside one — worth cross-checking with
+            // rules-reference before implementing Marauder Transport behavior for Tier 4.
+            protectionZones = listOf(ProtectionZone(number = 5, squares = listOf(SquareType.MARAUDER_TRANSPORT))),
         )
     }
 

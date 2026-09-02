@@ -57,13 +57,13 @@ class BoardLayoutsTest {
     }
 
     @Test
-    fun `fourth tier Zone of Protection is numbered Fifth, has 5 plain slots, no Wormhole`() {
+    fun `fourth tier Zone of Protection is numbered Fifth and has a single Marauder Transport slot`() {
         val board = BoardLayouts.fourthTier()
         val zone = board.squares.single { it.type == SquareType.ZONE_OF_PROTECTION }
         assertEquals(5, zone.magnitude)
 
         val protectionZone = board.protectionZones.single { it.number == 5 }
-        assertEquals(List(5) { SquareType.PLAIN }, protectionZone.squares)
+        assertEquals(listOf(SquareType.MARAUDER_TRANSPORT), protectionZone.squares)
     }
 
     @Test
