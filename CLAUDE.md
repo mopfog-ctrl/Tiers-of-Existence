@@ -14,27 +14,33 @@ Fate Harvest deck driving most of the strategy.
   explicit in the text (see "Known gap" below) is marked as such in code comments — don't
   invent behavior for those without checking with the user first.
 
-## Known gap: board layouts
+## Board layouts: all four digitized
 
 The rulebook explains what each square *type* does (Nebula, Wormhole of Construction,
 Fate Harvest, Marauder Transport, Zone of Protection, etc. — see `SquareType`) but never
 gives the actual square-by-square sequence of any of the four physical boards; that only
-exists in the printed board artwork.
+existed in the printed board artwork.
 
-Update: the user provided photos of all four boards. `BoardLayouts.firstTier()` and
-`BoardLayouts.fourthTier()` are now digitized from those photos — medium-high confidence,
-but read directly off a flat photo and not yet verified against the physical boards, so
-treat as a first draft to spot-check rather than ground truth. See the doc comment on
-`BoardLayouts` for the two structural assumptions made while digitizing (loop = outer
-perimeter only; Wormhole of Construction position left as an open gap rather than guessed)
-and confirm those with the user before relying on them for real gameplay.
+All four boards are now digitized in `BoardLayouts` (`firstTier()`, `secondTier()`,
+`thirdTier()`, `fourthTier()`, all used by `GameState`'s default `current()`), through
+several rounds of photos, zoomed crops, and the user directly dictating/correcting square
+order. See the `BoardLayouts` class doc comment for the structural rules that came out of
+this process (loop = outer perimeter only; Zone of Protection is real off-loop squares
+reached from a numbered entry square on the main loop, not a dice-driven sub-path; Wormhole
+of Construction's position on the loop varies by Tier — inside a Zone on the 1st Tier,
+directly on the main loop on the 2nd).
 
-2nd and 3rd Tier are still `placeholder()` — those two photos had denser interior detail
-(overlapping staging piles, a middle band of squares whose connection to the outer loop
-wasn't clear from the photo) that couldn't be transcribed with confidence. Needs clearer/
-cropped photos of those two boards specifically, or in-person verification, before
-digitizing for real. `GameState` defaults to `BoardLayouts.current()`, which mixes real
-data (1st/4th) with `placeholder()` (2nd/3rd) — swap in the rest as they're digitized.
+Two specific items are still open, called out in code where they live:
+- 2nd Tier: the user described Zone 3's far end as exiting "in the middle on the other
+  side" — not yet clear whether that's just the pocket's physical position on the board
+  (no code implication) or an actual second gameplay-relevant square. Ask before assuming.
+- 3rd Tier: Zone 4's contents (`Plain`, `Fate Harvest`) are a guess from the photo's
+  layout, not yet confirmed by the user the way every other zone's contents were.
+
+Take any Tier board's digitized data as "digitized and spot-checked so far," not
+untouchable ground truth — several earlier "confident" reads (based on a flat photo) turned
+out wrong once the user checked them against the physical board, so a further correction is
+plausible any time the user's description doesn't match what's in the code.
 
 ## Architecture
 
@@ -72,3 +78,11 @@ AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
   Tier 4), with Hatchery overflow — see `TierTokenPoolTest`.
 - One Marauder per Tier per player (4 total per player, one per Tier), Marauder Transport
   only moves to an adjacent Tier — see `MarauderPoolTest`.
+- 4th Tier's You Win square must be landed on *exactly*; a roll that would move a token
+  past it doesn't win — that token just continues around the loop again, same as any other
+  square. Not yet enforced anywhere in code (no turn-resolution logic exists yet — see
+  "Architecture" below), but confirmed by the user and worth keeping in mind once movement
+  is implemented.
+- A Marauder Transport square living inside a Zone of Protection (1st Tier's Zone 2, 4th
+  Tier's Zone 5) is a confirmed exception to "Marauders cannot enter the Zone of Protection"
+  — a Marauder may land there, but still can't affect any other token still in the Zone.

@@ -57,7 +57,11 @@ enum class SquareType {
     /** Shaded spaces a Marauder may not enter; tokens here are protected from most effects. */
     ZONE_OF_PROTECTION,
 
-    /** 4th-Tier-only win square: must be landed on exactly to win the game. */
+    /**
+     * 4th-Tier-only win square: must be landed on exactly to win the game. A roll that
+     * would move a token past it (not landing exactly) does not win — that token simply
+     * continues past You Win and around the loop again, same as any other square.
+     */
     YOU_WIN,
 
     /**
