@@ -21,11 +21,22 @@ class BoardLayoutsTest {
         val zones = board.squares.filter { it.type == SquareType.ZONE_OF_PROTECTION }.map { it.magnitude }
         assertEquals(listOf(2, 1), zones)
 
-        val warp = board.squares.single { it.type == SquareType.WARP }
-        assertEquals(5, warp.magnitude)
+        // 3 dedicated Warp squares (plus a 4th "Warp 5 spaces" reference as compound text on
+        // Birth Canal, checked separately below) — all 5 spaces.
+        val warps = board.squares.filter { it.type == SquareType.WARP }
+        assertEquals(3, warps.size)
+        assertTrue(warps.all { it.magnitude == 5 })
 
         val hyperthrust = board.squares.single { it.type == SquareType.HYPERTHRUST }
         assertEquals(6, hyperthrust.magnitude)
+    }
+
+    @Test
+    fun `first tier's Birth Canal is a compound square with its own Warp 5 spaces text`() {
+        val board = BoardLayouts.firstTier()
+        val birthCanal = board.squareAt(0)
+        assertEquals(SquareType.BIRTH_CANAL, birthCanal.type)
+        assertEquals(5, birthCanal.magnitude)
     }
 
     @Test

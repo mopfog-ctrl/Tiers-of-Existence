@@ -123,8 +123,31 @@ how each of the other ~30 Fate Harvest cards actually changes game state is futu
 - Zone of Protection as real token state — landing on the entry square is reported but
   nothing tracks a token as "now protected."
 - Warp's actual effect (genuinely ambiguous in the rulebook — "usually affects movement").
+  Every Warp/Hyperthrust/Zone-of-Protection-entry square's printed text is now captured in
+  `Square.note` (previously left as a code comment on some squares, not actual data —
+  fixed). The 1st Tier has 3 dedicated Warp squares (indices 9, 14, 15 — corrected from an
+  earlier, wrong single-Warp read) plus a 4th "Warp 5 spaces" reference as compound text on
+  Birth Canal/Start itself ("If you land here, Warp 5 spaces," only relevant if a token
+  loops all the way back to Start) — all confirmed by the user, all 5 spaces.
 - Two Time Wrinkle variants ("lose next turn on this Tier," "take an extra turn, First
   Tier") that need deferred/cross-Phase state beyond what exists; "Go again" is supported.
-- A judgment call, not confirmed with the user: Reprieve's protection is applied for a
-  Marauder mover (matching the rulebook's literal wording) but not for Hyperthrust, whose
-  identically-worded pass-through-destroy text never mentions Reprieve.
+
+**Resolved:** Reprieve's protection is unconditional for Tier tokens — "Any normal token on
+Reprieve cannot be destroyed," confirmed by the user, applying to Marauder pass-through
+*and* Hyperthrust's identically-worded pass-through-destroy alike (no more special-casing
+between the two). It does NOT protect Marauders — "Marauders can be [destroyed]" even while
+sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
+rather than per-square.
+
+## Known flaky test (sandbox-specific, not a code bug)
+
+`./gradlew :engine:test` has intermittently failed (~50% of runs seen in this sandbox, both
+with and without `--no-daemon`, both before and after this session's `GameState` changes)
+with a `NullPointerException` inside `TurnOrder.turnsFor`'s own null-check on its `phase`
+parameter, always originating from `GameState.<init>` populating the turn queue. Identical
+compiled bytecode (no recompile between runs) passes on a retry. Investigated but not root-
+caused: ruled out stale Gradle daemon reuse (`--no-daemon` still flakes) and Kotlin
+incremental-compilation staleness (`compileKotlin` shows `UP-TO-DATE` on both failing and
+passing runs) — looks like a JVM/Kotlin class-initialization race specific to this sandbox,
+not a logic bug in the code itself. If it recurs, re-run the task rather than trusting a
+single red result.

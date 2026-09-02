@@ -50,7 +50,11 @@ object BoardLayouts {
      */
     fun firstTier(): TierBoard {
         val squares = buildList {
-            add(SquareType.BIRTH_CANAL to null) // also "Start" on the 1st Tier
+            // Compound square: "Start" (also just "Birth Canal" everywhere else) plus its own
+            // printed Warp text — "If you land here, Warp 5 spaces" — on top of the board's 3
+            // dedicated Warp squares (also 5 spaces each), confirmed by the user. Only relevant
+            // if a token loops all the way back around to Start.
+            add(SquareType.BIRTH_CANAL to "Start. If you land here, Warp 5 spaces.")
             add(SquareType.TIME_WRINKLE to "Go again")
             add(SquareType.FATE_HARVEST to null)
             add(SquareType.ABYSS to null)
@@ -59,18 +63,18 @@ object BoardLayouts {
             add(SquareType.FATE_HARVEST to null)
             add(SquareType.NEBULA to null)
             add(SquareType.MARAUDER_SENSOR to null)
-            add(SquareType.FATE_HARVEST to null)
-            add(SquareType.ZONE_OF_PROTECTION to null) // "if you land here, enter Second Zone of Protection"
+            add(SquareType.WARP to "Warp 5 spaces")
+            add(SquareType.ZONE_OF_PROTECTION to "If you land here, enter Second Zone of Protection")
             add(SquareType.ABYSS to null)
             add(SquareType.FATE_HARVEST to null)
-            add(SquareType.ZONE_OF_PROTECTION to null) // "if you land here, enter First Zone of Protection"
-            add(SquareType.WARP to null) // "Warp 5 spaces"
-            add(SquareType.NEBULA to null)
+            add(SquareType.ZONE_OF_PROTECTION to "If you land here, enter First Zone of Protection")
+            add(SquareType.WARP to "Warp 5 spaces")
+            add(SquareType.WARP to "Warp 5 spaces")
             add(SquareType.FATE_HARVEST to null)
             add(SquareType.TIME_WRINKLE to "Go again")
             add(SquareType.ABYSS to null)
             add(SquareType.MARAUDER_TRANSPORT to null)
-            add(SquareType.HYPERTHRUST to null) // "Hyperthrust! Move 6 spaces, any tokens you pass are destroyed"
+            add(SquareType.HYPERTHRUST to "Hyperthrust! Move 6 spaces, any tokens you pass are destroyed")
             add(SquareType.REPRIEVE to null)
             add(SquareType.NEBULA to null)
             add(SquareType.MARAUDER_SENSOR to null)
@@ -79,7 +83,7 @@ object BoardLayouts {
             add(SquareType.MARAUDER_TRANSPORT to null)
             add(SquareType.NEBULA to null)
         }
-        val magnitudes = mapOf(10 to 2, 13 to 1, 14 to 5, 20 to 6)
+        val magnitudes = mapOf(0 to 5, 9 to 5, 10 to 2, 13 to 1, 14 to 5, 15 to 5, 20 to 6)
         return TierBoard(
             TierLevel.FIRST,
             squares.mapIndexed { index, (type, note) ->
@@ -150,9 +154,9 @@ object BoardLayouts {
     fun secondTier(): TierBoard {
         val squares = buildList {
             add(SquareType.BIRTH_CANAL to null)
-            add(SquareType.WARP to null) // "Warp 7 spaces"
+            add(SquareType.WARP to "Warp 7 spaces")
             add(SquareType.ABYSS to null)
-            add(SquareType.ZONE_OF_PROTECTION to null) // "enter Third Zone of Protection"
+            add(SquareType.ZONE_OF_PROTECTION to "Enter Third Zone of Protection")
             add(SquareType.MARAUDER_CONSTRUCTION_FACILITY to null)
             add(SquareType.FATE_HARVEST to null)
             add(SquareType.MARAUDER_TRANSPORT to null)
@@ -161,7 +165,7 @@ object BoardLayouts {
             add(SquareType.FATE_HARVEST to null)
             add(SquareType.NEBULA to null)
             add(SquareType.MARAUDER_SENSOR to null)
-            add(SquareType.HYPERTHRUST to null) // "Move 7 spaces, any tokens you pass are destroyed"
+            add(SquareType.HYPERTHRUST to "Move 7 spaces, any tokens you pass are destroyed")
             add(SquareType.WORMHOLE_OF_CONSTRUCTION to null)
             add(SquareType.MARAUDER_TRANSPORT to null)
             add(SquareType.ABYSS to null)
@@ -210,8 +214,8 @@ object BoardLayouts {
     fun thirdTier(): TierBoard {
         val squares = buildList {
             add(SquareType.BIRTH_CANAL to null)
-            add(SquareType.HYPERTHRUST to null) // "Move 9 spaces, any tokens you pass are destroyed"
-            add(SquareType.ZONE_OF_PROTECTION to null) // "if you land here, enter Fourth Zone of Protection"
+            add(SquareType.HYPERTHRUST to "Move 9 spaces, any tokens you pass are destroyed")
+            add(SquareType.ZONE_OF_PROTECTION to "If you land here, enter Fourth Zone of Protection")
             add(SquareType.REPRIEVE to null)
             add(SquareType.MARAUDER_TRANSPORT to null)
             add(SquareType.ABYSS to null)

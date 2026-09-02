@@ -59,10 +59,6 @@ data class MoveResult(
  * - Precedence-card interruption mid-roll (rulebook rule #23) — a live multi-player synchronization
  *   concern for whatever orchestrates turns (the eventual UI), not something a stateless engine
  *   function can represent.
- * - Reprieve's protection is only applied for a Marauder mover, matching the rulebook's literal
- *   wording ("Any token occupying this space is safe from Marauders"); Hyperthrust's identical
- *   pass-through-destroys text never mentions Reprieve, so Hyperthrust does NOT respect it here —
- *   a judgment call, not confirmed with the user.
  */
 object TurnEngine {
 
@@ -92,7 +88,7 @@ object TurnEngine {
     fun moveMarauder(state: GameState, color: PlayerColor, tier: TierLevel, fromPosition: Int, spaces: Int): MoveResult {
         val board = state.boards.getValue(tier)
         val toRaw = fromPosition + spaces
-        val destroyed = destroyTokensPassed(state, tier, color, board, fromPosition, toRaw, respectReprieve = true)
+        val destroyed = destroyTokensPassed(state, tier, color, board, fromPosition, toRaw)
         val landed = board.squareAt(toRaw)
         state.players.getValue(color).marauders.move(tier, fromPosition, landed.index)
         return resolveMarauderLanding(state, color, tier, board, landed, destroyed)
@@ -148,7 +144,7 @@ object TurnEngine {
             SquareType.HYPERTHRUST -> {
                 val magnitude = requireNotNull(square.magnitude) { "Hyperthrust square on $tier has no magnitude set" }
                 val fromIndex = square.index
-                val destroyed = destroyTokensPassed(state, tier, color, board, fromIndex, fromIndex + magnitude, respectReprieve = false)
+                val destroyed = destroyTokensPassed(state, tier, color, board, fromIndex, fromIndex + magnitude)
                 val landed = board.squareAt(fromIndex + magnitude)
                 pool.moveInPlay(fromIndex, landed.index)
                 val after = resolveTierLanding(state, color, tier, board, landed)
@@ -176,7 +172,7 @@ object TurnEngine {
             SquareType.MARAUDER_SENSOR -> {
                 val fromIndex = square.index
                 val toRaw = fromIndex + 2
-                val moreDestroyed = destroyTokensPassed(state, tier, color, board, fromIndex, toRaw, respectReprieve = true)
+                val moreDestroyed = destroyTokensPassed(state, tier, color, board, fromIndex, toRaw)
                 val landed = board.squareAt(toRaw)
                 state.players.getValue(color).marauders.move(tier, fromIndex, landed.index)
                 resolveMarauderLanding(state, color, tier, board, landed, destroyedSoFar + moreDestroyed)
@@ -192,8 +188,10 @@ object TurnEngine {
      * does), per the Marauders section ("Your Marauders destroy the tokens of other players by
      * passing them... If a Marauder lands on a space occupied by another token, that token is not
      * destroyed") and Hyperthrust's identically-worded square text. Never destroys the mover's own
-     * tokens. [respectReprieve] should be true for a Marauder mover, false for Hyperthrust — see
-     * this file's class doc.
+     * tokens. A Tier token on Reprieve is never destroyed this way, regardless of what's passing —
+     * "Any normal token on Reprieve cannot be destroyed" (confirmed by the user, applies uniformly
+     * to Marauder and Hyperthrust pass-through alike). A Marauder on Reprieve is NOT protected —
+     * Reprieve only shields ordinary Tier tokens.
      */
     private fun destroyTokensPassed(
         state: GameState,
@@ -202,13 +200,12 @@ object TurnEngine {
         board: TierBoard,
         fromIndex: Int,
         toIndex: Int,
-        respectReprieve: Boolean,
     ): List<TokenRef> {
         val destroyed = mutableListOf<TokenRef>()
         for (square in board.squaresPassedBetween(fromIndex, toIndex)) {
-            if (respectReprieve && square.type == SquareType.REPRIEVE) continue
             for (ref in tokensAt(state, tier, square.index)) {
                 if (ref.color == moverColor) continue
+                if (square.type == SquareType.REPRIEVE && ref.kind == TokenKind.TIER_TOKEN) continue
                 destroyed += ref
                 when (ref.kind) {
                     TokenKind.TIER_TOKEN -> state.players.getValue(ref.color).tierPool(tier).destroyInPlay(ref.position)

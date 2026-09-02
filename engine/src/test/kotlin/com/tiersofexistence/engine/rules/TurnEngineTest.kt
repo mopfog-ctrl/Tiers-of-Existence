@@ -184,6 +184,28 @@ class TurnEngineTest {
         assertEquals(0, result.finalPosition)
     }
 
+    @Test
+    fun `Reprieve protects a tier token from Hyperthrust too`() {
+        val board = boardOf(
+            TierLevel.FIRST,
+            Square(0, SquareType.BIRTH_CANAL),
+            Square(1, SquareType.HYPERTHRUST, magnitude = 3),
+            Square(2, SquareType.REPRIEVE),
+            plain(3),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+        val red = game.players.getValue(RED)
+        val green = game.players.getValue(GREEN)
+        red.tierPool(TierLevel.FIRST).startToken()
+        green.tierPool(TierLevel.FIRST).startToken()
+        green.tierPool(TierLevel.FIRST).moveInPlay(0, 2) // sits on Reprieve, in Hyperthrust's path
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 1)
+
+        assertTrue(result.destroyedTokens.isEmpty())
+        assertEquals(1, green.tierPool(TierLevel.FIRST).inPlayCount)
+    }
+
     // --- Marauder movement ---
 
     @Test
@@ -234,6 +256,22 @@ class TurnEngineTest {
 
         assertTrue(result.destroyedTokens.isEmpty())
         assertEquals(1, green.tierPool(TierLevel.FIRST).inPlayCount)
+    }
+
+    @Test
+    fun `Reprieve does not protect a passed Marauder`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.REPRIEVE), plain(2))
+        val game = gameWith(TierLevel.FIRST, board)
+        val red = game.players.getValue(RED)
+        val green = game.players.getValue(GREEN)
+        red.marauders.placeOnBirthCanal(TierLevel.FIRST)
+        green.marauders.placeOnBirthCanal(TierLevel.FIRST)
+        green.marauders.move(TierLevel.FIRST, 0, 1) // Marauder sitting on Reprieve
+
+        val result = TurnEngine.moveMarauder(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 2)
+
+        assertEquals(listOf(TokenRef(GREEN, TokenKind.MARAUDER, 1)), result.destroyedTokens)
+        assertEquals(0, green.marauders.inPlayCount(TierLevel.FIRST))
     }
 
     @Test
