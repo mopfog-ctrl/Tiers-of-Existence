@@ -125,13 +125,19 @@ missing code — results below.
     independent of whose turn it is. `PlayerState.hasPlayedCardThisPhase` (already
     per-Phase, not per-turn — see the resolved ambiguity above) is what actually caps this:
     once a player's used their one card for the Phase, there's no card-related reason left
-    to keep their turn open, regardless of scope. Playing is always optional, per the
-    user — "they may choose not to play any cards, even if they could" — so this isn't the
-    engine forcing a decision when a legal play exists; it's the player choosing to pass on
-    it (holding a `HELD` card for a later Phase, or simply not playing at all that Phase).
-    Turn-resolution needs an explicit "player is done, advance" signal from whoever's
-    driving the turn (the UI, in the eventual app), not just an automatic computation of
-    "no legal actions remain."
+    to keep their turn open, regardless of scope. **Correction:** playing is optional only
+    for `CardTiming.HELD` cards, not universally — the user's "they may choose not to play
+    any cards, even if they could" was about held cards specifically, and the rulebook is
+    explicit that the other timing exists: "Immediate cards must be played immediately...
+    If it has an 'I' in the silver rectangle, it must be played immediately" (rule #14).
+    `FateHarvestCatalog` already models this correctly (`CardTiming.IMMEDIATE`, 12 cards, vs.
+    `HELD`, 20 cards) and it's already cited on `PlayerState`'s doc comments — nothing to
+    fix in the data, just don't build turn-resolution as if every card play were a choice:
+    drawing an Immediate card forces it to resolve right then, no "pass" option, while a
+    Held card is the player's call whether to play now or hold for later. Turn-resolution
+    needs an explicit "player is done, advance" signal from whoever's driving the turn (the
+    UI, in the eventual app) to close out the Held-card-optional case — not just an
+    automatic computation of "no legal actions remain."
 
   The rulebook's clearest illustration (the "Example," Rounds/Phases/Turns p.5) confirms a
   player takes their turn on their highest eligible Tier first within a Round — already
