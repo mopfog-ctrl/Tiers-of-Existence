@@ -72,6 +72,34 @@ object InfernalAbyssResolver {
 }
 
 /**
+ * Graviton Rift: the Black player removes any one token (of any type) from EACH Tier — up to 4
+ * total, skipping any Tier with no tokens on it. [targets] should contain at most one entry per
+ * Tier (the caller only includes an entry for a Tier where a token was actually chosen); a
+ * named Zone-of-Protection exception (rule 12), so [DestructionCardResolver]'s ZoP check always
+ * passes here regardless — still run uniformly rather than special-cased away, so this stays
+ * correct if the exception list ever changes.
+ */
+object GravitonRiftResolver {
+    fun resolve(state: GameState, request: CardPlayRequest, targets: List<CardTarget>): CardPlayResult {
+        val tiers = targets.mapNotNull { it.tierOrNull }
+        require(tiers.size == tiers.distinct().size) { "Graviton Rift may only target one token per Tier, got $targets" }
+
+        for (target in targets) {
+            if (target is CardTarget.ZoneResidentToken) {
+                val zoneError = TargetValidator.validateZoneOfProtection(request.card, request.sourcePlayer, target, ownTokenMovementAllowed = false)
+                if (zoneError != null) return CardPlayResult.Rejected(request, zoneError)
+            }
+        }
+
+        val playResult = CardLifecycle.attemptPlay(state, request)
+        if (playResult !is CardPlayResult.Resolved) return playResult
+
+        targets.forEach { DestructionCardResolver.destroy(state, it) }
+        return playResult
+    }
+}
+
+/**
  * Corpuscle Rot: a compound Yellow-only effect — destroy one 4th Tier token (any owner, a named
  * Zone-of-Protection exception, reusing [DestructionCardResolver] for that half) AND start one
  * new token each on the Yellow player's own 1st and 2nd Tier Birth Canals. Per
