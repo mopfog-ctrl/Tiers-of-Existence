@@ -100,4 +100,80 @@ class GameStateTest {
 
         assertEquals(PlayerColor.RED, game.currentTurn)
     }
+
+    // --- Deferred turn modifiers (Phase Loss / Phase Control / matching Time Wrinkle squares) ---
+
+    @Test
+    fun `queueSkipNextTierTurn never affects the turn in progress, only the Tier's next occurrence`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED, PlayerColor.GREEN))
+        game.skipEmptyPhases()
+        assertEquals(PlayerColor.RED, game.currentTurn)
+
+        game.queueSkipNextTierTurn(PlayerColor.RED, TierLevel.FIRST) // drawn as part of RED's current turn
+        game.endTurn() // RED's current turn still happens normally
+        assertEquals(PlayerColor.GREEN, game.currentTurn)
+
+        game.endTurn() // Round 2's 1st Tier Phase: RED is skipped, only GREEN plays
+        assertEquals(2, game.roundNumber)
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(PlayerColor.GREEN, game.currentTurn)
+
+        game.endTurn() // Round 3: the skip was consumed, RED is back to normal
+        assertEquals(3, game.roundNumber)
+        assertEquals(PlayerColor.RED, game.currentTurn)
+    }
+
+    @Test
+    fun `queueExtraTierTurn splices into the live queue when that Tier's Phase is already active`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED, PlayerColor.GREEN))
+        game.skipEmptyPhases()
+        assertEquals(PlayerColor.RED, game.currentTurn) // RED hasn't taken this Phase's turn yet
+
+        game.queueExtraTierTurn(PlayerColor.RED, TierLevel.FIRST)
+
+        assertEquals(PlayerColor.RED, game.currentTurn) // still RED's normal turn first
+        game.endTurn()
+        assertEquals(PlayerColor.RED, game.currentTurn) // the extra turn, taken right after
+        game.endTurn()
+        assertEquals(PlayerColor.GREEN, game.currentTurn) // then GREEN, as normal
+    }
+
+    @Test
+    fun `queueExtraTierTurn for a Phase not currently active is applied and consumed at its next occurrence`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED, PlayerColor.GREEN))
+        assertEquals(Phase.Marauder, game.currentPhase) // not the 1st Tier Phase yet
+
+        game.queueExtraTierTurn(PlayerColor.RED, TierLevel.FIRST)
+        game.skipEmptyPhases()
+
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(PlayerColor.RED, game.currentTurn)
+        game.endTurn()
+        assertEquals(PlayerColor.RED, game.currentTurn) // the granted extra turn
+        game.endTurn()
+        assertEquals(PlayerColor.GREEN, game.currentTurn)
+
+        game.endTurn() // Round 2: the extra turn was consumed, doesn't repeat
+        assertEquals(2, game.roundNumber)
+        assertEquals(PlayerColor.RED, game.currentTurn)
+        game.endTurn()
+        assertEquals(PlayerColor.GREEN, game.currentTurn) // no second RED turn this time
+    }
+
+    @Test
+    fun `two independent ExtraTierTurn triggers each grant their own turn, never more than one repeat each`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED, PlayerColor.GREEN))
+        game.skipEmptyPhases()
+
+        game.queueExtraTierTurn(PlayerColor.RED, TierLevel.FIRST)
+        game.queueExtraTierTurn(PlayerColor.RED, TierLevel.FIRST)
+
+        assertEquals(PlayerColor.RED, game.currentTurn)
+        game.endTurn()
+        assertEquals(PlayerColor.RED, game.currentTurn) // extra #1
+        game.endTurn()
+        assertEquals(PlayerColor.RED, game.currentTurn) // extra #2
+        game.endTurn()
+        assertEquals(PlayerColor.GREEN, game.currentTurn) // no third repeat
+    }
 }
