@@ -36,3 +36,25 @@ sealed class CardTarget {
     /** Another player, not a token (Cleansing's "choose an opponent"). */
     data class PlayerChoice(val color: PlayerColor) : CardTarget()
 }
+
+/** The Tier a target refers to, where it has one — null for [CardTarget.PlayerChoice]. */
+val CardTarget.tierOrNull: TierLevel?
+    get() = when (this) {
+        is CardTarget.Token -> tier
+        is CardTarget.StagingPileToken -> tier
+        is CardTarget.ZoneResidentToken -> tier
+        is CardTarget.TierChoice -> tier
+        is CardTarget.PlayerChoice -> null
+    }
+
+/** The player who owns a target, where it has an owner distinct from the acting player — null
+ * for [CardTarget.TierChoice] and [CardTarget.PlayerChoice] (that IS the owner-like value there,
+ * accessed via [CardTarget.PlayerChoice.color] instead). */
+val CardTarget.ownerOrNull: PlayerColor?
+    get() = when (this) {
+        is CardTarget.Token -> owner
+        is CardTarget.StagingPileToken -> owner
+        is CardTarget.ZoneResidentToken -> owner
+        is CardTarget.TierChoice -> null
+        is CardTarget.PlayerChoice -> null
+    }
