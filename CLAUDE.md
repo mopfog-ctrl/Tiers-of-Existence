@@ -45,7 +45,14 @@ Gradle multi-module project:
   live here: token lifecycle (Ion Battery → Staging Pile → promotion, Hatchery overflow),
   the full Fate Harvest card catalog, turn/phase order, dice, and `TurnEngine` (roll → move →
   resolve the landed square). Fully unit-testable without an Android SDK or emulator —
-  `./gradlew :engine:test`.
+  `./gradlew :engine:test`. Within `engine/`, the card-playing layer is split from the
+  catalog: `cards/` holds the static catalog (`FateHarvestCard`/`FateHarvestCatalog`/
+  `FateHarvestDeck`) plus the live-play model (`cards/play/`: `CardTarget`, `CardPlayRequest`,
+  `CardPlayResult`, `TargetValidator`, `CardLifecycle`, `TokenLocator`) and the actual per-card
+  effect implementations (`cards/resolvers/`, dispatched by name via `CardEffectDispatcher`);
+  `rules/precedence/` holds the Precedence interaction-chain state machine
+  (`InteractionChain`); `state/` holds `GameState`/the token pools/`TokenId` (see "Card engine"
+  below for what each of these actually does and how far along it is).
 - **`app/`** — Android/Compose UI module, depends on `engine`. Currently just a placeholder
   screen proving the dependency wires up.
 
@@ -58,13 +65,23 @@ This repo has been developed in a sandbox with **no Android SDK** and a network 
 blocks `dl.google.com` (Google's Maven repo, needed for the Android Gradle Plugin and
 AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
 
-- `./gradlew :engine:test` works and is how engine logic gets verified here.
 - Building or running `:app` requires Android Studio (or any environment with a real
   Android SDK and unrestricted network) — it cannot be verified in this sandbox.
-- If your environment also lacks a JDK 17 toolchain, `engine/build.gradle.kts` requests
-  `jvmToolchain(17)`; a `foojay-resolver-convention` plugin is wired up in
-  `settings.gradle.kts` to auto-download one, but that also needs `dl.google.com`/Adoptium
-  network access some sandboxes block.
+- `./gradlew :engine:test` is how engine logic gets verified here, but a bare invocation of
+  that command can still fail for reasons unrelated to engine code, because Gradle evaluates
+  every project in `settings.gradle.kts` (including `:app`) during configuration even when
+  only `:engine`'s task is requested. Two specific failure modes seen in some sandboxes, both
+  about the *sandbox*, not the code:
+  - `:app`'s Android Gradle Plugin can't resolve (needs `dl.google.com`) even though nothing
+    about `:engine:test` needs it — pass `--configure-on-demand` to avoid eagerly configuring
+    `:app` at all.
+  - If your environment also lacks a JDK 17 toolchain, `engine/build.gradle.kts` requests
+    `jvmToolchain(17)`; the `foojay-resolver-convention` plugin wired up in
+    `settings.gradle.kts` to auto-download one also needs `dl.google.com`/Adoptium network
+    access some sandboxes block. If only a newer JDK (e.g. 21) is available and there's no way
+    to provision 17, a **local, uncommitted** edit bumping `jvmToolchain(17)` to match what's
+    actually installed lets `:engine:test` run — revert it before committing; do not check in
+    a toolchain change made only to work around a specific sandbox's missing JDK.
 
 ## Card/token rule cross-checks already validated
 
@@ -99,38 +116,23 @@ AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
   separate, Tier-independent check (a Marauder can have a turn on a Tier with zero Tier
   tokens present).
 
-## Turn-resolution engine: base mechanics built, card effects deferred
+## Turn-resolution engine: base mechanics
 
-`rules/TurnEngine.kt` now does the roll → move → resolve-the-landed-square work, on top of
-`GameState`'s new turn-queue (`currentTurn`, `endTurn(grantAnotherTurn)`, `skipEmptyPhases()`)
-and `Dice.rollForPhase(phase)` (both dice summed for a Tier Phase, purple only for the
-Marauder Phase). This is the base mechanics layer the user asked for first; see
-`TurnEngine`'s class doc for the exact scope. Implemented: Tier token movement and landing
-effects for Nebula (staging pile + promotion), Vortex of Regression, Wormhole of
-Construction, You Win (exact-landing only), Infernal Abyss, Hyperthrust (pass-through
-destroy + chained landing resolution), Fate Harvest (draw + hold), and Marauder Construction
-Facility (flagged, build is a separate opt-in call); Marauder movement with pass-through
-destruction (Reprieve-protected), and the rulebook's "only Transport/Sensor/Abyss affect a
-Marauder" landing rules. `GameState.endTurn(grantAnotherTurn = true)` is the mechanism for
-"Go again" chaining — deciding *when* to pass that flag is left to whatever drives turns.
-
-Deliberately NOT implemented yet, so as not to guess at a much larger task — interpreting
-how each of the other ~30 Fate Harvest cards actually changes game state is future work:
-- Any individual card's effect beyond drawing/holding (Corpuscle Rot, Galactic Roundabout,
-  Divine Assistance, etc. — none of them do anything yet when "played").
-- Precedence-card interruption mid-roll (rule #23) — a live multi-player synchronization
-  concern for the eventual UI, not something a stateless engine function can represent.
-- Zone of Protection as real token state — landing on the entry square is reported but
-  nothing tracks a token as "now protected."
-- Warp's actual effect (genuinely ambiguous in the rulebook — "usually affects movement").
-  Every Warp/Hyperthrust/Zone-of-Protection-entry square's printed text is now captured in
-  `Square.note` (previously left as a code comment on some squares, not actual data —
-  fixed). The 1st Tier has 3 dedicated Warp squares (indices 9, 14, 15 — corrected from an
-  earlier, wrong single-Warp read) plus a 4th "Warp 5 spaces" reference as compound text on
-  Birth Canal/Start itself ("If you land here, Warp 5 spaces," only relevant if a token
-  loops all the way back to Start) — all confirmed by the user, all 5 spaces.
-- Two Time Wrinkle variants ("lose next turn on this Tier," "take an extra turn, First
-  Tier") that need deferred/cross-Phase state beyond what exists; "Go again" is supported.
+`rules/TurnEngine.kt` does the roll → move → resolve-the-landed-square work, on top of
+`GameState`'s turn-queue (`currentTurn`, `endTurn(grantAnotherTurn)`, `skipEmptyPhases()`) and
+`Dice.rollForPhase(phase)` (both dice summed for a Tier Phase, purple only for the Marauder
+Phase). Implemented: Tier token movement and landing effects for Nebula (staging pile +
+promotion), Vortex of Regression, Wormhole of Construction, You Win (exact-landing only,
+idempotent — `GameState.declareWinner` no-ops once a winner is set, so a later token's exact
+landing in the same or a later resolution can never overwrite the first), Infernal Abyss,
+Hyperthrust (pass-through destroy + chained landing resolution), Warp (chained like
+Hyperthrust but never destroys anything passed — see "Card engine" below), Zone of Protection
+entry, Fate Harvest (draw + hold), and Marauder Construction Facility (flagged, build is a
+separate opt-in call); Marauder movement with pass-through destruction (Reprieve-protected),
+and the rulebook's "only Transport/Sensor/Abyss affect a Marauder" landing rules.
+`GameState.endTurn(grantAnotherTurn = true)` is the mechanism for "Go again" chaining —
+deciding *when* to pass that flag is left to whatever drives turns; `DeferredTurnModifier`
+(below) handles the two Time Wrinkle variants "Go again" can't.
 
 **Resolved:** Reprieve's protection is unconditional for Tier tokens — "Any normal token on
 Reprieve cannot be destroyed," confirmed by the user, applying to Marauder pass-through
@@ -139,15 +141,185 @@ between the two). It does NOT protect Marauders — "Marauders can be [destroyed
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
 
-## Known flaky test (sandbox-specific, not a code bug)
+## Card engine: shared infrastructure plus 23 of 32 cards implemented
 
-`./gradlew :engine:test` has intermittently failed (~50% of runs seen in this sandbox, both
-with and without `--no-daemon`, both before and after this session's `GameState` changes)
-with a `NullPointerException` inside `TurnOrder.turnsFor`'s own null-check on its `phase`
-parameter, always originating from `GameState.<init>` populating the turn queue. Identical
-compiled bytecode (no recompile between runs) passes on a retry. Investigated but not root-
-caused: ruled out stale Gradle daemon reuse (`--no-daemon` still flakes) and Kotlin
-incremental-compilation staleness (`compileKotlin` shows `UP-TO-DATE` on both failing and
-passing runs) — looks like a JVM/Kotlin class-initialization race specific to this sandbox,
-not a logic bug in the code itself. If it recurs, re-run the task rather than trusting a
-single red result.
+`docs/card-mechanics-matrix.md` is the implementation spec — an audit of all 32 unique Fate
+Harvest cards' actual mechanical requirements (targets, Zone-of-Protection/Reprieve
+interaction, Precedence/Annulment behavior, required engine state) cross-checked against
+`docs/rulebook.txt` and independently re-verified once. Read it before touching card logic;
+it also lists 17 open rules questions the rulebook doesn't resolve (§4), several of which are
+why specific cards below aren't implemented yet.
+
+**Runtime card-play model** (`cards/play/`), deliberately separate from the catalog
+(`FateHarvestCard` stays a plain data description, never mutated into carrying runtime
+state):
+- `CardTarget` — what a play points at: `Token` (a persistent `TokenId`, see below),
+  `StagingPileToken` (owner+Tier only — Staging Pile contents are genuinely fungible, no
+  identity needed), `TierChoice`, `PlayerChoice`.
+- `CardPlayRequest`/`TriggeringEvent`/`CardPlayResult` — a live play attempt, why it's
+  happening (drawn from a square / played from hand / responding in a Precedence chain), and
+  its outcome (`Resolved`/`Rejected` with a reason/`AwaitingDecision`/`EnteredHand`).
+- `TargetValidator` — shared, card-agnostic legality: Color restriction (rule 18), the
+  per-Phase play limit (rule 4), `restrictedToPhase` (Planetary/Emitting Nebula's own-Phase
+  restriction), and Zone-of-Protection legality (the 5 named rule-12 exceptions plus the
+  "your own movement card on your own token" carve-out, which callers opt into per-card
+  rather than inferring from "is this the player's own token" — Infernal Abyss is the
+  counter-example that still blocks the player's own Zone-resident token).
+- `CardLifecycle` — the Immediate (draw → validate → resolve atomically → discard) vs. Held
+  (draw → hand → validate-on-play → resolve → leave hand, giving the card back on a rejected
+  attempt) lifecycle, built on `TargetValidator`.
+- `TokenLocator` — resolves a `TokenId` to its live `TokenLocation` (`InPlay`/`InZone`/
+  `NoLongerExists`) at the moment a resolver actually needs it; see `TokenId` below for why
+  this exists.
+
+**Token identity** (`state/TokenId.kt`): every Tier token and Marauder gets a stable
+`TokenId(owner, kind, tier, ordinal)` when it enters play (`TierTokenPool.startToken`/
+`MarauderPool.placeOnBirthCanal`, both return it), retained across every move/Zone
+entry-exit/Staging transition until it leaves play, then retired for good (a later token
+started from the same Ion Battery gets an unrelated id — no identity is modeled across
+destruction and rebirth). Position is deliberately not part of identity. This exists because
+a Precedence chain can hold several responses targeting the same token; since they resolve in
+reverse play order, an earlier-resolving response can move or destroy a token a later
+response still needs to find — `CardTarget.Token` only ever carries the id, and every
+resolver re-locates it via `TokenLocator` at resolution time rather than trusting a stale
+recorded position. If a target no longer exists by then, resolution rejects gracefully
+(`TargetValidationError.NoLegalTarget`) rather than crashing — see
+`PrecedenceCardEffectIntegrationTest` for the reverse-order-conflict and
+destroyed-before-resolution regression cases, and `DestructionCardResolversTest` for the
+unit-level one.
+
+**Precedence interaction chain** (`rules/precedence/InteractionChain.kt`) is a genuine state
+machine per rules 20-23, not a list plus reverse iteration: `SuspendedAction` (a pending
+roll/move/card resolution) opens a chain with an eligible-player list; each player `respond`s
+(adding a Precedence card, which re-opens the response round for everyone) or `pass`es; the
+window auto-closes once everyone's passed since the last new entry; `resolve()` returns
+surviving entries in reverse play order for the caller to apply. Exposes who's currently
+eligible to act, what's being responded to, who's passed, and the full entry history
+(cancelled entries kept, not deleted). Annulment gets its own structural handling — it
+splices out the immediately preceding still-standing entry (or, as the chain's first entry
+against a pending card resolution, cancels that card directly) rather than being just another
+resolvable entry; double-Annulment leaves the earlier cancellation permanent (a documented
+engine choice, matrix §4 Q11, not a rulebook-confirmed one).
+
+**`CardEffectDispatcher`** maps a `CardPlayRequest` to its resolver by card name — the piece
+that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) actually mutate
+`GameState`, instead of every caller needing to know which resolver object handles which
+card.
+
+**Cards implemented** (23 of 32), via shared resolvers rather than one class per card
+(`cards/resolvers/`):
+- `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
+  limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
+- `MarauderConstructionCardResolver` (places a Marauder, bypassing the per-Tier cap): Dwarf
+  Star, Materialize Army, Essence Assimilator, Materialize Help.
+- `BirthCanalConstructionCardResolver` (starts a fresh token on one or more Birth Canals):
+  Verdant Growth, Elemental Rebirth, Planetary Nebula.
+- `StagingPileConstructionCardResolver` (adds directly to a Staging Pile, same promotion
+  check a Nebula landing runs): Lucky Nebula, Luckier Nebula, Emitting Nebula.
+- `DestructionCardResolver` (destroys one token anywhere, including a named Zone-of-
+  Protection exception): Divine Assistance, Insidious Flux.
+- `InfernalAbyssResolver`, `CorpuscleRotResolver`, `GravitonRiftResolver` — each layers a
+  card-specific rule (self-only-and-no-Zone-carve-out; compound destroy+construct;
+  up-to-4-Tiers, all targets validated before any are destroyed) on top of
+  `DestructionCardResolver`'s core.
+- `PhaseLossResolver`, `PhaseControlResolver` — thin wrappers over `DeferredTurnModifier`
+  (below).
+- Annulment (Antimatter) has no resolver of its own — it's handled structurally by
+  `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
+  resolved chain's entries already have Annulment spliced out.
+
+That's 22 cards dispatched by name plus Annulment = 23 of 32 actually playable end to end.
+
+**Not yet implemented** (9 of 32), each blocked on a specific open rules question rather than
+missing effort — see the cited matrix question before attempting:
+- **Plasma Burst** — how "3 neighboring squares" are selected (§4 Q8).
+- **Last Gasp** — whether its pass-through destroys the mover's own other tokens too, since
+  its wording omits the usual owner-exemption clause (§4 Q14).
+- **Fluidic Wave**, **Galactic Roundabout** — cross-Tier/whole-board effects; Galactic
+  Roundabout also has an open question about whether its Marauder movement triggers
+  pass-through destruction and how simultaneous near-wins resolve (§4 Q5). Of the 6
+  Precedence-flagged cards, 4 are implemented (Tactical Motion, Tactical Step, Annulment,
+  Graviton Rift) — Fluidic Wave and Last Gasp are the two still not implemented.
+- **Cleansing** — needs a generalized pending-decision primitive for "a player other than the
+  one who played the card must choose" (sketched as `PendingDecision` but not wired up).
+- **Radiation Burst** — whose Staging Piles "all" refers to, and whether emptying triggers
+  promotion (§4 Q6).
+- **Delayed Motion** — needs a post-roll/pre-move checkpoint in `TurnEngine` that doesn't
+  exist yet (no other card modifies a roll rather than a token).
+- **Circulate** — needs a "find the next Zone of Protection from here" board query, plus an
+  open question about targeting an opponent's token (§4 Q16).
+
+One more, **not** blocked on any open question, simply not built yet: **Parallel Phasing**
+("move any one of your own tokens forward 4 spaces AND move any other player's token forward
+4 spaces") needs a small two-target resolver of its own — `MovementCardResolver` only handles
+a single target — but is otherwise a plain Group 1 card with nothing ambiguous about it; the
+cheapest next card to add.
+
+**Warp is implemented**, not deferred — see below; it was the one item in this section that
+used to say "ambiguous," and isn't anymore.
+
+**Zone of Protection is real token state**, not just a reported landing event:
+`TierTokenPool` tracks Zone-resident tokens (`zoneResidents`/`enterZone`/`leaveZone`/
+`destroyInZone`) separately from main-loop positions — entering a Zone removes a token from
+`inPlayPositions` entirely, which is what makes ordinary movement/pass-through scans skip
+protected tokens automatically. Still counts toward the Tier's max-in-play cap. Moving a
+token *out* of a Zone via a movement card (rule 12's "your own token, your own Zone"
+carve-out) is still not implemented — the rulebook never states what distance/starting point
+that move would use (matrix §4 Q17) — `MovementCardResolver` gives an honest
+"not yet implemented" rejection rather than silently no-op'ing.
+
+**Warp uses each square's own printed magnitude**, never a hardcoded "Warp always means +5":
+1st Tier Warp squares move 5, the 2nd Tier's moves 7, resolved via `TurnEngine.resolveWarp`
+exactly like Hyperthrust's chaining but without pass-through destruction (Warp's rulebook
+text has no destroy clause). The 1st Tier's one confirmed compound square — Birth Canal/Start
+also printing "Warp 5 spaces" — chains a second Warp move after the Birth Canal's own (no-op)
+landing resolves.
+
+**Deferred turn-state modifiers** (`rules/DeferredTurnModifier.kt`) replace directly advancing
+the turn iterator several times: `SkipNextTierTurn` (Phase Loss, the "Lose next turn on this
+Tier" Time Wrinkle square) and `ExtraTierTurn` (Phase Control's same-Round case, the "Take an
+extra turn, First Tier" Time Wrinkle square) are queued on `GameState` and consumed exactly
+once when the matching Tier's turn queue is next built — independent triggers still stack,
+but a single trigger can never repeat a turn more than once. `GameState.queueExtraTierTurn`
+splices directly into the live queue when its target Tier's Phase is already active and the
+player's turn hasn't happened yet this Round; Phase Control's other case ("if your turn
+already ended this Round, play it immediately") is deliberately not a true interrupt — see
+that method's doc and matrix §4 Q15.
+
+**Known critical-failure risks, deliberately not fixed yet** (raised in an earlier review,
+explicitly deferred by the user pending a later pass — not silently missed): a base-engine
+gap where the rulebook's 1st-Tier "when below 2 in play, pull a new token straight from the
+Ion Battery" rule (distinct from the Hatchery-overflow rule that *is* implemented) isn't
+implemented, which can permanently strand a player out of 1st Tier turns; the 4
+Marauder-construction resolvers can crash if a player's Marauder Ion Battery is empty (a
+normal state — 4 Marauders total, 1 per Tier × 4 Tiers); `TierTokenPool.destroyFromStagingPile`
+crashes rather than rejecting gracefully if the chosen pile is empty. See
+`.claude/agents/rules-reference.md`'s "resource-exhaustion" and "1st Tier auto-replenishment"
+checklist items, added specifically so a future review catches these before they're forgotten.
+
+## `TurnOrder`/`GameState` construction NPE: investigated, not reproduced this session
+
+Historically, `./gradlew :engine:test` intermittently failed (~50% of runs in one sandbox
+session) with a `NullPointerException` inside `TurnOrder.turnsFor`'s null-check on its `phase`
+parameter, originating from `GameState.<init> -> buildTurnQueue() ->
+turnOrder.turnsFor(currentPhase, players)`. A later, systematic investigation (checked
+`Phase.ROUND_ORDER`/companion-object initialization order, sealed-class/`data object`
+semantics, `GameState`'s own init-block ordering, Gradle/JUnit parallelism configuration,
+shared mutable state, JVM/toolchain interaction) found **no structural bug**: this project has
+no JUnit parallel-execution config and Gradle's `test` task doesn't set `maxParallelForks`, so
+test execution is single-threaded; `Phase.ROUND_ORDER`'s companion object referencing sealed-
+subtype singletons is an ordinary, non-circular Kotlin pattern; no shared mutable state was
+found that one test could leave corrupted for another.
+
+The NPE could not be reproduced in that session despite roughly 50 manual `./gradlew`
+invocations (with and without `--no-daemon`, with a substitute JDK 21 toolchain, once with
+`-Xint` to rule out a JIT-compiler miscompilation specifically) — every run passed. This
+doesn't prove the bug is fixed; it was simply never reproduced there to confirm one way or
+the other, and the machine used for that investigation had only just started (vs. the
+long-lived container where it originally reproduced often), which is circumstantial evidence
+for host/JVM-level nondeterminism rather than a deterministic code bug, not proof.
+`GameStateInitializationStressTest` (thousands of `GameState` constructions in a tight loop,
+exercising the exact failing path) passes consistently and is left in the suite as a
+permanent regression guard and a head start for whoever investigates the next recurrence. If
+it recurs: capture the actual stack trace and full failure output before retrying — that's
+the one thing every past investigation, including this one, has lacked.
