@@ -297,29 +297,55 @@ crashes rather than rejecting gracefully if the chosen pile is empty. See
 `.claude/agents/rules-reference.md`'s "resource-exhaustion" and "1st Tier auto-replenishment"
 checklist items, added specifically so a future review catches these before they're forgotten.
 
-## `TurnOrder`/`GameState` construction NPE: investigated, not reproduced this session
+## `TurnOrder`/`GameState` construction NPE: root-caused and fixed
 
 Historically, `./gradlew :engine:test` intermittently failed (~50% of runs in one sandbox
 session) with a `NullPointerException` inside `TurnOrder.turnsFor`'s null-check on its `phase`
 parameter, originating from `GameState.<init> -> buildTurnQueue() ->
-turnOrder.turnsFor(currentPhase, players)`. A later, systematic investigation (checked
-`Phase.ROUND_ORDER`/companion-object initialization order, sealed-class/`data object`
-semantics, `GameState`'s own init-block ordering, Gradle/JUnit parallelism configuration,
-shared mutable state, JVM/toolchain interaction) found **no structural bug**: this project has
-no JUnit parallel-execution config and Gradle's `test` task doesn't set `maxParallelForks`, so
-test execution is single-threaded; `Phase.ROUND_ORDER`'s companion object referencing sealed-
-subtype singletons is an ordinary, non-circular Kotlin pattern; no shared mutable state was
-found that one test could leave corrupted for another.
+turnOrder.turnsFor(currentPhase, players)`. An earlier investigation session couldn't
+reproduce it at all despite ~50 manual `./gradlew` invocations and concluded (correctly, as
+far as it went, but incompletely) that there was no structural bug in `Phase.ROUND_ORDER`'s
+initialization.
 
-The NPE could not be reproduced in that session despite roughly 50 manual `./gradlew`
-invocations (with and without `--no-daemon`, with a substitute JDK 21 toolchain, once with
-`-Xint` to rule out a JIT-compiler miscompilation specifically) — every run passed. This
-doesn't prove the bug is fixed; it was simply never reproduced there to confirm one way or
-the other, and the machine used for that investigation had only just started (vs. the
-long-lived container where it originally reproduced often), which is circumstantial evidence
-for host/JVM-level nondeterminism rather than a deterministic code bug, not proof.
-`GameStateInitializationStressTest` (thousands of `GameState` constructions in a tight loop,
-exercising the exact failing path) passes consistently and is left in the suite as a
-permanent regression guard and a head start for whoever investigates the next recurrence. If
-it recurs: capture the actual stack trace and full failure output before retrying — that's
-the one thing every past investigation, including this one, has lacked.
+A later session reproduced it reliably by testing a variable the earlier investigation hadn't
+tried: **how the test command selects which classes to run.** Running the full suite
+unfiltered never failed (15/15), and filtering to a *single* test class never failed (10/10),
+but filtering with **multiple** `--tests <FullyQualifiedClass>` patterns in one
+invocation (Gradle selecting a non-contiguous subset of test classes) failed on 7 of 15 runs —
+a rate matching the historical ~50% closely enough to be the same bug. Captured stack traces
+from failing runs all matched the historical shape exactly:
+`NullPointerException: Parameter specified as non-null is null: method
+TurnOrder.turnsFor, parameter phase`, with `Phase.ROUND_ORDER[phaseIndex]` (i.e.
+`GameState.currentPhase`) evaluating to a literal Java `null` despite `ROUND_ORDER` being a
+`List<Phase>` with no way to construct a null element in its source.
+
+**Root cause**: `Phase.ROUND_ORDER` lived in `Phase`'s companion object, eagerly initialized as
+`listOf(Marauder, Tier(TierLevel.FOURTH), ...)`. Building that list evaluates `Marauder` (a
+`data object`) and constructs `Tier(...)` instances — both nested subclasses of the sealed
+class `Phase` itself. But that list-construction code runs as part of the companion object's
+own construction, which is itself part of `Phase`'s `<clinit>`. So the first time anything
+touches `Phase`, the JVM ends up needing to initialize a *subclass* of `Phase`
+(`Phase$Marauder`/`Phase$Tier`) while `Phase`'s own class-initialization is still in progress —
+a legal, non-deadlocking reentrant cycle per JVMS §5.5, but one where the subclass's
+superclass-initialization check can observe `Phase` as "still initializing" rather than fully
+initialized. Under most classloading orders this resolves harmlessly; the specific
+non-contiguous multi-class discovery order Gradle uses for a multi-pattern `--tests` filter
+apparently perturbs timing enough to expose the narrow window where a sealed-subtype singleton
+gets read before it's actually assigned, producing a null list element.
+
+**Fix**: `engine/src/main/kotlin/com/tiersofexistence/engine/rules/Phase.kt` — changed
+`ROUND_ORDER` from an eager `=` initializer to `by lazy { ... }`. This defers building the list
+until the *first actual read* of `Phase.ROUND_ORDER`, by which point `Phase`'s own `<clinit>`
+has always already completed (accessing a lazy property never runs the initializer as a side
+effect of the containing class's own class-initialization), so `Marauder`/`Tier(...)` are
+always constructed against a fully-initialized `Phase` — no reentrancy, no race. This is a
+pure initialization-timing change: `ROUND_ORDER`'s value, order, and every other observable
+behavior are unchanged; no turn-order canon was touched.
+
+**Verified**: post-fix, the exact multi-class `--tests` command that failed 7/15 times before
+the fix passed 40/40 across two follow-up batches; the full suite (both normal and
+`--no-daemon`) passed 15/15 total post-fix runs. `GameStateInitializationStressTest`
+(thousands of `GameState` constructions in a tight loop, exercising the exact failing path)
+continues to pass and stays in the suite as a permanent regression guard, though note it alone
+never reproduced the bug in either investigation session — the multi-class `--tests` filter
+was the necessary trigger, not raw iteration count within a single already-loaded JVM.
