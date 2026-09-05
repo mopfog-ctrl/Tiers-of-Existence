@@ -44,6 +44,9 @@ sealed class PendingDecision {
 
 /** The outcome of attempting to resolve a [CardPlayRequest]. */
 sealed class CardPlayResult {
+    /** A Held card was drawn and placed in the player's hand — not played yet, no validation
+     * performed (see [com.tiersofexistence.engine.cards.play.CardLifecycle.onDrawnFromSquare]). */
+    data class EnteredHand(val request: CardPlayRequest) : CardPlayResult()
     data class Resolved(val request: CardPlayRequest) : CardPlayResult()
     data class Rejected(val request: CardPlayRequest, val reason: TargetValidationError) : CardPlayResult()
     data class AwaitingDecision(val request: CardPlayRequest, val pending: PendingDecision) : CardPlayResult()
