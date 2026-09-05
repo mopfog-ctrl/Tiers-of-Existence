@@ -8,6 +8,7 @@ import com.tiersofexistence.engine.cards.FateHarvestCard
 import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
 import com.tiersofexistence.engine.state.GameState
+import com.tiersofexistence.engine.state.TierTokenPool
 
 /** Which kind of token occupies a board position — used when scanning for tokens passed/landed on. */
 enum class TokenKind { TIER_TOKEN, MARAUDER }
@@ -28,6 +29,9 @@ sealed class SquareEffect {
     data object Won : SquareEffect()
     data class DrewCard(val card: FateHarvestCard) : SquareEffect()
     data object Destroyed : SquareEffect()
+    /** Entered a Zone of Protection (see [com.tiersofexistence.engine.state.TierTokenPool.enterZone]) —
+     * the token is now off the main loop and protected until a card moves it out or destroys it. */
+    data class EnteredZone(val zoneNumber: Int) : SquareEffect()
     /** Landed on a Marauder Construction Facility — building is the player's choice; call [TurnEngine.buildMarauder]. */
     data object MayBuildMarauder : SquareEffect()
     /** A Marauder landed on a Marauder Transport — moving is optional; call [TurnEngine.transportMarauder]. */
@@ -48,17 +52,20 @@ data class MoveResult(
  * Deliberately does NOT interpret Fate Harvest card effects (beyond drawing and, for [CardTiming.HELD]
  * cards, holding them) — that's a separate, much larger layer to build on top of this once the base
  * mechanics are solid. Specific things left unimplemented here, flagged rather than guessed:
- * - Warp's actual effect (the rulebook's "usually affects movement" is too vague to implement).
- * - Zone of Protection as real token state — landing on the entry square is reported via the plain
- *   [SquareType.ZONE_OF_PROTECTION] case (no special [SquareEffect]), but no "this token is now
- *   protected" state exists yet.
  * - Most Time Wrinkle variants — "Go again" is supported structurally via [GameState.endTurn]'s
  *   `grantAnotherTurn` parameter (the caller decides to pass that when a Go Again square/card fires),
  *   but "lose next turn on this Tier" and "take an extra turn, First Tier" need deferred/cross-Phase
- *   state that doesn't exist yet.
+ *   state (see `docs/card-mechanics-matrix.md` §3.5) that doesn't exist yet.
  * - Precedence-card interruption mid-roll (rulebook rule #23) — a live multi-player synchronization
  *   concern for whatever orchestrates turns (the eventual UI), not something a stateless engine
  *   function can represent.
+ *
+ * Now implemented: Zone of Protection as real token state ([SquareEffect.EnteredZone], see
+ * [com.tiersofexistence.engine.state.TierTokenPool.enterZone]) and Warp, using each square's own
+ * printed [Square.magnitude]/[Square.note] instead of a hardcoded "Warp always means +5" — the 1st
+ * Tier's Warp squares move 5, the 2nd Tier's moves 7, and the 1st Tier's compound Birth-Canal-with-
+ * Warp-note ("Start. If you land here, Warp 5 spaces.") chains a second Warp move after the Birth
+ * Canal's own (no-op) landing resolves, exactly matching what's printed there.
  */
 object TurnEngine {
 
@@ -108,6 +115,27 @@ object TurnEngine {
         square: Square,
     ): MoveResult {
         val pool = state.players.getValue(color).tierPool(tier)
+        val primary = resolvePrimaryTierLanding(state, color, tier, board, square, pool)
+        // Compound square: 1st Tier's Birth Canal/Start also prints its own Warp instruction
+        // ("Start. If you land here, Warp 5 spaces.") on top of the Birth Canal's own (no-op)
+        // landing — confirmed by the user, only relevant when a token loops all the way back
+        // to Start. Deliberately narrow (BIRTH_CANAL only) rather than a generic "any square
+        // whose note mentions Warp" rule, since this is the one confirmed compound case.
+        if (square.type == SquareType.BIRTH_CANAL && square.note?.contains("Warp", ignoreCase = true) == true && square.magnitude != null) {
+            val afterWarp = resolveWarp(state, color, tier, board, board.squareAt(primary.finalPosition))
+            return MoveResult(afterWarp.finalPosition, primary.destroyedTokens + afterWarp.destroyedTokens, afterWarp.landedSquareType, afterWarp.effect)
+        }
+        return primary
+    }
+
+    private fun resolvePrimaryTierLanding(
+        state: GameState,
+        color: PlayerColor,
+        tier: TierLevel,
+        board: TierBoard,
+        square: Square,
+        pool: TierTokenPool,
+    ): MoveResult {
         return when (square.type) {
             SquareType.NEBULA -> {
                 pool.sendToStagingPile(square.index)
@@ -150,8 +178,29 @@ object TurnEngine {
                 val after = resolveTierLanding(state, color, tier, board, landed)
                 MoveResult(after.finalPosition, destroyed + after.destroyedTokens, after.landedSquareType, after.effect)
             }
+            SquareType.ZONE_OF_PROTECTION -> {
+                val zoneNumber = requireNotNull(square.magnitude) { "Zone of Protection square on $tier has no zone number set" }
+                pool.enterZone(square.index, zoneNumber)
+                MoveResult(square.index, emptyList(), square.type, SquareEffect.EnteredZone(zoneNumber))
+            }
+            SquareType.WARP -> resolveWarp(state, color, tier, board, square)
             else -> MoveResult(square.index, emptyList(), square.type, SquareEffect.None)
         }
+    }
+
+    /**
+     * Warp: moves the token forward by this square's own printed [Square.magnitude] (5 on the
+     * 1st Tier, 7 on the 2nd — never a hardcoded global constant) and resolves whatever it
+     * lands on, chaining like Hyperthrust but WITHOUT pass-through destruction — the rulebook's
+     * Warp text says only "usually affects movement," with no destroy clause, unlike
+     * Hyperthrust's explicit "destroying any opponents' tokens... that you pass."
+     */
+    private fun resolveWarp(state: GameState, color: PlayerColor, tier: TierLevel, board: TierBoard, square: Square): MoveResult {
+        val magnitude = requireNotNull(square.magnitude) { "Warp square on $tier has no magnitude set" }
+        val pool = state.players.getValue(color).tierPool(tier)
+        val landed = board.squareAt(square.index + magnitude)
+        pool.moveInPlay(square.index, landed.index)
+        return resolveTierLanding(state, color, tier, board, landed)
     }
 
     private fun resolveMarauderLanding(

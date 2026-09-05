@@ -84,4 +84,86 @@ class TierTokenPoolTest {
 
         assertEquals(total, pool.totalOwned)
     }
+
+    // --- Zone of Protection residence (Phase G) ---
+
+    @Test
+    fun `entering a Zone removes the token from the main loop but keeps it in play`() {
+        val pool = TierTokenPool(TierLevel.FIRST)
+        pool.startToken()
+        pool.moveInPlay(0, 10)
+
+        pool.enterZone(fromPosition = 10, zoneNumber = 2)
+
+        assertTrue(pool.inPlayPositions.isEmpty())
+        assertEquals(listOf(2), pool.zoneResidents)
+        assertEquals(1, pool.inPlayCount) // still "in play" — on the board, just off the main loop
+        assertEquals(8, pool.totalOwned)
+    }
+
+    @Test
+    fun `a token inside a Zone still counts toward the max-in-play cap`() {
+        val pool = TierTokenPool(TierLevel.FIRST)
+        pool.startToken()
+        pool.moveInPlay(0, 10)
+        pool.enterZone(fromPosition = 10, zoneNumber = 2)
+        pool.startToken() // 1 in play (main loop) + 1 in Zone = 2, at the 1st Tier cap
+
+        pool.startToken() // should overflow to Hatchery, not exceed the cap
+
+        assertEquals(2, pool.inPlayCount)
+        assertEquals(1, pool.hatchery)
+    }
+
+    @Test
+    fun `leaving a Zone returns the token to the main loop`() {
+        val pool = TierTokenPool(TierLevel.FIRST)
+        pool.startToken()
+        pool.moveInPlay(0, 10)
+        pool.enterZone(fromPosition = 10, zoneNumber = 2)
+
+        pool.leaveZone(zoneNumber = 2, toPosition = 14)
+
+        assertTrue(pool.zoneResidents.isEmpty())
+        assertEquals(listOf(14), pool.inPlayPositions)
+    }
+
+    @Test
+    fun `destroying a token inside a Zone returns it to the Ion Battery`() {
+        val pool = TierTokenPool(TierLevel.FIRST)
+        pool.startToken()
+        pool.moveInPlay(0, 10)
+        pool.enterZone(fromPosition = 10, zoneNumber = 2)
+
+        pool.destroyInZone(zoneNumber = 2)
+
+        assertTrue(pool.zoneResidents.isEmpty())
+        assertEquals(0, pool.inPlayCount)
+        assertEquals(8, pool.totalOwned)
+    }
+
+    // --- Staging Pile direct mutation (Fate Harvest cards, not just Nebula landings) ---
+
+    @Test
+    fun `adding to the staging pile directly runs the same promotion check as a Nebula landing`() {
+        val pool = TierTokenPool(TierLevel.THIRD) // threshold 2
+        pool.startToken()
+        assertFalse(pool.addToStagingPileDirectly())
+
+        pool.startToken()
+        assertTrue(pool.addToStagingPileDirectly())
+        assertEquals(0, pool.stagingPile)
+    }
+
+    @Test
+    fun `destroying from the staging pile does not trigger promotion`() {
+        val pool = TierTokenPool(TierLevel.THIRD)
+        pool.startToken()
+        pool.sendToStagingPile(0)
+
+        pool.destroyFromStagingPile()
+
+        assertEquals(0, pool.stagingPile)
+        assertEquals(4, pool.ionBattery) // back to the starting count
+    }
 }

@@ -206,6 +206,127 @@ class TurnEngineTest {
         assertEquals(1, green.tierPool(TierLevel.FIRST).inPlayCount)
     }
 
+    // --- Zone of Protection entry ---
+
+    @Test
+    fun `landing on a Zone of Protection entry square moves the token into the Zone`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 2))
+        val game = gameWith(TierLevel.FIRST, board)
+        val red = game.players.getValue(RED)
+        red.tierPool(TierLevel.FIRST).startToken()
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 1)
+
+        assertEquals(SquareEffect.EnteredZone(2), result.effect)
+        assertTrue(red.tierPool(TierLevel.FIRST).inPlayPositions.isEmpty())
+        assertEquals(listOf(2), red.tierPool(TierLevel.FIRST).zoneResidents)
+    }
+
+    @Test
+    fun `a token inside a Zone of Protection is invisible to a Marauder's pass-through`() {
+        val board = boardOf(
+            TierLevel.FIRST,
+            Square(0, SquareType.BIRTH_CANAL),
+            Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 2),
+            plain(2),
+            plain(3),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+        val red = game.players.getValue(RED)
+        val green = game.players.getValue(GREEN)
+        red.marauders.placeOnBirthCanal(TierLevel.FIRST)
+        green.tierPool(TierLevel.FIRST).startToken()
+        green.tierPool(TierLevel.FIRST).moveInPlay(0, 1)
+        green.tierPool(TierLevel.FIRST).enterZone(fromPosition = 1, zoneNumber = 2) // now off the main loop entirely
+
+        val result = TurnEngine.moveMarauder(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 3)
+
+        assertTrue(result.destroyedTokens.isEmpty())
+        assertEquals(listOf(2), green.tierPool(TierLevel.FIRST).zoneResidents)
+    }
+
+    // --- Warp (Phase H: each square's own printed magnitude, not a hardcoded global) ---
+
+    @Test
+    fun `Warp moves the token forward by this square's own printed magnitude`() {
+        val board = boardOf(
+            TierLevel.SECOND,
+            Square(0, SquareType.BIRTH_CANAL),
+            Square(1, SquareType.WARP, magnitude = 7, note = "Warp 7 spaces"),
+            *Array(6) { plain(it + 2) },
+            Square(8, SquareType.NEBULA),
+        )
+        val game = gameWith(TierLevel.SECOND, board)
+        val red = game.players.getValue(RED)
+        red.tierPool(TierLevel.SECOND).startToken()
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.SECOND, fromPosition = 0, spaces = 1)
+
+        assertEquals(8, result.finalPosition) // 1 + 7
+        assertEquals(SquareEffect.SentToStagingPile(promotedToNextTier = false), result.effect) // chained into the Nebula
+    }
+
+    @Test
+    fun `Warp does not destroy tokens it passes, unlike Hyperthrust`() {
+        val board = boardOf(
+            TierLevel.FIRST,
+            Square(0, SquareType.BIRTH_CANAL),
+            Square(1, SquareType.WARP, magnitude = 5, note = "Warp 5 spaces"),
+            *Array(4) { plain(it + 2) },
+            plain(6),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+        val red = game.players.getValue(RED)
+        val green = game.players.getValue(GREEN)
+        red.tierPool(TierLevel.FIRST).startToken()
+        green.tierPool(TierLevel.FIRST).startToken()
+        green.tierPool(TierLevel.FIRST).moveInPlay(0, 3) // sits in the Warp's path
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 1)
+
+        assertEquals(6, result.finalPosition)
+        assertTrue(result.destroyedTokens.isEmpty())
+        assertEquals(1, green.tierPool(TierLevel.FIRST).inPlayCount)
+    }
+
+    @Test
+    fun `looping all the way back to 1st Tier Start chains its own compound Warp instruction`() {
+        val board = boardOf(
+            TierLevel.FIRST,
+            Square(0, SquareType.BIRTH_CANAL, magnitude = 5, note = "Start. If you land here, Warp 5 spaces."),
+            plain(1),
+            plain(2),
+            plain(3),
+            plain(4),
+            Square(5, SquareType.NEBULA),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+        val red = game.players.getValue(RED)
+        red.tierPool(TierLevel.FIRST).startToken()
+        red.tierPool(TierLevel.FIRST).moveInPlay(0, 5) // wrap distance in this tiny test board is 6, so...
+
+        // Move from square 5 by 1 space wraps to square 0 (Start) on this 6-square board, which
+        // should then chain its own "Warp 5 spaces" straight onto the Nebula at index 5.
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 5, spaces = 1)
+
+        assertEquals(5, result.finalPosition) // (0 + 5) % 6 == 5, the Nebula
+        assertEquals(SquareEffect.SentToStagingPile(promotedToNextTier = false), result.effect)
+    }
+
+    @Test
+    fun `an ordinary plain Birth Canal square (no Warp note) is not affected by the compound-Warp rule`() {
+        val board = boardOf(TierLevel.SECOND, Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2))
+        val game = gameWith(TierLevel.SECOND, board)
+        val red = game.players.getValue(RED)
+        red.tierPool(TierLevel.SECOND).startToken()
+        red.tierPool(TierLevel.SECOND).moveInPlay(0, 2)
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.SECOND, fromPosition = 2, spaces = 1) // wraps to 0
+
+        assertEquals(0, result.finalPosition)
+        assertIs<SquareEffect.None>(result.effect)
+    }
+
     // --- Marauder movement ---
 
     @Test
