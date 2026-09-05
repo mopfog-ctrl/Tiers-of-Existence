@@ -209,9 +209,13 @@ class PrecedenceCardEffectIntegrationTest {
         chain.finishResolving()
 
         assertIs<CardPlayResult.Resolved>(results[0]) // Graviton Rift's destroy
-        assertEquals(0, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayCount)
+        // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap — but as a
+        // freshly minted TokenId, distinct from greenId, which is what actually matters below:
+        // Tactical Step's stale target is still gone, not accidentally re-resolved against the
+        // replacement token.
+        assertEquals(2, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayCount)
         val stepResult = results[1]
-        assertIs<CardPlayResult.Rejected>(stepResult) // no crash — the token is simply gone by the time this resolves
+        assertIs<CardPlayResult.Rejected>(stepResult) // no crash — greenId specifically is simply gone by the time this resolves
         assertIs<TargetValidationError.NoLegalTarget>(stepResult.reason)
     }
 }

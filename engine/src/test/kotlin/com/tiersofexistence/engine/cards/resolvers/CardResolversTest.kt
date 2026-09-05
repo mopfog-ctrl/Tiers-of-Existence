@@ -99,7 +99,9 @@ class CardResolversTest {
         val result = MovementCardResolver.resolve(state, requestFor(RED, "Tactical Motion"), CardTarget.Token(marauderId), spaces = 2)
 
         assertIs<CardPlayResult.Resolved>(result)
-        assertEquals(0, state.players.getValue(WHITE).tierPool(TierLevel.FIRST).inPlayCount) // destroyed by the pass
+        // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap once the
+        // destroyed token's slot frees, so WHITE isn't left stranded at 0.
+        assertEquals(2, state.players.getValue(WHITE).tierPool(TierLevel.FIRST).inPlayCount)
         assertEquals(listOf(2), state.players.getValue(GreenColor).marauders.positions(TierLevel.FIRST))
     }
 

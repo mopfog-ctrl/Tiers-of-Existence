@@ -48,6 +48,66 @@ class TierTokenPoolTest {
         assertEquals(8, pool.totalOwned)
     }
 
+    // --- 1st Tier Ion Battery auto-replenishment ---
+
+    @Test
+    fun `destroying the only 1st Tier token in play never leaves the player permanently stranded`() {
+        // Historically, TierTokenPool had no equivalent of the Hatchery-refill rule for the 1st
+        // Tier, so a player whose sole in-play 1st Tier token was destroyed would sit at
+        // inPlayCount == 0 forever — permanently losing all future 1st Tier turns (PlayerState
+        // .hasTierTurn checks inPlayCount > 0). Per the rulebook: "On the First Tier... When
+        // there are less than two 1st Tier tokens in play..., a new... token is taken from the
+        // Ion Battery and placed on Start."
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
+        pool.startToken()
+        assertEquals(1, pool.inPlayCount)
+
+        pool.destroyInPlay(0)
+
+        assertEquals(2, pool.inPlayCount) // refilled from the Ion Battery, not stranded at 0
+        assertEquals(8, pool.totalOwned)
+    }
+
+    @Test
+    fun `repeatedly destroying a 1st Tier token keeps refilling from the Ion Battery indefinitely`() {
+        // Each destroy returns its token to the Ion Battery, and the refill immediately draws
+        // one back out to fill the resulting gap — so with only one slot freed per destroy, the
+        // pool stays topped off at the 2-in-play cap no matter how many times this repeats,
+        // exactly like it would for a real 1st Tier player whose token keeps getting destroyed
+        // and replaced turn after turn.
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
+        pool.startToken()
+        pool.startToken() // 2 in play, 6 left in the Ion Battery
+
+        repeat(20) {
+            pool.destroyInPlay(0)
+            assertEquals(2, pool.inPlayCount)
+            assertEquals(8, pool.totalOwned)
+        }
+    }
+
+    @Test
+    fun `refilling gracefully settles for less than the cap once the Ion Battery is truly exhausted`() {
+        // Unlike destruction (which always returns the same token the refill can immediately
+        // reuse), sending tokens to the Staging Pile removes them from circulation until a bulk
+        // promotion — so repeating it can genuinely run the Ion Battery dry, at which point the
+        // refill must gracefully accept fewer than 2 in play rather than erroring out.
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
+        pool.startToken()
+        pool.startToken() // 2 in play, 6 left in the Ion Battery
+        repeat(6) { pool.sendToStagingPile(0) } // each one refills from the Ion Battery in turn
+        assertEquals(6, pool.stagingPile)
+        assertEquals(0, pool.ionBattery)
+        assertEquals(2, pool.inPlayCount) // still fully topped off — just barely
+
+        pool.sendToStagingPile(0) // one more: only 1 in-play slot can be refilled now
+
+        assertEquals(7, pool.stagingPile)
+        assertEquals(0, pool.ionBattery)
+        assertEquals(1, pool.inPlayCount) // settles at 1, no crash, nothing invented from nothing
+        assertEquals(8, pool.totalOwned)
+    }
+
     @Test
     fun `1st Tier staging pile promotes after 4 tokens`() {
         val pool = TierTokenPool(TierLevel.FIRST, RED)
@@ -139,7 +199,9 @@ class TierTokenPoolTest {
         pool.destroyInZone(zoneNumber = 2)
 
         assertTrue(pool.zoneResidents.isEmpty())
-        assertEquals(0, pool.inPlayCount)
+        // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap (see
+        // TierTokenPool.refillInPlayIfRoom) — it doesn't just sit at 0.
+        assertEquals(2, pool.inPlayCount)
         assertEquals(8, pool.totalOwned)
     }
 

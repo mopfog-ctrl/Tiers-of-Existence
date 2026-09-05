@@ -38,7 +38,9 @@ class DestructionCardResolversTest {
         val result = DestructionCardResolver.resolve(state, requestFor(RED, "Divine Assistance"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
-        assertEquals(0, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayCount)
+        // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap, so GREEN
+        // isn't left stranded at 0.
+        assertEquals(2, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayCount)
     }
 
     @Test
@@ -119,7 +121,9 @@ class DestructionCardResolversTest {
         val result = InfernalAbyssResolver.resolve(state, requestFor(RED, "Infernal Abyss"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
-        assertEquals(0, state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayCount)
+        // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap, so RED
+        // isn't left stranded at 0.
+        assertEquals(2, state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayCount)
     }
 
     @Test

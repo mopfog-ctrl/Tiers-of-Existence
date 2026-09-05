@@ -76,7 +76,9 @@ class CardEffectDispatcherTest {
         val result = CardEffectDispatcher.dispatch(state, requestFor(BLACK, "Graviton Rift", targets))
 
         assertIs<CardPlayResult.Resolved>(result)
-        assertEquals(0, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayCount)
+        // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap; the 2nd
+        // Tier has no such rule (its overflow pool is a real Hatchery, empty here), so it stays at 0.
+        assertEquals(2, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayCount)
         assertEquals(0, state.players.getValue(GREEN).tierPool(TierLevel.SECOND).inPlayCount)
     }
 

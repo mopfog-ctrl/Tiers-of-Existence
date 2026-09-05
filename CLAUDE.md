@@ -287,15 +287,34 @@ already ended this Round, play it immediately") is deliberately not a true inter
 that method's doc and matrix §4 Q15.
 
 **Known critical-failure risks, deliberately not fixed yet** (raised in an earlier review,
-explicitly deferred by the user pending a later pass — not silently missed): a base-engine
-gap where the rulebook's 1st-Tier "when below 2 in play, pull a new token straight from the
-Ion Battery" rule (distinct from the Hatchery-overflow rule that *is* implemented) isn't
-implemented, which can permanently strand a player out of 1st Tier turns; the 4
+explicitly deferred by the user pending a later pass — not silently missed): the 4
 Marauder-construction resolvers can crash if a player's Marauder Ion Battery is empty (a
 normal state — 4 Marauders total, 1 per Tier × 4 Tiers); `TierTokenPool.destroyFromStagingPile`
 crashes rather than rejecting gracefully if the chosen pile is empty. See
-`.claude/agents/rules-reference.md`'s "resource-exhaustion" and "1st Tier auto-replenishment"
-checklist items, added specifically so a future review catches these before they're forgotten.
+`.claude/agents/rules-reference.md`'s "resource-exhaustion" checklist item, added specifically
+so a future review catches these before they're forgotten.
+
+**Fixed**: the 1st-Tier Ion Battery auto-replenishment gap flagged above used to be listed as
+a critical-failure risk here — it isn't anymore. The rulebook's 1st-Tier-specific rule ("On
+the First Tier... When there are less than two 1st Tier tokens in play..., a new... token is
+taken from the Ion Battery and placed on Start") is now implemented in
+`TierTokenPool.refillInPlayIfRoom`: unlike the Hatchery-refill rule that already existed for
+the 2nd/3rd/4th Tier, the 1st Tier has no Hatchery of its own — its overflow pool *is* the Ion
+Battery — so once Hatchery is exhausted, refill additionally falls back to pulling straight
+from `ionBattery` for `TierLevel.FIRST` specifically, looping until the 2-in-play cap is
+filled or the Ion Battery itself runs dry (which it gracefully accepts, settling for fewer
+than 2 in play rather than crashing or fabricating tokens). This closes the "permanently
+stranded out of 1st Tier turns" failure mode: previously, a player whose sole in-play 1st Tier
+token was destroyed would sit at `inPlayCount == 0` forever, since `PlayerState.hasTierTurn`
+checks `inPlayCount > 0` and nothing ever refilled it. Deliberately scoped to only trigger from
+the four existing slot-freeing mutations (`destroyInPlay`/`destroyById`/`sendToStagingPile`/
+`promoteInPlayToken`/`destroyInZone`), not from `startToken()` itself or at `GameState`
+construction — the rulebook's own setup instructions explicitly place a single token at game
+start ("Take out one 1st Tier token... place it on the Start/Birth Canal square"), and several
+existing tests intentionally start a pool with just one 1st Tier token in play for a narrower
+scenario; scoping the fix to actual gameplay mutations (not initial setup) avoids
+contradicting either. See `TierTokenPoolTest`'s "1st Tier Ion Battery auto-replenishment"
+tests for the soft-lock regression coverage and the graceful-exhaustion case.
 
 ## `TurnOrder`/`GameState` construction NPE: root-caused and fixed
 

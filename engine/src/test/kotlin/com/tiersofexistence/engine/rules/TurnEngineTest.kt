@@ -180,7 +180,9 @@ class TurnEngineTest {
         val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 1)
 
         assertEquals(listOf(TokenRef(GREEN, TokenKind.TIER_TOKEN, 3)), result.destroyedTokens)
-        assertEquals(0, green.tierPool(TierLevel.FIRST).inPlayCount)
+        // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap once
+        // GREEN's only in-play token is destroyed, rather than leaving GREEN stranded at 0.
+        assertEquals(2, green.tierPool(TierLevel.FIRST).inPlayCount)
         assertIs<SquareEffect.SentToStart>(result.effect) // chained into the Vortex of Regression at index 4
         assertEquals(0, result.finalPosition)
     }
@@ -457,8 +459,11 @@ class TurnEngineTest {
         val result = TurnEngine.moveMarauder(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 4)
 
         assertEquals(listOf(TokenRef(GREEN, TokenKind.TIER_TOKEN, 2)), result.destroyedTokens)
-        assertEquals(1, green.tierPool(TierLevel.FIRST).inPlayCount)
-        assertEquals(listOf(4), green.tierPool(TierLevel.FIRST).inPlayPositions)
+        // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap once the
+        // passed-over token is destroyed, so the surviving token at 4 is joined by a fresh one
+        // placed on Start (position 0) rather than GREEN being left with just the one at 4.
+        assertEquals(2, green.tierPool(TierLevel.FIRST).inPlayCount)
+        assertEquals(setOf(0, 4), green.tierPool(TierLevel.FIRST).inPlayPositions.toSet())
     }
 
     @Test

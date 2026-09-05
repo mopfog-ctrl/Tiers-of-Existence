@@ -18,8 +18,16 @@ private data class ZoneSlot(val id: TokenId, val zoneNumber: Int)
  * it has moved, per [positionOf]/[zoneOf]. [owner] is needed to mint that identity.
  *
  * Zones, per the rulebook:
- * - [ionBattery]: the player's draw pile — tokens not currently on a board.
- * - [hatchery]: tokens waiting for an in-play slot to free up (beyond [TierLevel.maxInPlay]).
+ * - [ionBattery]: the player's draw pile — tokens not currently on a board. On the 1st Tier
+ *   specifically, this doubles as the overflow pool [hatchery] is elsewhere: "all tokens beyond
+ *   the two in play... remain in the player's Ion Battery... When there are less than two 1st
+ *   Tier tokens in play..., a new... token is taken from the Ion Battery and placed on Start" —
+ *   see [refillInPlayIfRoom].
+ * - [hatchery]: tokens waiting for an in-play slot to free up (beyond [TierLevel.maxInPlay]) on
+ *   the 2nd/3rd/4th Tier. The 1st Tier's own overflow rule above uses the Ion Battery directly
+ *   instead — nothing normally accumulates here for a 1st Tier pool (see [refillInPlayIfRoom]),
+ *   though [startToken] can still route an overflow here if ever called with the cap already
+ *   reached, since it's drained as readily as the Ion Battery would be.
  * - [stagingPile]: tokens landed on a Nebula, waiting to reach [TierLevel.stagingPileThreshold].
  *   Staging Pile contents are genuinely fungible (no card ever needs to pick a *specific*
  *   Staging Pile token over another one), so unlike in-play/Zone tokens this is still a plain
@@ -89,7 +97,7 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
      * caller that needs to reference it later (a UI, a test) can capture it without a separate
      * lookup. A token that overflows straight to the Hatchery has no observable identity yet —
      * no [com.tiersofexistence.engine.cards.play.CardTarget] can reference a Hatchery-resident
-     * token — so the id returned in that case is not retained; [promoteFromHatcheryIfRoom] mints
+     * token — so the id returned in that case is not retained; [refillInPlayIfRoom] mints
      * a fresh one once it actually enters play later, which is harmless since nothing could have
      * held a reference to the discarded one in the meantime.
      */
@@ -120,7 +128,7 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         require(slot != null) { "No in-play token at position $position on $tier" }
         inPlay.remove(slot)
         ionBattery += 1
-        promoteFromHatcheryIfRoom()
+        refillInPlayIfRoom()
     }
 
     /** Destroys the token identified by [id], wherever it currently is (in play or in a Zone).
@@ -132,14 +140,14 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         if (inPlaySlot != null) {
             inPlay.remove(inPlaySlot)
             ionBattery += 1
-            promoteFromHatcheryIfRoom()
+            refillInPlayIfRoom()
             return
         }
         val zoneSlot = inZone.firstOrNull { it.id == id }
         if (zoneSlot != null) {
             inZone.remove(zoneSlot)
             ionBattery += 1
-            promoteFromHatcheryIfRoom()
+            refillInPlayIfRoom()
             return
         }
         error("Token $id no longer exists on $tier")
@@ -151,7 +159,7 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         require(slot != null) { "No in-play token at position $position on $tier" }
         inPlay.remove(slot)
         stagingPile += 1
-        promoteFromHatcheryIfRoom()
+        refillInPlayIfRoom()
     }
 
     /**
@@ -164,7 +172,7 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         require(slot != null) { "No in-play token at position $position on $tier" }
         inPlay.remove(slot)
         ionBattery += 1
-        promoteFromHatcheryIfRoom()
+        refillInPlayIfRoom()
     }
 
     /**
@@ -238,12 +246,32 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         require(slot != null) { "No token in Zone $zoneNumber on $tier" }
         inZone.remove(slot)
         ionBattery += 1
-        promoteFromHatcheryIfRoom()
+        refillInPlayIfRoom()
     }
 
-    private fun promoteFromHatcheryIfRoom() {
-        if (hatchery > 0 && inPlayCount < tier.maxInPlay) {
-            hatchery -= 1
+    /**
+     * Refills empty in-play slots after a token leaves play (destroyed, staged, promoted, or
+     * moved into a Zone) — looping since a single event can free more than one slot at once
+     * (e.g. a 1st Tier pool sitting at zero in-play tokens after its lone token is destroyed).
+     *
+     * For every Tier, a Hatchery-waiting token takes the slot first (Gameboard Rules: "Any
+     * extra Tier tokens... must remain in that Tier's Hatchery until one of the tokens in play
+     * on that Tier has been destroyed... at which point a token may be moved to the Birth
+     * Canal/Start square"). The 1st Tier has no such Hatchery, per its own, more specific rule:
+     * "On the First Tier, all tokens beyond the two in play... remain in the player's Ion
+     * Battery... When there are less than two 1st Tier tokens in play..., a new... token is
+     * taken from the Ion Battery and placed on Start." So once Hatchery is exhausted, only the
+     * 1st Tier additionally falls back to pulling straight from [ionBattery] — without this, a
+     * 1st Tier player whose sole in-play token was destroyed would never get another 1st Tier
+     * turn for the rest of the game (`inPlayCount` staying at 0 forever), a genuine soft-lock.
+     */
+    private fun refillInPlayIfRoom() {
+        while (inPlayCount < tier.maxInPlay) {
+            when {
+                hatchery > 0 -> hatchery -= 1
+                tier == TierLevel.FIRST && ionBattery > 0 -> ionBattery -= 1
+                else -> return
+            }
             inPlay += InPlaySlot(TokenIdGenerator.next(owner, TokenKind.TIER_TOKEN, tier), 0)
         }
     }

@@ -68,14 +68,16 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   rule (rulebook.txt:277-282), which only promotes a token already waiting in that Tier's
   Hatchery — 2nd-4th Tier tokens only ever enter a Tier via promotion from below, so there's no
   equivalent "pull straight from Ion Battery" path for them, but the 1st Tier explicitly does
-  have one, since it's the game's entry point. Check any engine code touching 1st Tier in-play
-  count against BOTH sentences separately — an implementation that only handles Hatchery
-  overflow (matching tiers 2-4) but not this 1st-Tier-specific Ion-Battery pull is silently
-  wrong for Tier 1, and the consequence isn't cosmetic: without it, a player whose only 1st Tier
-  token is destroyed (by an ordinary Marauder pass, no card needed) with an empty Hatchery never
-  gets a 1st Tier turn again for the rest of the game — check `TierTokenPool` (or wherever
-  in-play-count-dropping mutations live) for this specifically, don't assume the Hatchery path
-  covers it.
+  have one, since it's the game's entry point. **Fixed** in `TierTokenPool.refillInPlayIfRoom`:
+  after the Hatchery check (which normally never has anything to give on the 1st Tier), it
+  additionally falls back to pulling straight from `ionBattery` for `TierLevel.FIRST`, looping
+  up to the 2-in-play cap or until the Ion Battery itself runs dry. Still worth re-checking
+  against BOTH sentences separately any time `TierTokenPool` or its in-play-count-dropping call
+  sites change — an implementation that only handles Hatchery overflow (matching tiers 2-4) but
+  not this 1st-Tier-specific Ion-Battery pull would silently regress back to being wrong for
+  Tier 1, and the consequence isn't cosmetic: without it, a player whose only 1st Tier token is
+  destroyed (by an ordinary Marauder pass, no card needed) with an empty Hatchery never gets a
+  1st Tier turn again for the rest of the game.
 - **Resource-exhaustion must never crash or hang the game.** Rulebook framing for an exhausted
   pool is always "you must wait" (Ion Batteries and Tokens, rulebook.txt:158-163: "In the
   unlikely event that a player runs out of tokens of a certain Tier, they must wait... The same
