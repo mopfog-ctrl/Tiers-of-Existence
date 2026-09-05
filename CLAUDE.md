@@ -141,7 +141,7 @@ between the two). It does NOT protect Marauders — "Marauders can be [destroyed
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
 
-## Card engine: shared infrastructure plus 23 of 32 cards implemented
+## Card engine: shared infrastructure plus 24 of 32 cards implemented
 
 `docs/card-mechanics-matrix.md` is the implementation spec — an audit of all 32 unique Fate
 Harvest cards' actual mechanical requirements (targets, Zone-of-Protection/Reprieve
@@ -206,10 +206,16 @@ that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) a
 `GameState`, instead of every caller needing to know which resolver object handles which
 card.
 
-**Cards implemented** (23 of 32), via shared resolvers rather than one class per card
+**Cards implemented** (24 of 32), via shared resolvers rather than one class per card
 (`cards/resolvers/`):
 - `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
   limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
+- `ParallelPhasingResolver` (Parallel Phasing only) — the one movement-family card that needs
+  two independent targets in one resolution (the player's own token, plus another player's,
+  both moved 4 spaces) rather than `MovementCardResolver`'s single-target shape; the opponent
+  target gets no rule-12 Zone-of-Protection carve-out, unlike the player's own target. Both
+  targets are fully validated before either is moved (same all-or-nothing pattern as
+  `GravitonRiftResolver`).
 - `MarauderConstructionCardResolver` (places a Marauder, bypassing the per-Tier cap): Dwarf
   Star, Materialize Army, Essence Assimilator, Materialize Help.
 - `BirthCanalConstructionCardResolver` (starts a fresh token on one or more Birth Canals):
@@ -228,7 +234,7 @@ card.
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.
 
-That's 22 cards dispatched by name plus Annulment = 23 of 32 actually playable end to end.
+That's 23 cards dispatched by name plus Annulment = 24 of 32 actually playable end to end.
 
 **Not yet implemented** (9 of 32), each blocked on a specific open rules question rather than
 missing effort — see the cited matrix question before attempting:
@@ -248,12 +254,6 @@ missing effort — see the cited matrix question before attempting:
   exist yet (no other card modifies a roll rather than a token).
 - **Circulate** — needs a "find the next Zone of Protection from here" board query, plus an
   open question about targeting an opponent's token (§4 Q16).
-
-One more, **not** blocked on any open question, simply not built yet: **Parallel Phasing**
-("move any one of your own tokens forward 4 spaces AND move any other player's token forward
-4 spaces") needs a small two-target resolver of its own — `MovementCardResolver` only handles
-a single target — but is otherwise a plain Group 1 card with nothing ambiguous about it; the
-cheapest next card to add.
 
 **Warp is implemented**, not deferred — see below; it was the one item in this section that
 used to say "ambiguous," and isn't anymore.

@@ -54,6 +54,7 @@ object CardEffectDispatcher {
             "Sidestep (Extinction Avoidance)" -> requireTokenTarget(request, target0) { MovementCardResolver.resolve(state, request, it, spaces = 1) }
             "Tactical Motion" -> requireTokenTarget(request, target0) { MovementCardResolver.resolve(state, request, it, spaces = 2) }
             "Tactical Step" -> requireTokenTarget(request, target0) { MovementCardResolver.resolve(state, request, it, spaces = 1) }
+            "Parallel Phasing" -> requireTwoTokenTargets(request) { own, opponent -> ParallelPhasingResolver.resolve(state, request, own, opponent) }
 
             // --- Destruction ---
             "Divine Assistance" -> requireAnyTarget(request, target0) { DestructionCardResolver.resolve(state, request, it) }
@@ -97,5 +98,16 @@ object CardEffectDispatcher {
             return CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${request.card.name} needs only token targets, got ${request.targets}"))
         }
         return block(tokens)
+    }
+
+    private inline fun requireTwoTokenTargets(request: CardPlayRequest, block: (CardTarget.Token, CardTarget.Token) -> CardPlayResult): CardPlayResult {
+        val tokens = request.targets.filterIsInstance<CardTarget.Token>()
+        if (tokens.size != 2 || tokens.size != request.targets.size) {
+            return CardPlayResult.Rejected(
+                request,
+                TargetValidationError.WrongTargetCount("${request.card.name} needs exactly two token targets, got ${request.targets}"),
+            )
+        }
+        return block(tokens[0], tokens[1])
     }
 }
