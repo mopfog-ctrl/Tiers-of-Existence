@@ -2,7 +2,7 @@ package com.tiersofexistence.engine.cards.play
 
 import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
-import com.tiersofexistence.engine.rules.TokenKind
+import com.tiersofexistence.engine.state.TokenId
 
 /**
  * One concrete thing a card's effect can point at. A single [CardPlayRequest] carries a list of
@@ -16,18 +16,25 @@ import com.tiersofexistence.engine.rules.TokenKind
  * a specific play.
  */
 sealed class CardTarget {
-    /** A specific in-play token (Tier token or Marauder) belonging to [owner], found on the board. */
-    data class Token(val owner: PlayerColor, val kind: TokenKind, val tier: TierLevel, val position: Int) : CardTarget()
+    /**
+     * A specific game piece, referenced by its persistent [id] rather than a board position —
+     * covers a Tier token OR a Marauder ([TokenId.kind]), whether it's currently on the main
+     * loop or inside a Zone of Protection. Resolvers look up where [id] actually is at
+     * RESOLUTION time via [TokenLocator], not at the moment the target was chosen — this is what
+     * lets a card played earlier in a Precedence chain still find the right piece even after an
+     * earlier-resolving response has already moved it (see [TokenLocator]'s class doc).
+     *
+     * Previously this and a separate `ZoneResidentToken` case both recorded a snapshot (board
+     * position, or Zone number) instead of identity, which is exactly the stale-target bug this
+     * type was redesigned to fix — there is deliberately only one "a specific token" case now,
+     * not two incompatible ones.
+     */
+    data class Token(val id: TokenId) : CardTarget()
 
-    /** A token waiting in a Staging Pile — no board position, since pool contents are fungible
-     * (see [com.tiersofexistence.engine.state.TierTokenPool]'s class doc). */
+    /** A token waiting in a Staging Pile — no identity, since Staging Pile contents are
+     * genuinely fungible (no card ever needs "this specific one" over another — see
+     * [com.tiersofexistence.engine.state.TierTokenPool]'s class doc). */
     data class StagingPileToken(val owner: PlayerColor, val tier: TierLevel) : CardTarget()
-
-    /** A Tier token currently inside a Zone of Protection (see
-     * [com.tiersofexistence.engine.state.TierTokenPool.zoneResidents]) — never a Marauder,
-     * which can never be in a Zone. Kept distinct from [Token] since a Zone resident has no
-     * main-loop position. */
-    data class ZoneResidentToken(val owner: PlayerColor, val tier: TierLevel, val zoneNumber: Int) : CardTarget()
 
     /** A whole Tier, chosen without picking a specific token on it (e.g. which Tier to build a
      * Marauder on, which Tier Plasma Burst/Phase Control acts on). */
@@ -40,9 +47,8 @@ sealed class CardTarget {
 /** The Tier a target refers to, where it has one — null for [CardTarget.PlayerChoice]. */
 val CardTarget.tierOrNull: TierLevel?
     get() = when (this) {
-        is CardTarget.Token -> tier
+        is CardTarget.Token -> id.tier
         is CardTarget.StagingPileToken -> tier
-        is CardTarget.ZoneResidentToken -> tier
         is CardTarget.TierChoice -> tier
         is CardTarget.PlayerChoice -> null
     }
@@ -52,9 +58,8 @@ val CardTarget.tierOrNull: TierLevel?
  * accessed via [CardTarget.PlayerChoice.color] instead). */
 val CardTarget.ownerOrNull: PlayerColor?
     get() = when (this) {
-        is CardTarget.Token -> owner
+        is CardTarget.Token -> id.owner
         is CardTarget.StagingPileToken -> owner
-        is CardTarget.ZoneResidentToken -> owner
         is CardTarget.TierChoice -> null
         is CardTarget.PlayerChoice -> null
     }

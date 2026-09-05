@@ -1,6 +1,7 @@
 package com.tiersofexistence.engine.state
 
 import com.tiersofexistence.engine.model.TierLevel
+import com.tiersofexistence.engine.model.PlayerColor.RED
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -10,7 +11,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `starting a token moves it from Ion Battery to Birth Canal`() {
-        val pool = TierTokenPool(TierLevel.FIRST)
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
         assertEquals(8, pool.ionBattery)
 
         pool.startToken()
@@ -22,7 +23,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `extra tokens beyond max in play wait in the Hatchery`() {
-        val pool = TierTokenPool(TierLevel.FIRST)
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
         pool.startToken()
         pool.startToken()
         assertEquals(2, pool.inPlayCount)
@@ -36,7 +37,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `destroying an in-play token promotes a Hatchery token into its place`() {
-        val pool = TierTokenPool(TierLevel.FIRST)
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
         repeat(3) { pool.startToken() } // 2 in play, 1 in hatchery
         assertEquals(1, pool.hatchery)
 
@@ -49,7 +50,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `1st Tier staging pile promotes after 4 tokens`() {
-        val pool = TierTokenPool(TierLevel.FIRST)
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
         pool.startToken()
 
         repeat(3) {
@@ -67,14 +68,14 @@ class TierTokenPoolTest {
 
     @Test
     fun `4th Tier has no staging pile promotion`() {
-        val pool = TierTokenPool(TierLevel.FOURTH)
+        val pool = TierTokenPool(TierLevel.FOURTH, RED)
         assertEquals(null, TierLevel.FOURTH.stagingPileThreshold)
         assertFalse(pool.tryPromoteFromStagingPile())
     }
 
     @Test
     fun `total owned stays constant across zone transfers`() {
-        val pool = TierTokenPool(TierLevel.SECOND)
+        val pool = TierTokenPool(TierLevel.SECOND, RED)
         val total = pool.totalOwned
         pool.startToken()
         pool.startToken()
@@ -89,7 +90,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `entering a Zone removes the token from the main loop but keeps it in play`() {
-        val pool = TierTokenPool(TierLevel.FIRST)
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
         pool.startToken()
         pool.moveInPlay(0, 10)
 
@@ -103,7 +104,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `a token inside a Zone still counts toward the max-in-play cap`() {
-        val pool = TierTokenPool(TierLevel.FIRST)
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
         pool.startToken()
         pool.moveInPlay(0, 10)
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
@@ -117,7 +118,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `leaving a Zone returns the token to the main loop`() {
-        val pool = TierTokenPool(TierLevel.FIRST)
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
         pool.startToken()
         pool.moveInPlay(0, 10)
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
@@ -130,7 +131,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `destroying a token inside a Zone returns it to the Ion Battery`() {
-        val pool = TierTokenPool(TierLevel.FIRST)
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
         pool.startToken()
         pool.moveInPlay(0, 10)
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
@@ -146,7 +147,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `adding to the staging pile directly runs the same promotion check as a Nebula landing`() {
-        val pool = TierTokenPool(TierLevel.THIRD) // threshold 2
+        val pool = TierTokenPool(TierLevel.THIRD, RED) // threshold 2
         pool.startToken()
         assertFalse(pool.addToStagingPileDirectly())
 
@@ -157,7 +158,7 @@ class TierTokenPoolTest {
 
     @Test
     fun `destroying from the staging pile does not trigger promotion`() {
-        val pool = TierTokenPool(TierLevel.THIRD)
+        val pool = TierTokenPool(TierLevel.THIRD, RED)
         pool.startToken()
         pool.sendToStagingPile(0)
 

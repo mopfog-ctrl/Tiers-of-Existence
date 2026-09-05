@@ -6,10 +6,11 @@ import com.tiersofexistence.engine.cards.play.CardPlayResult
 import com.tiersofexistence.engine.cards.play.CardTarget
 import com.tiersofexistence.engine.cards.play.TargetValidationError
 import com.tiersofexistence.engine.cards.play.TargetValidator
-import com.tiersofexistence.engine.cards.play.ownerOrNull
+import com.tiersofexistence.engine.cards.play.TokenLocation
+import com.tiersofexistence.engine.cards.play.TokenLocator
 import com.tiersofexistence.engine.cards.play.tierOrNull
 import com.tiersofexistence.engine.model.TierLevel
-import com.tiersofexistence.engine.rules.TokenKind
+import com.tiersofexistence.engine.model.TokenKind
 import com.tiersofexistence.engine.state.GameState
 
 /**
@@ -20,13 +21,14 @@ import com.tiersofexistence.engine.state.GameState
  * "move your own token" — so [TargetValidator.validateZoneOfProtection] is always called with
  * `ownTokenMovementAllowed = false` here; whether a ZoP target is reachable at all comes down
  * entirely to whether the card is one of the 5 named rule-12 exceptions.
+ *
+ * A [CardTarget.Token] is re-located via [TokenLocator] at resolution time (never a stale
+ * recorded position) — if it no longer exists, [resolve] rejects gracefully instead of crashing.
  */
 object DestructionCardResolver {
     fun resolve(state: GameState, request: CardPlayRequest, target: CardTarget): CardPlayResult {
-        if (target is CardTarget.ZoneResidentToken) {
-            val zoneError = TargetValidator.validateZoneOfProtection(request.card, request.sourcePlayer, target, ownTokenMovementAllowed = false)
-            if (zoneError != null) return CardPlayResult.Rejected(request, zoneError)
-        }
+        val rejection = validateExistenceAndZone(state, request, target)
+        if (rejection != null) return rejection
 
         val playResult = CardLifecycle.attemptPlay(state, request)
         if (playResult !is CardPlayResult.Resolved) return playResult
@@ -35,16 +37,39 @@ object DestructionCardResolver {
         return playResult
     }
 
+    /**
+     * Checks [target] can actually be destroyed right now — still exists (for identity-based
+     * targets, via [TokenLocator]) and isn't Zone-protected against this card — without mutating
+     * anything. Returns the rejection to return, or null if [target] is clear to destroy. Split
+     * out from [resolve] so [GravitonRiftResolver] can validate every one of its multiple targets
+     * up front before committing to (and partially applying) the whole play.
+     */
+    fun validateExistenceAndZone(state: GameState, request: CardPlayRequest, target: CardTarget): CardPlayResult.Rejected? {
+        if (target !is CardTarget.Token) return null
+        val location = TokenLocator.locate(state, target.id)
+        if (location is TokenLocation.NoLongerExists) {
+            return CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${target.id} no longer exists"))
+        }
+        val zoneError = TargetValidator.validateZoneOfProtection(
+            request.card,
+            request.sourcePlayer,
+            target.id.owner,
+            location,
+            ownTokenMovementAllowed = false,
+        )
+        return zoneError?.let { CardPlayResult.Rejected(request, it) }
+    }
+
     internal fun destroy(state: GameState, target: CardTarget) {
-        val owner = requireNotNull(target.ownerOrNull) { "Destruction target must have an owner: $target" }
-        val player = state.players.getValue(owner)
         when (target) {
-            is CardTarget.Token -> when (target.kind) {
-                TokenKind.TIER_TOKEN -> player.tierPool(target.tier).destroyInPlay(target.position)
-                TokenKind.MARAUDER -> player.marauders.destroy(target.tier, target.position)
+            is CardTarget.Token -> {
+                val player = state.players.getValue(target.id.owner)
+                when (target.id.kind) {
+                    TokenKind.TIER_TOKEN -> player.tierPool(target.id.tier).destroyById(target.id)
+                    TokenKind.MARAUDER -> player.marauders.destroyById(target.id)
+                }
             }
-            is CardTarget.ZoneResidentToken -> player.tierPool(target.tier).destroyInZone(target.zoneNumber)
-            is CardTarget.StagingPileToken -> player.tierPool(target.tier).destroyFromStagingPile()
+            is CardTarget.StagingPileToken -> state.players.getValue(target.owner).tierPool(target.tier).destroyFromStagingPile()
             else -> error("Unsupported destruction target: $target")
         }
     }
@@ -59,12 +84,11 @@ object DestructionCardResolver {
  * Abyss gets NO Zone-of-Protection carve-out of its own, despite being self-targeted.
  */
 object InfernalAbyssResolver {
-    fun resolve(state: GameState, request: CardPlayRequest, target: CardTarget): CardPlayResult {
-        val owner = requireNotNull(target.ownerOrNull) { "Infernal Abyss target must have an owner: $target" }
-        if (owner != request.sourcePlayer) {
+    fun resolve(state: GameState, request: CardPlayRequest, target: CardTarget.Token): CardPlayResult {
+        if (target.id.owner != request.sourcePlayer) {
             return CardPlayResult.Rejected(
                 request,
-                TargetValidationError.WrongTokenType("Infernal Abyss may only sacrifice your own token, not $owner's"),
+                TargetValidationError.WrongTokenType("Infernal Abyss may only sacrifice your own token, not ${target.id.owner}'s"),
             )
         }
         return DestructionCardResolver.resolve(state, request, target)
@@ -78,17 +102,21 @@ object InfernalAbyssResolver {
  * named Zone-of-Protection exception (rule 12), so [DestructionCardResolver]'s ZoP check always
  * passes here regardless — still run uniformly rather than special-cased away, so this stays
  * correct if the exception list ever changes.
+ *
+ * Every target's existence/Zone legality is validated BEFORE any of them are destroyed — a
+ * compound effect like this must not partially apply just because one target (of possibly four)
+ * turns out to have already stopped existing by resolution time; the whole play is rejected
+ * instead, atomically, rather than destroying some targets and then crashing or silently
+ * skipping the rest.
  */
 object GravitonRiftResolver {
-    fun resolve(state: GameState, request: CardPlayRequest, targets: List<CardTarget>): CardPlayResult {
-        val tiers = targets.mapNotNull { it.tierOrNull }
+    fun resolve(state: GameState, request: CardPlayRequest, targets: List<CardTarget.Token>): CardPlayResult {
+        val tiers = targets.map { it.id.tier }
         require(tiers.size == tiers.distinct().size) { "Graviton Rift may only target one token per Tier, got $targets" }
 
         for (target in targets) {
-            if (target is CardTarget.ZoneResidentToken) {
-                val zoneError = TargetValidator.validateZoneOfProtection(request.card, request.sourcePlayer, target, ownTokenMovementAllowed = false)
-                if (zoneError != null) return CardPlayResult.Rejected(request, zoneError)
-            }
+            val rejection = DestructionCardResolver.validateExistenceAndZone(state, request, target)
+            if (rejection != null) return rejection
         }
 
         val playResult = CardLifecycle.attemptPlay(state, request)
@@ -108,7 +136,7 @@ object GravitonRiftResolver {
  * reading rather than guessing a narrower one.
  */
 object CorpuscleRotResolver {
-    fun resolve(state: GameState, request: CardPlayRequest, target: CardTarget): CardPlayResult {
+    fun resolve(state: GameState, request: CardPlayRequest, target: CardTarget.Token): CardPlayResult {
         require(target.tierOrNull == TierLevel.FOURTH) { "Corpuscle Rot's destroy target must be on the 4th Tier, was $target" }
 
         val destroyResult = DestructionCardResolver.resolve(state, request, target)

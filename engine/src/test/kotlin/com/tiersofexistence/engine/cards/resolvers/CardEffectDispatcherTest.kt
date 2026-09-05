@@ -11,7 +11,6 @@ import com.tiersofexistence.engine.model.PlayerColor.GREEN
 import com.tiersofexistence.engine.model.PlayerColor.RED
 import com.tiersofexistence.engine.model.PlayerColor.WHITE
 import com.tiersofexistence.engine.model.TierLevel
-import com.tiersofexistence.engine.rules.TokenKind
 import com.tiersofexistence.engine.state.GameState
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -58,9 +57,9 @@ class CardEffectDispatcherTest {
     @Test
     fun `dispatches a movement card with the card's own fixed distance`() {
         val state = GameState.newGame(listOf(RED))
-        val target = CardTarget.Token(RED, TokenKind.TIER_TOKEN, TierLevel.FIRST, position = 0)
+        val id = state.players.getValue(RED).tierPool(TierLevel.FIRST).idAt(0)!!
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED, "Tactical Step", listOf(target)))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(RED, "Tactical Step", listOf(CardTarget.Token(id))))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(1), state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayPositions)
@@ -70,10 +69,9 @@ class CardEffectDispatcherTest {
     fun `dispatches Graviton Rift across multiple Tiers in one call`() {
         val state = GameState.newGame(listOf(BLACK, GREEN))
         state.players.getValue(GREEN).tierPool(TierLevel.SECOND).startToken()
-        val targets = listOf(
-            CardTarget.Token(GREEN, TokenKind.TIER_TOKEN, TierLevel.FIRST, position = 0),
-            CardTarget.Token(GREEN, TokenKind.TIER_TOKEN, TierLevel.SECOND, position = 0),
-        )
+        val firstTierId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).idAt(0)!!
+        val secondTierId = state.players.getValue(GREEN).tierPool(TierLevel.SECOND).idAt(0)!!
+        val targets = listOf(CardTarget.Token(firstTierId), CardTarget.Token(secondTierId))
 
         val result = CardEffectDispatcher.dispatch(state, requestFor(BLACK, "Graviton Rift", targets))
 

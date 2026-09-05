@@ -64,8 +64,11 @@ object TargetValidator {
     }
 
     /**
-     * Zone-of-Protection legality for a single [target]. [ownTokenMovementAllowed] should be
-     * true ONLY for cards whose effect is the owner moving their OWN token (rule 12's second
+     * Zone-of-Protection legality for a token at its CURRENT [location] (see [TokenLocator] —
+     * never a position/Zone recorded when the target was originally chosen, which is what let
+     * the stale-target bug through before this validation took a live-resolved location
+     * instead of inspecting the [CardTarget] shape directly). [ownTokenMovementAllowed] should
+     * be true ONLY for cards whose effect is the owner moving their OWN token (rule 12's second
      * sentence: "You may... play a Fate Harvest movement card to move one of your own tokens in
      * the Z.O.P."). This is deliberately NOT a blanket "your own choice bypasses protection"
      * rule — Infernal Abyss, for example, explicitly can't target the player's own Zone-resident
@@ -76,14 +79,15 @@ object TargetValidator {
     fun validateZoneOfProtection(
         card: FateHarvestCard,
         sourcePlayer: PlayerColor,
-        target: CardTarget,
+        targetOwner: PlayerColor,
+        location: TokenLocation,
         ownTokenMovementAllowed: Boolean,
     ): TargetValidationError? {
-        if (target !is CardTarget.ZoneResidentToken) return null
-        if (ownTokenMovementAllowed && target.owner == sourcePlayer) return null
+        if (location !is TokenLocation.InZone) return null
+        if (ownTokenMovementAllowed && targetOwner == sourcePlayer) return null
         if (card.name in ZONE_OF_PROTECTION_EXCEPTIONS) return null
         return TargetValidationError.ZoneOfProtectionBlocksTarget(
-            "${card.name} cannot affect ${target.owner}'s token in Zone of Protection ${target.zoneNumber} on ${target.tier}",
+            "${card.name} cannot affect $targetOwner's token in Zone of Protection ${location.zoneNumber}",
         )
     }
 }

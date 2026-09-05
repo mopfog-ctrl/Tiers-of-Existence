@@ -1,16 +1,29 @@
 package com.tiersofexistence.engine.state
 
+import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
+import com.tiersofexistence.engine.model.TokenKind
+
+/** One in-play token's stable identity paired with its current main-loop position. */
+private data class InPlaySlot(val id: TokenId, val position: Int)
+
+/** One Zone-resident token's stable identity paired with which Zone it's currently in. */
+private data class ZoneSlot(val id: TokenId, val zoneNumber: Int)
 
 /**
- * One player's Tier tokens for a single Tier. Physical tokens are fungible, so we track
- * counts per zone rather than individual token identity ("Matter is neither destroyed nor
- * created!" — Ion Batteries and Tokens, rulebook p.3).
+ * One player's Tier tokens for a single Tier. Physical tokens are fungible in the sense that
+ * nothing about a token's own printed appearance distinguishes it from another of the same
+ * Tier/color — but each one, once in play, is tracked by a stable [TokenId] (see that class doc)
+ * so a Fate Harvest card can target "this specific token" and have it found correctly even after
+ * it has moved, per [positionOf]/[zoneOf]. [owner] is needed to mint that identity.
  *
  * Zones, per the rulebook:
  * - [ionBattery]: the player's draw pile — tokens not currently on a board.
  * - [hatchery]: tokens waiting for an in-play slot to free up (beyond [TierLevel.maxInPlay]).
  * - [stagingPile]: tokens landed on a Nebula, waiting to reach [TierLevel.stagingPileThreshold].
+ *   Staging Pile contents are genuinely fungible (no card ever needs to pick a *specific*
+ *   Staging Pile token over another one), so unlike in-play/Zone tokens this is still a plain
+ *   count, not identity-tracked.
  * - [inPlayPositions]: main-loop board square indices of tokens currently on this Tier's board.
  * - [zoneResidents]: Zone-of-Protection numbers (see
  *   [com.tiersofexistence.engine.board.ProtectionZone.number]) currently occupied by tokens of
@@ -21,17 +34,25 @@ import com.tiersofexistence.engine.model.TierLevel
  *   [TierLevel.maxInPlay] cap — a token inside a Zone is still on the board, per the rulebook's
  *   "a token in play is on the board, but does not include tokens in Staging Piles."
  */
-class TierTokenPool(val tier: TierLevel) {
+class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
     var ionBattery: Int = tier.tokensPerPlayer
         private set
     var hatchery: Int = 0
         private set
     var stagingPile: Int = 0
         private set
-    val inPlayPositions: MutableList<Int> = mutableListOf()
-    val zoneResidents: MutableList<Int> = mutableListOf()
 
-    val inPlayCount: Int get() = inPlayPositions.size + zoneResidents.size
+    private val inPlay: MutableList<InPlaySlot> = mutableListOf()
+    private val inZone: MutableList<ZoneSlot> = mutableListOf()
+
+    /** Main-loop positions of every in-play token, in no particular guaranteed order — a
+     * read-only view for callers that only care about positions, not identity. */
+    val inPlayPositions: List<Int> get() = inPlay.map { it.position }
+
+    /** Zone numbers of every Zone-resident token — a read-only view; see [inPlayPositions]. */
+    val zoneResidents: List<Int> get() = inZone.map { it.zoneNumber }
+
+    val inPlayCount: Int get() = inPlay.size + inZone.size
 
     /** Total tokens owned across every zone; must always equal [TierLevel.tokensPerPlayer]. */
     val totalOwned: Int get() = ionBattery + hatchery + stagingPile + inPlayCount
@@ -39,6 +60,22 @@ class TierTokenPool(val tier: TierLevel) {
     init {
         check(totalOwned == tier.tokensPerPlayer)
     }
+
+    /** The [TokenId] of the in-play token at [position], or null if none is there. Ambiguous if
+     * more than one token shares a position (landing on a token doesn't destroy it, so stacking
+     * is legal) — returns the first found, same arbitrary-but-deterministic tie-break the
+     * position-based methods below have always had. */
+    fun idAt(position: Int): TokenId? = inPlay.firstOrNull { it.position == position }?.id
+
+    /** The [TokenId] of the token currently inside Zone [zoneNumber], or null if none is there. */
+    fun idInZone(zoneNumber: Int): TokenId? = inZone.firstOrNull { it.zoneNumber == zoneNumber }?.id
+
+    /** [id]'s current main-loop position, or null if it's not in play there right now (destroyed,
+     * promoted, staged, or currently a Zone resident instead — see [zoneOf]). */
+    fun positionOf(id: TokenId): Int? = inPlay.firstOrNull { it.id == id }?.position
+
+    /** [id]'s current Zone number, or null if it's not a Zone resident right now. */
+    fun zoneOf(id: TokenId): Int? = inZone.firstOrNull { it.id == id }?.zoneNumber
 
     /**
      * Starts a token on this Tier's Birth Canal (index 0), per rulebook "Birth Canal" rule.
@@ -48,18 +85,25 @@ class TierTokenPool(val tier: TierLevel) {
      *
      * If there's no room in play, the new token queues in the Hatchery instead
      * (Gameboard Rules: "Only two Tier tokens are allowed in play... Extra tokens must wait
-     * on the Hatchery.").
+     * on the Hatchery."). Returns the new token's [TokenId] when it actually enters play, so a
+     * caller that needs to reference it later (a UI, a test) can capture it without a separate
+     * lookup. A token that overflows straight to the Hatchery has no observable identity yet —
+     * no [com.tiersofexistence.engine.cards.play.CardTarget] can reference a Hatchery-resident
+     * token — so the id returned in that case is not retained; [promoteFromHatcheryIfRoom] mints
+     * a fresh one once it actually enters play later, which is harmless since nothing could have
+     * held a reference to the discarded one in the meantime.
      */
-    fun startToken() {
+    fun startToken(): TokenId {
         val hasRoom = inPlayCount < tier.maxInPlay
+        val id = TokenIdGenerator.next(owner, TokenKind.TIER_TOKEN, tier)
         when {
             hasRoom && hatchery > 0 -> {
                 hatchery -= 1
-                inPlayPositions += 0
+                inPlay += InPlaySlot(id, 0)
             }
             hasRoom && ionBattery > 0 -> {
                 ionBattery -= 1
-                inPlayPositions += 0
+                inPlay += InPlaySlot(id, 0)
             }
             !hasRoom && ionBattery > 0 -> {
                 ionBattery -= 1
@@ -67,18 +111,45 @@ class TierTokenPool(val tier: TierLevel) {
             }
             else -> error("No tokens available to start on $tier (Ion Battery and Hatchery both empty of movable tokens)")
         }
+        return id
     }
 
     /** Removes an in-play token (destroyed) and returns it to the Ion Battery. */
     fun destroyInPlay(position: Int) {
-        require(inPlayPositions.remove(position)) { "No in-play token at position $position on $tier" }
+        val slot = inPlay.firstOrNull { it.position == position }
+        require(slot != null) { "No in-play token at position $position on $tier" }
+        inPlay.remove(slot)
         ionBattery += 1
         promoteFromHatcheryIfRoom()
     }
 
+    /** Destroys the token identified by [id], wherever it currently is (in play or in a Zone).
+     * Callers are expected to have already confirmed [id] still exists (e.g. via
+     * [com.tiersofexistence.engine.cards.play.TokenLocator]) — this throws if it doesn't, as an
+     * internal-consistency check, not a player-facing legality check. */
+    fun destroyById(id: TokenId) {
+        val inPlaySlot = inPlay.firstOrNull { it.id == id }
+        if (inPlaySlot != null) {
+            inPlay.remove(inPlaySlot)
+            ionBattery += 1
+            promoteFromHatcheryIfRoom()
+            return
+        }
+        val zoneSlot = inZone.firstOrNull { it.id == id }
+        if (zoneSlot != null) {
+            inZone.remove(zoneSlot)
+            ionBattery += 1
+            promoteFromHatcheryIfRoom()
+            return
+        }
+        error("Token $id no longer exists on $tier")
+    }
+
     /** Moves an in-play token to its Nebula Staging Pile (Gameboard Rules: "Nebula"). */
     fun sendToStagingPile(position: Int) {
-        require(inPlayPositions.remove(position)) { "No in-play token at position $position on $tier" }
+        val slot = inPlay.firstOrNull { it.position == position }
+        require(slot != null) { "No in-play token at position $position on $tier" }
+        inPlay.remove(slot)
         stagingPile += 1
         promoteFromHatcheryIfRoom()
     }
@@ -89,7 +160,9 @@ class TierTokenPool(val tier: TierLevel) {
      * for starting the next Tier's token).
      */
     fun promoteInPlayToken(position: Int) {
-        require(inPlayPositions.remove(position)) { "No in-play token at position $position on $tier" }
+        val slot = inPlay.firstOrNull { it.position == position }
+        require(slot != null) { "No in-play token at position $position on $tier" }
+        inPlay.remove(slot)
         ionBattery += 1
         promoteFromHatcheryIfRoom()
     }
@@ -110,8 +183,10 @@ class TierTokenPool(val tier: TierLevel) {
 
     /** Moves a token to Start (e.g. Vortex of Regression) without changing zone counts. */
     fun moveInPlay(fromPosition: Int, toPosition: Int) {
-        require(inPlayPositions.remove(fromPosition)) { "No in-play token at position $fromPosition on $tier" }
-        inPlayPositions += toPosition
+        val slot = inPlay.firstOrNull { it.position == fromPosition }
+        require(slot != null) { "No in-play token at position $fromPosition on $tier" }
+        inPlay.remove(slot)
+        inPlay += InPlaySlot(slot.id, toPosition)
     }
 
     /** Removes a Staging Pile token directly (Insidious Flux, Divine Assistance) — no board
@@ -135,26 +210,33 @@ class TierTokenPool(val tier: TierLevel) {
      * Moves an in-play token off the main loop and into Zone [zoneNumber] — landing on that
      * Zone's numbered entry square (Gameboard Rules: "Zone of Protection"). See the class doc:
      * this removes the token from [inPlayPositions] entirely, which is what makes it invisible
-     * to ordinary movement/pass-through scans without a separate check.
+     * to ordinary movement/pass-through scans without a separate check. The token's [TokenId] is
+     * carried over unchanged.
      */
     fun enterZone(fromPosition: Int, zoneNumber: Int) {
-        require(inPlayPositions.remove(fromPosition)) { "No in-play token at position $fromPosition on $tier" }
-        zoneResidents += zoneNumber
+        val slot = inPlay.firstOrNull { it.position == fromPosition }
+        require(slot != null) { "No in-play token at position $fromPosition on $tier" }
+        inPlay.remove(slot)
+        inZone += ZoneSlot(slot.id, zoneNumber)
     }
 
     /** Moves a token out of Zone [zoneNumber] back onto the main loop at [toPosition] — only
      * ever triggered by a specific card effect (the rulebook describes no ordinary/dice-driven
      * way to leave a Zone; see `docs/card-mechanics-matrix.md` §4 Q17). */
     fun leaveZone(zoneNumber: Int, toPosition: Int) {
-        require(zoneResidents.remove(zoneNumber)) { "No token in Zone $zoneNumber on $tier" }
-        inPlayPositions += toPosition
+        val slot = inZone.firstOrNull { it.zoneNumber == zoneNumber }
+        require(slot != null) { "No token in Zone $zoneNumber on $tier" }
+        inZone.remove(slot)
+        inPlay += InPlaySlot(slot.id, toPosition)
     }
 
     /** Destroys a token that's currently inside Zone [zoneNumber] — only legal for the 5 named
      * Fate Harvest Card Rule #12 exceptions (Divine Assistance, Corpuscle Rot, Galactic
      * Roundabout, Plasma Burst, Graviton Rift); callers are responsible for that check. */
     fun destroyInZone(zoneNumber: Int) {
-        require(zoneResidents.remove(zoneNumber)) { "No token in Zone $zoneNumber on $tier" }
+        val slot = inZone.firstOrNull { it.zoneNumber == zoneNumber }
+        require(slot != null) { "No token in Zone $zoneNumber on $tier" }
+        inZone.remove(slot)
         ionBattery += 1
         promoteFromHatcheryIfRoom()
     }
@@ -162,7 +244,7 @@ class TierTokenPool(val tier: TierLevel) {
     private fun promoteFromHatcheryIfRoom() {
         if (hatchery > 0 && inPlayCount < tier.maxInPlay) {
             hatchery -= 1
-            inPlayPositions += 0
+            inPlay += InPlaySlot(TokenIdGenerator.next(owner, TokenKind.TIER_TOKEN, tier), 0)
         }
     }
 }

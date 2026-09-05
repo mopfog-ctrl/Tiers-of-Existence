@@ -58,9 +58,9 @@ object CardEffectDispatcher {
             // --- Destruction ---
             "Divine Assistance" -> requireAnyTarget(request, target0) { DestructionCardResolver.resolve(state, request, it) }
             "Insidious Flux" -> requireAnyTarget(request, target0) { DestructionCardResolver.resolve(state, request, it) }
-            "Infernal Abyss" -> requireAnyTarget(request, target0) { InfernalAbyssResolver.resolve(state, request, it) }
-            "Corpuscle Rot" -> requireAnyTarget(request, target0) { CorpuscleRotResolver.resolve(state, request, it) }
-            "Graviton Rift" -> GravitonRiftResolver.resolve(state, request, request.targets)
+            "Infernal Abyss" -> requireTokenTarget(request, target0) { InfernalAbyssResolver.resolve(state, request, it) }
+            "Corpuscle Rot" -> requireTokenTarget(request, target0) { CorpuscleRotResolver.resolve(state, request, it) }
+            "Graviton Rift" -> requireAllTokenTargets(request) { GravitonRiftResolver.resolve(state, request, it) }
 
             // --- Turn manipulation ---
             "Phase Loss" -> PhaseLossResolver.resolve(state, request)
@@ -90,4 +90,12 @@ object CardEffectDispatcher {
             is CardTarget.TierChoice -> block(target.tier)
             else -> CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${request.card.name} needs a Tier choice, got $target"))
         }
+
+    private inline fun requireAllTokenTargets(request: CardPlayRequest, block: (List<CardTarget.Token>) -> CardPlayResult): CardPlayResult {
+        val tokens = request.targets.filterIsInstance<CardTarget.Token>()
+        if (tokens.size != request.targets.size) {
+            return CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${request.card.name} needs only token targets, got ${request.targets}"))
+        }
+        return block(tokens)
+    }
 }

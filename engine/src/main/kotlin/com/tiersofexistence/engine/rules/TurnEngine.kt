@@ -7,14 +7,13 @@ import com.tiersofexistence.engine.cards.CardTiming
 import com.tiersofexistence.engine.cards.FateHarvestCard
 import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
+import com.tiersofexistence.engine.model.TokenKind
 import com.tiersofexistence.engine.state.GameState
 import com.tiersofexistence.engine.state.TierTokenPool
 
-/** Which kind of token occupies a board position — used when scanning for tokens passed/landed on. */
-enum class TokenKind { TIER_TOKEN, MARAUDER }
-
-/** A token found at a specific board position, identified by owner/kind rather than physical identity
- * (tokens are fungible — see [com.tiersofexistence.engine.state.TierTokenPool]). */
+/** A token found at a specific board position, identified by owner/kind/position for pass-through
+ * scanning purposes — deliberately NOT the same as [com.tiersofexistence.engine.state.TokenId]'s
+ * persistent identity; this is a transient snapshot used only within one movement resolution. */
 data class TokenRef(val color: PlayerColor, val kind: TokenKind, val position: Int)
 
 /** What happened as a result of landing on a square, beyond the plain position update. */

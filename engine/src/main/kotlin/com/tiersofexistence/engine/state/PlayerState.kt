@@ -7,9 +7,9 @@ import com.tiersofexistence.engine.model.TierLevel
 /** Everything owned by one player: their Tier token pools, Marauder pool, and held cards. */
 class PlayerState(val color: PlayerColor) {
     val tierPools: Map<TierLevel, TierTokenPool> =
-        TierLevel.entries.associateWith { TierTokenPool(it) }
+        TierLevel.entries.associateWith { TierTokenPool(it, color) }
 
-    val marauders: MarauderPool = MarauderPool()
+    val marauders: MarauderPool = MarauderPool(color)
 
     /** Cards drawn this player is holding (timing = HELD) rather than having played immediately. */
     val hand: MutableList<FateHarvestCard> = mutableListOf()

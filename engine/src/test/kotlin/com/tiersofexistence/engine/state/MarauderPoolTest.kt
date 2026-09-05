@@ -1,5 +1,6 @@
 package com.tiersofexistence.engine.state
 
+import com.tiersofexistence.engine.model.PlayerColor.RED
 import com.tiersofexistence.engine.model.TierLevel
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -9,7 +10,7 @@ class MarauderPoolTest {
 
     @Test
     fun `only one Marauder per Tier unless bypassed`() {
-        val pool = MarauderPool()
+        val pool = MarauderPool(RED)
         pool.placeOnBirthCanal(TierLevel.FIRST)
 
         assertThrows<IllegalArgumentException> { pool.placeOnBirthCanal(TierLevel.FIRST) }
@@ -20,7 +21,7 @@ class MarauderPoolTest {
 
     @Test
     fun `Marauder Transport only moves to an adjacent Tier`() {
-        val pool = MarauderPool()
+        val pool = MarauderPool(RED)
         pool.placeOnBirthCanal(TierLevel.SECOND)
 
         assertThrows<IllegalArgumentException> {
@@ -34,7 +35,7 @@ class MarauderPoolTest {
 
     @Test
     fun `destroying a Marauder returns it to the Ion Battery`() {
-        val pool = MarauderPool()
+        val pool = MarauderPool(RED)
         pool.placeOnBirthCanal(TierLevel.THIRD)
         assertEquals(3, pool.ionBattery)
 

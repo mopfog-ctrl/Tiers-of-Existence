@@ -15,7 +15,6 @@ import com.tiersofexistence.engine.model.PlayerColor.RED
 import com.tiersofexistence.engine.model.PlayerColor.WHITE
 import com.tiersofexistence.engine.model.PlayerColor.GREEN as GreenColor
 import com.tiersofexistence.engine.model.TierLevel
-import com.tiersofexistence.engine.rules.TokenKind
 import com.tiersofexistence.engine.rules.TurnOrder
 import com.tiersofexistence.engine.state.GameState
 import com.tiersofexistence.engine.state.PlayerState
@@ -52,10 +51,9 @@ class CardResolversTest {
     fun `Skip Hop and Jump moves the target token 3 spaces and resolves its landing`() {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), Square(3, SquareType.NEBULA)))
         val state = gameWith(TierLevel.FIRST, board)
-        state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
-        val target = CardTarget.Token(RED, TokenKind.TIER_TOKEN, TierLevel.FIRST, position = 0)
+        val id = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
 
-        val result = MovementCardResolver.resolve(state, requestFor(RED, "Skip, Hop, and Jump (Dimensional)"), target, spaces = 3)
+        val result = MovementCardResolver.resolve(state, requestFor(RED, "Skip, Hop, and Jump (Dimensional)"), CardTarget.Token(id), spaces = 3)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile) // landed on the Nebula
@@ -66,32 +64,25 @@ class CardResolversTest {
     fun `a movement card cannot move an opponent's token that's inside a Zone of Protection`() {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1)))
         val state = gameWith(TierLevel.FIRST, board)
-        state.players.getValue(GreenColor).tierPool(TierLevel.FIRST).startToken()
-        val target = CardTarget.ZoneResidentToken(owner = GreenColor, tier = TierLevel.FIRST, zoneNumber = 2)
+        val pool = state.players.getValue(GreenColor).tierPool(TierLevel.FIRST)
+        val id = pool.startToken()
+        pool.enterZone(fromPosition = 0, zoneNumber = 2)
+        val target = CardTarget.Token(id)
 
-        // ZoP legality is checked before any board mutation is attempted — this exercises the
-        // same TargetValidator.validateZoneOfProtection path MovementCardResolver uses, using a
-        // ZoneResidentToken directly since MovementCardResolver's own signature only accepts a
-        // main-loop CardTarget.Token (see its class doc: moving a token OUT of a Zone isn't
-        // supported yet, so there is no code path that could wrongly move a protected token).
-        val error = com.tiersofexistence.engine.cards.play.TargetValidator.validateZoneOfProtection(
-            cardNamed("Skip, Hop, and Jump (Dimensional)"),
-            sourcePlayer = RED,
-            target,
-            ownTokenMovementAllowed = true,
-        )
+        val result = MovementCardResolver.resolve(state, requestFor(RED, "Skip, Hop, and Jump (Dimensional)"), target, spaces = 1)
 
-        assertIs<TargetValidationError.ZoneOfProtectionBlocksTarget>(error)
+        assertIs<CardPlayResult.Rejected>(result)
+        assertIs<TargetValidationError.ZoneOfProtectionBlocksTarget>((result as CardPlayResult.Rejected).reason)
+        assertTrue(pool.zoneResidents.isNotEmpty()) // untouched
     }
 
     @Test
     fun `Evasive Action (Immediate) resolves the same way as a Held movement card`() {
         val board = TierBoard(TierLevel.FOURTH, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), Square(2, SquareType.YOU_WIN)))
         val state = gameWith(TierLevel.FOURTH, board)
-        state.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
-        val target = CardTarget.Token(RED, TokenKind.TIER_TOKEN, TierLevel.FOURTH, position = 0)
+        val id = state.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
 
-        val result = MovementCardResolver.resolve(state, requestFor(RED, "Evasive Action"), target, spaces = 2)
+        val result = MovementCardResolver.resolve(state, requestFor(RED, "Evasive Action"), CardTarget.Token(id), spaces = 2)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(RED, state.winner) // exact landing on You Win via a card-driven move
@@ -101,12 +92,11 @@ class CardResolversTest {
     fun `a movement card moving a Marauder destroys tokens it passes but not one it lands on`() {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2)))
         val state = gameWith(TierLevel.FIRST, board)
-        state.players.getValue(GreenColor).marauders.placeOnBirthCanal(TierLevel.FIRST)
+        val marauderId = state.players.getValue(GreenColor).marauders.placeOnBirthCanal(TierLevel.FIRST)
         state.players.getValue(WHITE).tierPool(TierLevel.FIRST).startToken()
         state.players.getValue(WHITE).tierPool(TierLevel.FIRST).moveInPlay(0, 1) // strictly between 0 and 2: passed, not landed on
-        val target = CardTarget.Token(GreenColor, TokenKind.MARAUDER, TierLevel.FIRST, position = 0)
 
-        val result = MovementCardResolver.resolve(state, requestFor(RED, "Tactical Motion"), target, spaces = 2)
+        val result = MovementCardResolver.resolve(state, requestFor(RED, "Tactical Motion"), CardTarget.Token(marauderId), spaces = 2)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, state.players.getValue(WHITE).tierPool(TierLevel.FIRST).inPlayCount) // destroyed by the pass
@@ -117,12 +107,11 @@ class CardResolversTest {
     fun `landing a moved Marauder directly on a token does not destroy it`() {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1)))
         val state = gameWith(TierLevel.FIRST, board)
-        state.players.getValue(GreenColor).marauders.placeOnBirthCanal(TierLevel.FIRST)
+        val marauderId = state.players.getValue(GreenColor).marauders.placeOnBirthCanal(TierLevel.FIRST)
         state.players.getValue(WHITE).tierPool(TierLevel.FIRST).startToken()
         state.players.getValue(WHITE).tierPool(TierLevel.FIRST).moveInPlay(0, 1) // exactly where the Marauder will land
-        val target = CardTarget.Token(GreenColor, TokenKind.MARAUDER, TierLevel.FIRST, position = 0)
 
-        val result = MovementCardResolver.resolve(state, requestFor(RED, "Sidestep (Extinction Avoidance)"), target, spaces = 1)
+        val result = MovementCardResolver.resolve(state, requestFor(RED, "Sidestep (Extinction Avoidance)"), CardTarget.Token(marauderId), spaces = 1)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(WHITE).tierPool(TierLevel.FIRST).inPlayCount) // landed on, not destroyed

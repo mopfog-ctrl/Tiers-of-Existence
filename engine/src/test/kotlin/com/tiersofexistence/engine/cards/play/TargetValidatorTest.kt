@@ -81,9 +81,8 @@ class TargetValidatorTest {
     @Test
     fun `a named exception card can affect an opponent's Zone-resident token`() {
         val graviton = cardNamed("Graviton Rift")
-        val target = CardTarget.ZoneResidentToken(owner = RED, tier = TierLevel.FIRST, zoneNumber = 1)
 
-        val error = TargetValidator.validateZoneOfProtection(graviton, sourcePlayer = BLACK, target, ownTokenMovementAllowed = false)
+        val error = TargetValidator.validateZoneOfProtection(graviton, sourcePlayer = BLACK, targetOwner = RED, TokenLocation.InZone(1), ownTokenMovementAllowed = false)
 
         assertNull(error)
     }
@@ -91,9 +90,8 @@ class TargetValidatorTest {
     @Test
     fun `a non-exception card cannot affect an opponent's Zone-resident token`() {
         val tacticalMotion = cardNamed("Tactical Motion")
-        val target = CardTarget.ZoneResidentToken(owner = RED, tier = TierLevel.FIRST, zoneNumber = 1)
 
-        val error = TargetValidator.validateZoneOfProtection(tacticalMotion, sourcePlayer = BLACK, target, ownTokenMovementAllowed = true)
+        val error = TargetValidator.validateZoneOfProtection(tacticalMotion, sourcePlayer = BLACK, targetOwner = RED, TokenLocation.InZone(1), ownTokenMovementAllowed = true)
 
         assertIs<TargetValidationError.ZoneOfProtectionBlocksTarget>(error)
     }
@@ -101,9 +99,8 @@ class TargetValidatorTest {
     @Test
     fun `own-token-movement carve-out lets a player move their own Zone-resident token`() {
         val tacticalMotion = cardNamed("Tactical Motion")
-        val target = CardTarget.ZoneResidentToken(owner = RED, tier = TierLevel.FIRST, zoneNumber = 1)
 
-        val error = TargetValidator.validateZoneOfProtection(tacticalMotion, sourcePlayer = RED, target, ownTokenMovementAllowed = true)
+        val error = TargetValidator.validateZoneOfProtection(tacticalMotion, sourcePlayer = RED, targetOwner = RED, TokenLocation.InZone(1), ownTokenMovementAllowed = true)
 
         assertNull(error)
     }
@@ -114,19 +111,17 @@ class TargetValidatorTest {
         // targeting your own Zone-resident token — the carve-out is NOT "your own choice always
         // bypasses protection," only "your own MOVEMENT card moving your own token."
         val infernalAbyss = cardNamed("Infernal Abyss")
-        val target = CardTarget.ZoneResidentToken(owner = RED, tier = TierLevel.FIRST, zoneNumber = 1)
 
-        val error = TargetValidator.validateZoneOfProtection(infernalAbyss, sourcePlayer = RED, target, ownTokenMovementAllowed = false)
+        val error = TargetValidator.validateZoneOfProtection(infernalAbyss, sourcePlayer = RED, targetOwner = RED, TokenLocation.InZone(1), ownTokenMovementAllowed = false)
 
         assertIs<TargetValidationError.ZoneOfProtectionBlocksTarget>(error)
     }
 
     @Test
-    fun `a Token target (not Zone-resident) is never blocked by Zone-of-Protection validation`() {
+    fun `a token currently in play (not in a Zone) is never blocked by Zone-of-Protection validation`() {
         val tacticalMotion = cardNamed("Tactical Motion")
-        val target = CardTarget.Token(owner = RED, kind = com.tiersofexistence.engine.rules.TokenKind.TIER_TOKEN, tier = TierLevel.FIRST, position = 5)
 
-        val error = TargetValidator.validateZoneOfProtection(tacticalMotion, sourcePlayer = BLACK, target, ownTokenMovementAllowed = false)
+        val error = TargetValidator.validateZoneOfProtection(tacticalMotion, sourcePlayer = BLACK, targetOwner = RED, TokenLocation.InPlay(5), ownTokenMovementAllowed = false)
 
         assertNull(error)
     }

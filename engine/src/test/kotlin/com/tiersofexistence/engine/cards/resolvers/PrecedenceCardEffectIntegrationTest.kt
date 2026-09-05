@@ -6,13 +6,15 @@ import com.tiersofexistence.engine.board.SquareType
 import com.tiersofexistence.engine.board.TierBoard
 import com.tiersofexistence.engine.cards.FateHarvestCatalog
 import com.tiersofexistence.engine.cards.play.CardPlayRequest
+import com.tiersofexistence.engine.cards.play.CardPlayResult
 import com.tiersofexistence.engine.cards.play.CardTarget
+import com.tiersofexistence.engine.cards.play.TargetValidationError
 import com.tiersofexistence.engine.cards.play.TriggeringEvent
 import com.tiersofexistence.engine.model.PlayerColor
+import com.tiersofexistence.engine.model.PlayerColor.BLACK
 import com.tiersofexistence.engine.model.PlayerColor.GREEN
 import com.tiersofexistence.engine.model.PlayerColor.RED
 import com.tiersofexistence.engine.model.TierLevel
-import com.tiersofexistence.engine.rules.TokenKind
 import com.tiersofexistence.engine.rules.TurnEngine
 import com.tiersofexistence.engine.rules.TurnOrder
 import com.tiersofexistence.engine.rules.precedence.InteractionChain
@@ -21,13 +23,15 @@ import com.tiersofexistence.engine.state.GameState
 import com.tiersofexistence.engine.state.PlayerState
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
  * End-to-end proof that the Precedence interaction engine (Phase C) and the card resolvers
  * (Phase J) actually work together, not just independently: [InteractionChain] sequences the
- * response, [CardEffectDispatcher] applies what survives it to real [GameState].
+ * response, [CardEffectDispatcher] applies what survives it to real [GameState] — and, since the
+ * stale-target-by-position bug fix, does so by re-locating each [CardTarget.Token] via
+ * [com.tiersofexistence.engine.cards.play.TokenLocator] at the moment it actually resolves.
  */
 class PrecedenceCardEffectIntegrationTest {
 
@@ -48,15 +52,14 @@ class PrecedenceCardEffectIntegrationTest {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2)))
         val state = gameWith(TierLevel.FIRST, board)
         state.players.getValue(RED).marauders.placeOnBirthCanal(TierLevel.FIRST)
-        state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
         state.players.getValue(GREEN).tierPool(TierLevel.FIRST).moveInPlay(0, 1) // sits in the Marauder's 2-space path (0 -> 2 passes 1)
 
         // RED has rolled to move their Marauder 2 spaces — that move is now pending.
         val chain = InteractionChain.open(SuspendedAction.PendingMove(RED), eligiblePlayers = listOf(RED, GREEN))
 
         // GREEN plays Tactical Step (Precedence, +1) on their own endangered token before the move resolves.
-        val rescueTarget = CardTarget.Token(GREEN, TokenKind.TIER_TOKEN, TierLevel.FIRST, position = 1)
-        val rescue = CardPlayRequest(GREEN, cardNamed("Tactical Step"), listOf(rescueTarget), TriggeringEvent.RespondingInChain(chain.id))
+        val rescue = CardPlayRequest(GREEN, cardNamed("Tactical Step"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
         chain.respond(GREEN, rescue)
         chain.pass(RED)
         chain.pass(GREEN)
@@ -80,8 +83,8 @@ class PrecedenceCardEffectIntegrationTest {
     @Test
     fun `Annulment played against a pending card resolution cancels it before the caller ever applies it`() {
         val state = GameState.newGame(listOf(RED, GREEN))
-        val target = CardTarget.Token(GREEN, TokenKind.TIER_TOKEN, TierLevel.FIRST, position = 0)
-        val pendingDivineAssistance = CardPlayRequest(RED, cardNamed("Divine Assistance"), listOf(target), TriggeringEvent.PlayedFromHand)
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).idAt(0)!!
+        val pendingDivineAssistance = CardPlayRequest(RED, cardNamed("Divine Assistance"), listOf(CardTarget.Token(greenId)), TriggeringEvent.PlayedFromHand)
 
         val chain = InteractionChain.open(SuspendedAction.PendingCardResolution(pendingDivineAssistance), eligiblePlayers = listOf(GREEN))
         val annulment = CardPlayRequest(GREEN, cardNamed("Annulment (Antimatter)"), triggeringEvent = TriggeringEvent.RespondingInChain(chain.id))
@@ -102,22 +105,14 @@ class PrecedenceCardEffectIntegrationTest {
     fun `multiple Precedence responses on different tokens each resolve correctly in reverse order`() {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), plain(3), plain(4)))
         val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
-        state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
-        state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val redId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
         state.players.getValue(GREEN).tierPool(TierLevel.FIRST).moveInPlay(0, 2)
 
         val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN))
-        val step = CardPlayRequest(
-            RED, cardNamed("Tactical Step"),
-            listOf(CardTarget.Token(RED, TokenKind.TIER_TOKEN, TierLevel.FIRST, position = 0)),
-            TriggeringEvent.RespondingInChain(chain.id),
-        )
+        val step = CardPlayRequest(RED, cardNamed("Tactical Step"), listOf(CardTarget.Token(redId)), TriggeringEvent.RespondingInChain(chain.id))
         chain.respond(RED, step)
-        val motion = CardPlayRequest(
-            GREEN, cardNamed("Tactical Motion"),
-            listOf(CardTarget.Token(GREEN, TokenKind.TIER_TOKEN, TierLevel.FIRST, position = 2)),
-            TriggeringEvent.RespondingInChain(chain.id),
-        )
+        val motion = CardPlayRequest(GREEN, cardNamed("Tactical Motion"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
         chain.respond(GREEN, motion) // played second, resolves FIRST (reverse order) — independent token, no conflict
         chain.pass(RED)
         chain.pass(GREEN)
@@ -127,57 +122,96 @@ class PrecedenceCardEffectIntegrationTest {
         val results = CardEffectDispatcher.dispatchAll(state, order)
         chain.finishResolving()
 
-        assertTrue(results.all { it is com.tiersofexistence.engine.cards.play.CardPlayResult.Resolved })
+        assertTrue(results.all { it is CardPlayResult.Resolved })
         assertEquals(listOf(1), state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayPositions) // 0 + 1
         assertEquals(listOf(4), state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayPositions) // 2 + 2
     }
 
     @Test
-    fun `KNOWN GAP - two different players targeting the same token resolve against a stale recorded position`() {
-        // CardTarget.Token records a board position at the moment the card is PLAYED (chosen by
-        // the player), not "wherever this token currently is" at RESOLUTION time. Reverse-order
-        // resolution means an earlier-played, later-resolving card can find its recorded position
-        // already vacated by a later-played, earlier-resolving card that moved the same token —
-        // TierTokenPool.moveInPlay's `require` then throws instead of failing gracefully.
-        //
-        // Note this can only happen across DIFFERENT players in one chain: every Precedence card
-        // in the catalog is Held (Graviton Rift, Fluidic Wave, Tactical Motion, Annulment,
-        // Tactical Step, Last Gasp all have timing = HELD), and the per-Phase play limit
-        // (rule 4) blocks the SAME player from playing a second Held card in the same Phase — so
-        // a same-player double-response to the same token is already prevented one layer up, by
-        // TargetValidator.validatePhaseCardLimit, before it would ever reach this bug. The
-        // cross-player case below is not caught by anything.
-        //
-        // This is a genuine, unresolved architectural gap in the current CardTarget design (the
-        // rulebook doesn't address two movement cards targeting the same token in one Precedence
-        // exchange either) — documented here via assertFailsWith rather than silently asserting
-        // incorrect success. Needs a design fix (e.g. re-resolving a token target by identity
-        // rather than recorded position) before Group 5 cards are used this way in practice.
+    fun `two different players targeting the same token both resolve correctly against its current location`() {
+        // This is the exact scenario that used to crash before the identity fix: two different
+        // players (the per-Phase card limit only blocks a SAME player from double-responding,
+        // since every Precedence card is Held) each play a Precedence movement card recording
+        // the same token as their target. Before the fix, CardTarget.Token captured a board
+        // POSITION at play time; the earlier-resolving response (played second, reverse order)
+        // would move the token, and the later-resolving response (played first) would then
+        // crash looking for its now-vacated recorded position. Now CardTarget.Token carries only
+        // an identity, re-located via TokenLocator at the moment each response actually resolves
+        // — so both moves apply, cumulatively, against wherever the token actually is.
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), plain(3)))
         val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
-        state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
 
         val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN))
-        chain.respond(
-            RED,
-            CardPlayRequest(
-                RED, cardNamed("Tactical Step"),
-                listOf(CardTarget.Token(GREEN, TokenKind.TIER_TOKEN, TierLevel.FIRST, position = 0)),
-                TriggeringEvent.RespondingInChain(chain.id),
-            ),
-        )
-        chain.respond(
-            GREEN,
-            CardPlayRequest(
-                GREEN, cardNamed("Tactical Motion"),
-                listOf(CardTarget.Token(GREEN, TokenKind.TIER_TOKEN, TierLevel.FIRST, position = 0)), // same token, same recorded position
-                TriggeringEvent.RespondingInChain(chain.id),
-            ),
-        )
+        // RED's movement card can target any player's token (rule 11), including GREEN's.
+        val step = CardPlayRequest(RED, cardNamed("Tactical Step"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        chain.respond(RED, step) // played first, resolves LAST
+        val motion = CardPlayRequest(GREEN, cardNamed("Tactical Motion"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        chain.respond(GREEN, motion) // played second, resolves FIRST — same token as step
         chain.pass(RED)
         chain.pass(GREEN)
-        val order = chain.resolve()
 
-        assertFailsWith<IllegalArgumentException> { CardEffectDispatcher.dispatchAll(state, order) }
+        val order = chain.resolve()
+        val results = CardEffectDispatcher.dispatchAll(state, order)
+        chain.finishResolving()
+
+        assertTrue(results.all { it is CardPlayResult.Resolved }) // no crash, no spurious rejection
+        // motion resolves first: 0 -> 2. step resolves second against the NEW position: 2 -> 3.
+        assertEquals(listOf(3), state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayPositions)
+    }
+
+    @Test
+    fun `Zone-of-Protection validation uses the token's location at resolution time, not when the target was chosen`() {
+        // RED targets GREEN's token while it's still on the open loop (legal to choose). Before
+        // RED's response resolves, GREEN's OWN earlier-resolving response moves that same token
+        // into a Zone of Protection. RED isn't a named rule-12 exception and doesn't get the
+        // own-token carve-out, so RED's response must be rejected once it actually resolves —
+        // proving the ZoP check is re-evaluated live, not decided when the target was picked.
+        val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), Square(2, SquareType.ZONE_OF_PROTECTION, magnitude = 1)))
+        val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+
+        val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN))
+        val redsStep = CardPlayRequest(RED, cardNamed("Tactical Step"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        chain.respond(RED, redsStep) // played first, resolves LAST — token not yet in a Zone when chosen
+        val greenMovesSelfIntoZone = CardPlayRequest(GREEN, cardNamed("Tactical Motion"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        chain.respond(GREEN, greenMovesSelfIntoZone) // played second, resolves FIRST: 0 -> 2, entering the Zone
+        chain.pass(RED)
+        chain.pass(GREEN)
+
+        val order = chain.resolve()
+        val results = CardEffectDispatcher.dispatchAll(state, order)
+        chain.finishResolving()
+
+        assertIs<CardPlayResult.Resolved>(results[0]) // GREEN's own move into the Zone succeeds
+        val redResult = results[1]
+        assertIs<CardPlayResult.Rejected>(redResult)
+        assertIs<TargetValidationError.ZoneOfProtectionBlocksTarget>(redResult.reason)
+        assertEquals(listOf(1), state.players.getValue(GREEN).tierPool(TierLevel.FIRST).zoneResidents) // untouched by the rejected response
+    }
+
+    @Test
+    fun `a later-resolving response whose target was destroyed by an earlier one is rejected gracefully`() {
+        val state = GameState.newGame(listOf(RED, GREEN, BLACK))
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).idAt(0)!!
+
+        val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN, BLACK))
+        val tacticalStep = CardPlayRequest(RED, cardNamed("Tactical Step"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        chain.respond(RED, tacticalStep) // played first, resolves LAST — the token still exists when chosen
+        val gravitonRift = CardPlayRequest(BLACK, cardNamed("Graviton Rift"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        chain.respond(BLACK, gravitonRift) // played second, resolves FIRST: destroys GREEN's token outright
+        chain.pass(RED)
+        chain.pass(GREEN)
+        chain.pass(BLACK)
+
+        val order = chain.resolve()
+        val results = CardEffectDispatcher.dispatchAll(state, order)
+        chain.finishResolving()
+
+        assertIs<CardPlayResult.Resolved>(results[0]) // Graviton Rift's destroy
+        assertEquals(0, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayCount)
+        val stepResult = results[1]
+        assertIs<CardPlayResult.Rejected>(stepResult) // no crash — the token is simply gone by the time this resolves
+        assertIs<TargetValidationError.NoLegalTarget>(stepResult.reason)
     }
 }
