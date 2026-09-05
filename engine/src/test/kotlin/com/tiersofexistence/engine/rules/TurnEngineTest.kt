@@ -206,6 +206,118 @@ class TurnEngineTest {
         assertEquals(1, green.tierPool(TierLevel.FIRST).inPlayCount)
     }
 
+    // --- Victory timing (Phase I) ---
+
+    @Test
+    fun `a movement-card-style move (not just dice) that lands exactly on You Win still wins`() {
+        // TurnEngine.moveTierToken doesn't know or care whether `spaces` came from dice or a
+        // Fate Harvest movement card — this proves the exact-landing check holds regardless of
+        // the move's source, which is the guarantee movement cards will rely on once wired up.
+        val board = boardOf(TierLevel.FOURTH, Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), Square(3, SquareType.YOU_WIN))
+        val game = gameWith(TierLevel.FOURTH, board)
+        game.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FOURTH, fromPosition = 0, spaces = 3)
+
+        assertIs<SquareEffect.Won>(result.effect)
+        assertEquals(RED, game.winner)
+    }
+
+    @Test
+    fun `chained movement through Hyperthrust landing exactly on You Win still wins`() {
+        val board = boardOf(
+            TierLevel.FOURTH,
+            Square(0, SquareType.BIRTH_CANAL),
+            Square(1, SquareType.HYPERTHRUST, magnitude = 2),
+            plain(2),
+            Square(3, SquareType.YOU_WIN),
+        )
+        val game = gameWith(TierLevel.FOURTH, board)
+        game.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FOURTH, fromPosition = 0, spaces = 1)
+
+        assertIs<SquareEffect.Won>(result.effect)
+        assertEquals(3, result.finalPosition)
+        assertEquals(RED, game.winner)
+    }
+
+    @Test
+    fun `chained movement through Warp landing exactly on You Win still wins`() {
+        val board = boardOf(
+            TierLevel.FOURTH,
+            Square(0, SquareType.BIRTH_CANAL),
+            Square(1, SquareType.WARP, magnitude = 2, note = "Warp 2 spaces"),
+            plain(2),
+            Square(3, SquareType.YOU_WIN),
+        )
+        val game = gameWith(TierLevel.FOURTH, board)
+        game.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FOURTH, fromPosition = 0, spaces = 1)
+
+        assertIs<SquareEffect.Won>(result.effect)
+        assertEquals(RED, game.winner)
+    }
+
+    @Test
+    fun `chained movement through Warp overshooting You Win does not win`() {
+        val board = boardOf(
+            TierLevel.FOURTH,
+            Square(0, SquareType.BIRTH_CANAL),
+            Square(1, SquareType.WARP, magnitude = 3, note = "Warp 3 spaces"),
+            plain(2),
+            Square(3, SquareType.YOU_WIN),
+            plain(4),
+        )
+        val game = gameWith(TierLevel.FOURTH, board)
+        game.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FOURTH, fromPosition = 0, spaces = 1)
+
+        assertEquals(4, result.finalPosition) // 1 + 3, past You Win at 3
+        assertIs<SquareEffect.None>(result.effect)
+        assertEquals(null, game.winner)
+    }
+
+    @Test
+    fun `a movement distance corrected by a card interaction before resolving still checks exact landing correctly`() {
+        // Simulates a Precedence/movement card interaction resolving BEFORE the move is applied
+        // (e.g. Delayed Motion's +2 pre-move roll modifier, or a Tactical Step nudge) — by the
+        // time TurnEngine.moveTierToken is called, the distance already reflects whatever the
+        // interaction chain decided; this proves victory is only checked against that final,
+        // fully-resolved distance, not some earlier uncorrected one.
+        val board = boardOf(TierLevel.FOURTH, Square(0, SquareType.BIRTH_CANAL), plain(1), Square(2, SquareType.YOU_WIN))
+        val game = gameWith(TierLevel.FOURTH, board)
+        game.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
+        val uncorrectedRoll = 1 // would only reach square 1, short of You Win
+        val correctedDistance = uncorrectedRoll + 1 // e.g. a +1 movement card applied first
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FOURTH, fromPosition = 0, spaces = correctedDistance)
+
+        assertIs<SquareEffect.Won>(result.effect)
+        assertEquals(RED, game.winner)
+    }
+
+    @Test
+    fun `once a winner is declared, a second token's exact landing never overwrites it`() {
+        // Guards the Galactic-Roundabout-style case: a card that moves multiple tokens in one
+        // resolution shouldn't let a later-processed token's own exact landing steal the win
+        // from whichever token was processed (and won) first.
+        val board = boardOf(TierLevel.FOURTH, Square(0, SquareType.BIRTH_CANAL), plain(1), Square(2, SquareType.YOU_WIN))
+        val game = gameWith(TierLevel.FOURTH, board)
+        game.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
+        game.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()
+
+        val redResult = TurnEngine.moveTierToken(game, RED, TierLevel.FOURTH, fromPosition = 0, spaces = 2)
+        assertIs<SquareEffect.Won>(redResult.effect)
+        assertEquals(RED, game.winner)
+
+        val greenResult = TurnEngine.moveTierToken(game, GREEN, TierLevel.FOURTH, fromPosition = 0, spaces = 2)
+        assertIs<SquareEffect.Won>(greenResult.effect) // GREEN's own landing is still reported...
+        assertEquals(RED, game.winner) // ...but doesn't overwrite the already-declared winner
+    }
+
     // --- Zone of Protection entry ---
 
     @Test

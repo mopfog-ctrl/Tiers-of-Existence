@@ -147,8 +147,17 @@ class GameState(
         skipEmptyPhases()
     }
 
+    /**
+     * Records [color] as the winner — a no-op if a winner is already set. "The first player to
+     * land on You Win! wins the game" (rulebook p.1) means exactly one true winner, so once
+     * declared it must never be overwritten by a later exact landing in the same or a later
+     * resolution (e.g. two tokens both landing exactly on their own 4th Tier You Win square
+     * within one Galactic Roundabout resolution — see `docs/card-mechanics-matrix.md` §4 Q5:
+     * which one is "first" when a card moves multiple tokens at once is the caller's processing
+     * order, still an open question, but whichever gets declared first here is final regardless).
+     */
     fun declareWinner(color: PlayerColor) {
-        winner = color
+        if (winner == null) winner = color
     }
 
     companion object {
