@@ -55,6 +55,27 @@ class TargetValidatorTest {
         assertNull(TargetValidator.validatePhaseCardLimit(divineAssistance, alreadyPlayedThisPhase = true))
     }
 
+    // --- Phase restriction (Planetary Nebula / Emitting Nebula) ---
+
+    @Test
+    fun `Planetary Nebula is legal during the 2nd Tier Phase`() {
+        val planetaryNebula = cardNamed("Planetary Nebula")
+        assertNull(TargetValidator.validatePhaseRestriction(planetaryNebula, com.tiersofexistence.engine.rules.Phase.Tier(TierLevel.SECOND)))
+    }
+
+    @Test
+    fun `Planetary Nebula is illegal outside the 2nd Tier Phase`() {
+        val planetaryNebula = cardNamed("Planetary Nebula")
+        val error = TargetValidator.validatePhaseRestriction(planetaryNebula, com.tiersofexistence.engine.rules.Phase.Marauder)
+        assertIs<TargetValidationError.WrongScope>(error)
+    }
+
+    @Test
+    fun `a card without a phase restriction is legal in any Phase`() {
+        val tacticalMotion = cardNamed("Tactical Motion")
+        assertNull(TargetValidator.validatePhaseRestriction(tacticalMotion, com.tiersofexistence.engine.rules.Phase.Marauder))
+    }
+
     // --- Zone of Protection (rule 12) ---
 
     @Test

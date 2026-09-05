@@ -1,6 +1,7 @@
 package com.tiersofexistence.engine.cards
 
 import com.tiersofexistence.engine.model.PlayerColor
+import com.tiersofexistence.engine.model.TierLevel
 import com.tiersofexistence.engine.model.PlayerColor.BLACK
 import com.tiersofexistence.engine.model.PlayerColor.BLUE
 import com.tiersofexistence.engine.model.PlayerColor.GREEN
@@ -151,6 +152,7 @@ object FateHarvestCatalog {
             rarity = DOUBLE,
             timing = HELD,
             scope = YOUR_TURN,
+            restrictedToPhase = TierLevel.SECOND,
             effect = "Place a 2nd Dimensional Token in your 2nd Tier Birth Canal. Only playable " +
                 "during your turn of the 2nd Tier Phase.",
             flavorText = "Nebulae with high metallicity and density produce more habitable planets.",
@@ -290,6 +292,7 @@ object FateHarvestCatalog {
             rarity = TRIPLE,
             timing = HELD,
             scope = YOUR_TURN,
+            restrictedToPhase = TierLevel.FIRST,
             effect = "Place a 1st Dimensional Token in your 1st Tier Staging Pile. Only " +
                 "playable during your turn of the 1st Tier Phase.",
             flavorText = "Some nebulae emit much greater quantities of energy into space.",

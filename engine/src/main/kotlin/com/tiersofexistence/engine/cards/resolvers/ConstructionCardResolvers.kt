@@ -25,8 +25,10 @@ object MarauderConstructionCardResolver {
 
 /**
  * Shared resolver for cards that start a fresh Tier token directly on one or more Birth Canals
- * — Verdant Growth (1st/2nd/3rd Tier at once), Elemental Rebirth (1st Tier only). Each Tier's
- * own Ion Battery/Hatchery capacity is checked independently via
+ * — Verdant Growth (1st/2nd/3rd Tier at once), Elemental Rebirth (1st Tier only), Planetary
+ * Nebula (2nd Tier only, with its own "only during the 2nd Tier Phase" restriction enforced via
+ * [com.tiersofexistence.engine.cards.play.CardLifecycle.attemptPlay], not here). Each Tier's own
+ * Ion Battery/Hatchery capacity is checked independently via
  * [com.tiersofexistence.engine.state.TierTokenPool.startToken] — one Tier being out of tokens
  * doesn't block a construct on another Tier in the same card (see
  * `docs/card-mechanics-matrix.md`'s Verdant Growth entry for this edge case, low-priority and
@@ -48,10 +50,12 @@ object BirthCanalConstructionCardResolver {
  * Runs the same promotion-threshold check
  * ([com.tiersofexistence.engine.state.TierTokenPool.addToStagingPileDirectly]) a Nebula landing
  * would, including starting the next Tier's token if the pile was already one short of
- * threshold. Emitting Nebula's own additional "only during the 1st Tier Phase" restriction is
- * NOT enforced here — that needs the `PhaseRestriction` concept flagged in
- * `docs/card-mechanics-matrix.md` §4 Q7, which doesn't exist yet; this resolver alone is not a
- * complete implementation of that card.
+ * threshold. Emitting Nebula's own additional "only during the 1st Tier Phase" restriction
+ * (and Planetary Nebula's "only during the 2nd Tier Phase," used by
+ * [BirthCanalConstructionCardResolver] instead) is enforced by
+ * [com.tiersofexistence.engine.cards.play.TargetValidator.validatePhaseRestriction] via
+ * [com.tiersofexistence.engine.cards.play.CardLifecycle.attemptPlay] — driven by each card's own
+ * [com.tiersofexistence.engine.cards.FateHarvestCard.restrictedToPhase], not re-checked here.
  */
 object StagingPileConstructionCardResolver {
     fun resolve(state: GameState, request: CardPlayRequest, player: PlayerColor, tier: TierLevel): CardPlayResult {

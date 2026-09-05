@@ -3,6 +3,7 @@ package com.tiersofexistence.engine.cards.play
 import com.tiersofexistence.engine.cards.CardTiming
 import com.tiersofexistence.engine.cards.FateHarvestCard
 import com.tiersofexistence.engine.model.PlayerColor
+import com.tiersofexistence.engine.rules.Phase
 
 /**
  * Centralized, card-agnostic target/timing legality (Phase E) — shared rules every card
@@ -45,6 +46,20 @@ object TargetValidator {
         if (!alreadyPlayedThisPhase) return null
         return TargetValidationError.PhaseCardLimitReached(
             "Only one Fate Harvest card may be played per player per Phase (rule 4); already played this Phase, cannot also play ${card.name}",
+        )
+    }
+
+    /**
+     * A card's [FateHarvestCard.restrictedToPhase] (Planetary Nebula → 2nd Tier, Emitting
+     * Nebula → 1st Tier) — a second, narrower restriction on top of [CardScope.YOUR_TURN]
+     * (playable during your turn, but only of that specific Tier's Phase). Cards without this
+     * restriction (`null`) are unaffected.
+     */
+    fun validatePhaseRestriction(card: FateHarvestCard, currentPhase: Phase): TargetValidationError? {
+        val requiredTier = card.restrictedToPhase ?: return null
+        if (currentPhase == Phase.Tier(requiredTier)) return null
+        return TargetValidationError.WrongScope(
+            "${card.name} can only be played during the $requiredTier Phase, not $currentPhase",
         )
     }
 

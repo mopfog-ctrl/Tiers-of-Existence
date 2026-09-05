@@ -84,6 +84,9 @@ object CardLifecycle {
         val colorError = TargetValidator.validateColorRestriction(card, request.sourcePlayer)
         if (colorError != null) return CardPlayResult.Rejected(request, colorError)
 
+        val phaseRestrictionError = TargetValidator.validatePhaseRestriction(card, state.currentPhase)
+        if (phaseRestrictionError != null) return CardPlayResult.Rejected(request, phaseRestrictionError)
+
         val phaseLimitError = TargetValidator.validatePhaseCardLimit(card, player.hasPlayedCardThisPhase)
         if (phaseLimitError != null) return CardPlayResult.Rejected(request, phaseLimitError)
 

@@ -199,6 +199,56 @@ class CardResolversTest {
         assertEquals(0, state.players.getValue(RED).tierPool(TierLevel.SECOND).inPlayCount)
     }
 
+    // --- PhaseRestriction (Planetary Nebula / Emitting Nebula) ---
+
+    @Test
+    fun `Planetary Nebula starts a 2nd Tier token when played during the 2nd Tier Phase`() {
+        val state = GameState.newGame(listOf(RED))
+        state.players.getValue(RED).tierPool(TierLevel.SECOND).startToken() // so the 2nd Tier Phase isn't skipped
+        repeat(3) { state.advancePhase() } // Marauder -> 4th -> 3rd -> 2nd
+        assertEquals(com.tiersofexistence.engine.rules.Phase.Tier(TierLevel.SECOND), state.currentPhase)
+
+        val result = BirthCanalConstructionCardResolver.resolve(state, requestFor(RED, "Planetary Nebula"), RED, listOf(TierLevel.SECOND))
+
+        assertIs<CardPlayResult.Resolved>(result)
+        assertEquals(2, state.players.getValue(RED).tierPool(TierLevel.SECOND).inPlayCount)
+    }
+
+    @Test
+    fun `Planetary Nebula is rejected outside the 2nd Tier Phase, even for the right player`() {
+        val state = GameState.newGame(listOf(RED)) // starts on the Marauder Phase
+
+        val result = BirthCanalConstructionCardResolver.resolve(state, requestFor(RED, "Planetary Nebula"), RED, listOf(TierLevel.SECOND))
+
+        assertIs<CardPlayResult.Rejected>(result)
+        assertIs<TargetValidationError.WrongScope>((result as CardPlayResult.Rejected).reason)
+        assertEquals(0, state.players.getValue(RED).tierPool(TierLevel.SECOND).inPlayCount)
+        assertEquals(0, state.deck.discardPileSize)
+    }
+
+    @Test
+    fun `Emitting Nebula is rejected outside the 1st Tier Phase`() {
+        val state = GameState.newGame(listOf(RED)) // Marauder Phase, not 1st Tier
+
+        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(RED, "Emitting Nebula"), RED, TierLevel.FIRST)
+
+        assertIs<CardPlayResult.Rejected>(result)
+        assertIs<TargetValidationError.WrongScope>((result as CardPlayResult.Rejected).reason)
+        assertEquals(0, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile)
+    }
+
+    @Test
+    fun `Emitting Nebula succeeds during the 1st Tier Phase`() {
+        val state = GameState.newGame(listOf(RED))
+        state.skipEmptyPhases() // Round 1 always lands directly on the 1st Tier Phase
+        assertEquals(com.tiersofexistence.engine.rules.Phase.Tier(TierLevel.FIRST), state.currentPhase)
+
+        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(RED, "Emitting Nebula"), RED, TierLevel.FIRST)
+
+        assertIs<CardPlayResult.Resolved>(result)
+        assertEquals(1, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile)
+    }
+
     // --- StagingPileConstructionCardResolver ---
 
     @Test
