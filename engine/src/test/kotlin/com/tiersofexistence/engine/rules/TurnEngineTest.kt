@@ -324,7 +324,7 @@ class TurnEngineTest {
     // --- Zone of Protection entry ---
 
     @Test
-    fun `landing on a Zone of Protection entry square moves the token into the Zone`() {
+    fun `landing on a Zone of Protection entry square only offers entry, doesn't move the token in automatically`() {
         val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 2))
         val game = gameWith(TierLevel.FIRST, board)
         val red = game.players.getValue(RED)
@@ -332,9 +332,50 @@ class TurnEngineTest {
 
         val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 1)
 
-        assertEquals(SquareEffect.EnteredZone(2), result.effect)
+        assertEquals(SquareEffect.MayEnterZone(2), result.effect)
+        assertEquals(listOf(1), red.tierPool(TierLevel.FIRST).inPlayPositions) // still just sitting on the entry square
+        assertTrue(red.tierPool(TierLevel.FIRST).zoneResidents.isEmpty())
+    }
+
+    @Test
+    fun `choosing to enter the Zone via TurnEngine-enterZoneOfProtection moves the token in`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 2))
+        val game = gameWith(TierLevel.FIRST, board)
+        val red = game.players.getValue(RED)
+        red.tierPool(TierLevel.FIRST).startToken()
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 1)
+        val effect = assertIs<SquareEffect.MayEnterZone>(result.effect)
+
+        TurnEngine.enterZoneOfProtection(game, RED, TierLevel.FIRST, position = result.finalPosition, zoneNumber = effect.zoneNumber)
+
         assertTrue(red.tierPool(TierLevel.FIRST).inPlayPositions.isEmpty())
         assertEquals(listOf(2), red.tierPool(TierLevel.FIRST).zoneResidents)
+    }
+
+    @Test
+    fun `not entering the Zone leaves the token an ordinary, unprotected in-play token from then on`() {
+        val board = boardOf(
+            TierLevel.FIRST,
+            Square(0, SquareType.BIRTH_CANAL),
+            Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 2),
+            plain(2),
+            plain(3),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+        val red = game.players.getValue(RED)
+        val green = game.players.getValue(GREEN)
+        red.marauders.placeOnBirthCanal(TierLevel.FIRST)
+        green.tierPool(TierLevel.FIRST).startToken()
+        green.tierPool(TierLevel.FIRST).moveInPlay(0, 1) // landed on the entry square, never entered
+
+        val result = TurnEngine.moveMarauder(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 3)
+
+        // an un-entered token on the entry square is just a normal in-play token, so a Marauder
+        // passing over it destroys it exactly like any other unprotected square. (1st Tier then
+        // auto-replenishes from the Ion Battery, same as any other destroy — see
+        // TierTokenPool.refillInPlayIfRoom — so inPlayCount ends up back at 2, not 0.)
+        assertEquals(listOf(TokenRef(GREEN, TokenKind.TIER_TOKEN, 1)), result.destroyedTokens)
+        assertEquals(2, green.tierPool(TierLevel.FIRST).inPlayCount)
     }
 
     @Test

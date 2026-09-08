@@ -19,8 +19,7 @@ data class TokenRef(val color: PlayerColor, val kind: TokenKind, val position: I
 /** What happened as a result of landing on a square, beyond the plain position update. */
 sealed class SquareEffect {
     /** Nothing beyond moving there — includes squares whose effect isn't implemented yet (see
-     * [TurnEngine]'s class doc for what's deferred: Warp, Zone of Protection entry, most
-     * Time Wrinkle variants). */
+     * [TurnEngine]'s class doc for what's deferred: most Time Wrinkle variants). */
     data object None : SquareEffect()
     data class SentToStagingPile(val promotedToNextTier: Boolean) : SquareEffect()
     data object SentToStart : SquareEffect()
@@ -28,9 +27,12 @@ sealed class SquareEffect {
     data object Won : SquareEffect()
     data class DrewCard(val card: FateHarvestCard) : SquareEffect()
     data object Destroyed : SquareEffect()
-    /** Entered a Zone of Protection (see [com.tiersofexistence.engine.state.TierTokenPool.enterZone]) —
-     * the token is now off the main loop and protected until a card moves it out or destroys it. */
-    data class EnteredZone(val zoneNumber: Int) : SquareEffect()
+    /** Landed on a Zone of Protection's entry square — entering is the player's choice, and only
+     * available for the rest of this turn; call [TurnEngine.enterZoneOfProtection] before the
+     * turn ends. If the choice isn't taken, the token simply remains on the entry square as an
+     * ordinary, unprotected in-play position from then on — nothing else marks that square as
+     * special once the turn passes. */
+    data class MayEnterZone(val zoneNumber: Int) : SquareEffect()
     /** Landed on a Marauder Construction Facility — building is the player's choice; call [TurnEngine.buildMarauder]. */
     data object MayBuildMarauder : SquareEffect()
     /** A Marauder landed on a Marauder Transport — moving is optional; call [TurnEngine.transportMarauder]. */
@@ -59,11 +61,13 @@ data class MoveResult(
  *   concern for whatever orchestrates turns (the eventual UI), not something a stateless engine
  *   function can represent.
  *
- * Now implemented: Zone of Protection as real token state ([SquareEffect.EnteredZone], see
- * [com.tiersofexistence.engine.state.TierTokenPool.enterZone]) and Warp, using each square's own
- * printed [Square.magnitude]/[Square.note] instead of a hardcoded "Warp always means +5" — the 1st
- * Tier's Warp squares move 5, the 2nd Tier's moves 7, and the 1st Tier's compound Birth-Canal-with-
- * Warp-note ("Start. If you land here, Warp 5 spaces.") chains a second Warp move after the Birth
+ * Now implemented: Zone of Protection as real token state ([com.tiersofexistence.engine.state.TierTokenPool.enterZone]),
+ * though entering one is the player's own choice rather than automatic — landing on a Zone's entry
+ * square only offers it ([SquareEffect.MayEnterZone]; see that effect's doc for what happens if the
+ * choice isn't taken before the turn ends) — and Warp, using each square's own printed
+ * [Square.magnitude]/[Square.note] instead of a hardcoded "Warp always means +5" — the 1st Tier's
+ * Warp squares move 5, the 2nd Tier's moves 7, and the 1st Tier's compound Birth-Canal-with-Warp-
+ * note ("Start. If you land here, Warp 5 spaces.") chains a second Warp move after the Birth
  * Canal's own (no-op) landing resolves, exactly matching what's printed there.
  */
 object TurnEngine {
@@ -104,6 +108,13 @@ object TurnEngine {
      * the player's choice after [SquareEffect.MayTransport]. */
     fun transportMarauder(state: GameState, color: PlayerColor, fromTier: TierLevel, toTier: TierLevel, position: Int) {
         state.players.getValue(color).marauders.moveToNeighboringTier(fromTier, toTier, position)
+    }
+
+    /** Moves a token that landed on a Zone of Protection's entry square into the Zone — optional,
+     * the player's choice after [SquareEffect.MayEnterZone]; expected to be called before the
+     * turn ends (see that effect's doc for what happens if it isn't). */
+    fun enterZoneOfProtection(state: GameState, color: PlayerColor, tier: TierLevel, position: Int, zoneNumber: Int) {
+        state.players.getValue(color).tierPool(tier).enterZone(position, zoneNumber)
     }
 
     private fun resolveTierLanding(
@@ -179,8 +190,7 @@ object TurnEngine {
             }
             SquareType.ZONE_OF_PROTECTION -> {
                 val zoneNumber = requireNotNull(square.magnitude) { "Zone of Protection square on $tier has no zone number set" }
-                pool.enterZone(square.index, zoneNumber)
-                MoveResult(square.index, emptyList(), square.type, SquareEffect.EnteredZone(zoneNumber))
+                MoveResult(square.index, emptyList(), square.type, SquareEffect.MayEnterZone(zoneNumber))
             }
             SquareType.WARP -> resolveWarp(state, color, tier, board, square)
             else -> MoveResult(square.index, emptyList(), square.type, SquareEffect.None)

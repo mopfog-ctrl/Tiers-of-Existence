@@ -277,6 +277,21 @@ carve-out) is still not implemented — the rulebook never states what distance/
 that move would use (matrix §4 Q17) — `MovementCardResolver` gives an honest
 "not yet implemented" rejection rather than silently no-op'ing.
 
+**Entering a Zone is the player's own choice, not automatic** — confirmed by the user,
+correcting an earlier assumption baked into the original implementation. Landing on a Zone's
+numbered entry square only offers entry (`SquareEffect.MayEnterZone`, mirroring the existing
+`MayBuildMarauder`/`MayTransport` "offer, don't auto-apply" pattern); the caller opts in via
+`TurnEngine.enterZoneOfProtection` before the turn ends. If the choice isn't taken, the token
+simply remains an ordinary, unprotected in-play token sitting on that square from then on —
+nothing else marks it as special once the turn passes (there's no engine-enforced expiry
+timer; like every other "must be played immediately"/turn-scoped rule in this codebase, the
+caller driving turns is responsible for not offering the choice again later). This applies
+uniformly to both an ordinary dice-rolled landing and a landing caused by a movement card
+(both go through the same `TurnEngine.moveTierToken`) — a movement-card resolver doesn't
+surface the offer itself, consistent with how it already doesn't surface `MayBuildMarauder`/
+`MayTransport` either; only whatever's driving an ordinary Tier-Phase turn sees `MoveResult
+.effect` directly and can act on it.
+
 **Warp uses each square's own printed magnitude**, never a hardcoded "Warp always means +5":
 1st Tier Warp squares move 5, the 2nd Tier's moves 7, resolved via `TurnEngine.resolveWarp`
 exactly like Hyperthrust's chaining but without pass-through destruction (Warp's rulebook

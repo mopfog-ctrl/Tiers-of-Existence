@@ -180,11 +180,15 @@ class PrecedenceCardEffectIntegrationTest {
         chain.pass(GREEN)
 
         val order = chain.resolve()
-        val results = CardEffectDispatcher.dispatchAll(state, order)
+        val greenResult = CardEffectDispatcher.dispatch(state, order[0].request)
+        // Zone entry is the player's own choice (TurnEngine.enterZoneOfProtection), not automatic
+        // on landing — GREEN takes it here, in between the two responses resolving, exactly like
+        // choosing to enter would happen live during GREEN's own move resolution.
+        TurnEngine.enterZoneOfProtection(state, GREEN, TierLevel.FIRST, position = 2, zoneNumber = 1)
+        val redResult = CardEffectDispatcher.dispatch(state, order[1].request)
         chain.finishResolving()
 
-        assertIs<CardPlayResult.Resolved>(results[0]) // GREEN's own move into the Zone succeeds
-        val redResult = results[1]
+        assertIs<CardPlayResult.Resolved>(greenResult) // GREEN's own move into the Zone succeeds
         assertIs<CardPlayResult.Rejected>(redResult)
         assertIs<TargetValidationError.ZoneOfProtectionBlocksTarget>(redResult.reason)
         assertEquals(listOf(1), state.players.getValue(GREEN).tierPool(TierLevel.FIRST).zoneResidents) // untouched by the rejected response
