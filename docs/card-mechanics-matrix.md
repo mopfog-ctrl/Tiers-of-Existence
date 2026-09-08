@@ -410,14 +410,16 @@ the same primitive is reused across cards that need it instead of reinvented per
   Zone" primitive that doesn't exist yet), ZoneResidence.
 - **Known interactions:** None named specifically.
 - **Rulebook citation:** rulebook.txt:571-579, 433-438 (rule 12).
-- **Ambiguities:** How exactly are "3 neighboring squares" chosen — any 3 consecutive
-  main-loop squares the player picks freely, or neighboring some fixed reference point (the
-  player's own token, the Fate-Harvest-draw square, etc.)? Can the selection span from the
-  main loop into a Zone of Protection's own squares (which would explain the ZoP-exception
-  clause), or is the exception clause just covering the case where the 3 *main-loop* squares
-  happen to include the printed ZoP entry square itself (which nominally "has a Tier token
-  on it" only in the instant of transit, not really applicable)? Flagged in §4 Q8 — this is
-  one of the harder open questions in the whole audit.
+- **Implemented.** Confirmed with the user, resolving §4 Q8: "3 neighboring squares" means 3
+  consecutive main-loop positions, freely chosen by the player (not anchored to any fixed
+  reference point); the ZoP-exception clause is explained by the 3-square selection including
+  a Zone's own entry square, which reaches in and destroys everyone currently resident in that
+  Zone (not a separate, independently-targetable selection into the Zone's own interior
+  squares). A token that merely landed on the entry square without choosing to enter (Zone
+  entry is optional — see CLAUDE.md's "entering a Zone is the player's own choice" section) is
+  just an ordinary in-play token on that square, already covered by the plain per-square
+  sweep — the ZoP-reaching behavior is specifically about actual Zone residents. See
+  `PlasmaBurstResolver`.
 
 #### 10. Verdant Growth
 - **Rarity/copies:** Single ×1
@@ -1401,10 +1403,11 @@ movement, movement altered mid-interaction-chain, and the roundabout-style near-
    Motion's unique "after roll, before move" window. Needs a modeling decision in Phase B,
    not a rules question, but flagged here since it affects how faithfully the matrix's Scope
    field can be expressed in code.
-8. Plasma Burst: how exactly are the "3 neighboring squares" selected — any 3 consecutive
-   main-loop squares of the player's choice, relative to some fixed reference point, and/or
-   can the selection span into a Zone of Protection's own off-loop squares (which would
-   explain why this card is a named ZoP exception)?
+8. ~~Plasma Burst: how exactly are the "3 neighboring squares" selected~~ — **Resolved**,
+   confirmed by the user: 3 consecutive main-loop squares, freely chosen; the ZoP-exception
+   clause comes from the selection including a Zone's own entry square, reaching in to destroy
+   its residents, not from spanning into the Zone's off-loop squares directly. See §2's Plasma
+   Burst entry.
 9. Infernal Abyss: what happens if the drawing player's only existing token(s) are all
    currently inside a Zone of Protection, leaving no legal (mandatory) sacrifice target for
    this Immediate card?

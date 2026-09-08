@@ -141,7 +141,7 @@ between the two). It does NOT protect Marauders — "Marauders can be [destroyed
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
 
-## Card engine: shared infrastructure plus 25 of 32 cards implemented
+## Card engine: shared infrastructure plus 26 of 32 cards implemented
 
 `docs/card-mechanics-matrix.md` is the implementation spec — an audit of all 32 unique Fate
 Harvest cards' actual mechanical requirements (targets, Zone-of-Protection/Reprieve
@@ -155,7 +155,8 @@ why specific cards below aren't implemented yet.
 state):
 - `CardTarget` — what a play points at: `Token` (a persistent `TokenId`, see below),
   `StagingPileToken` (owner+Tier only — Staging Pile contents are genuinely fungible, no
-  identity needed), `TierChoice`, `PlayerChoice`.
+  identity needed), `TierChoice`, `PlayerChoice`, `BoardPosition` (a specific square, not a
+  token — Plasma Burst's "3 neighboring squares," identified by the first of the 3).
 - `CardPlayRequest`/`TriggeringEvent`/`CardPlayResult` — a live play attempt, why it's
   happening (drawn from a square / played from hand / responding in a Precedence chain), and
   its outcome (`Resolved`/`Rejected` with a reason/`AwaitingDecision`/`EnteredHand`).
@@ -206,7 +207,7 @@ that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) a
 `GameState`, instead of every caller needing to know which resolver object handles which
 card.
 
-**Cards implemented** (25 of 32), via shared resolvers rather than one class per card
+**Cards implemented** (26 of 32), via shared resolvers rather than one class per card
 (`cards/resolvers/`):
 - `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
   limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
@@ -239,15 +240,23 @@ card.
   operations this needed). The 1st Tier's own auto-replenishment rule still applies afterward,
   same as any other slot-freeing mutation — the wipe doesn't leave a player's 1st Tier
   permanently empty if their Ion Battery has tokens left.
+- `PlasmaBurstResolver` (Plasma Burst only) — removes every token (any owner, any type) from 3
+  consecutive main-loop squares on a chosen Tier. Confirmed with the user: "3 neighboring
+  squares" means 3 consecutive positions, and Plasma Burst does reach into a Zone of
+  Protection (it's one of the 5 named rule-12 exceptions, per both the card's own text and the
+  rulebook's general list) — when one of the 3 chosen squares is a Zone's own entry square,
+  every token currently resident in that Zone is destroyed too, on top of the plain per-square
+  sweep. New bulk-clear operations this needed: `TierTokenPool.destroyAllAt`/
+  `destroyAllInZone`, `MarauderPool.destroyAllAt` (stacking is legal, so more than one token
+  can occupy a single square or Zone).
 - Annulment (Antimatter) has no resolver of its own — it's handled structurally by
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.
 
-That's 24 cards dispatched by name plus Annulment = 25 of 32 actually playable end to end.
+That's 25 cards dispatched by name plus Annulment = 26 of 32 actually playable end to end.
 
-**Not yet implemented** (7 of 32), each blocked on a specific open rules question rather than
+**Not yet implemented** (6 of 32), each blocked on a specific open rules question rather than
 missing effort — see the cited matrix question before attempting:
-- **Plasma Burst** — how "3 neighboring squares" are selected (§4 Q8).
 - **Last Gasp** — whether its pass-through destroys the mover's own other tokens too, since
   its wording omits the usual owner-exemption clause (§4 Q14). Of the 6 Precedence-flagged
   cards, 5 are now implemented (Tactical Motion, Tactical Step, Annulment, Graviton Rift,

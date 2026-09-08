@@ -63,6 +63,7 @@ object CardEffectDispatcher {
             "Corpuscle Rot" -> requireTokenTarget(request, target0) { CorpuscleRotResolver.resolve(state, request, it) }
             "Graviton Rift" -> requireAllTokenTargets(request) { GravitonRiftResolver.resolve(state, request, it) }
             "Fluidic Wave" -> FluidicWaveResolver.resolve(state, request)
+            "Plasma Burst" -> requireBoardPosition(request, target0) { PlasmaBurstResolver.resolve(state, request, it) }
 
             // --- Turn manipulation ---
             "Phase Loss" -> PhaseLossResolver.resolve(state, request)
@@ -91,6 +92,12 @@ object CardEffectDispatcher {
         when (target) {
             is CardTarget.TierChoice -> block(target.tier)
             else -> CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${request.card.name} needs a Tier choice, got $target"))
+        }
+
+    private inline fun requireBoardPosition(request: CardPlayRequest, target: CardTarget?, block: (CardTarget.BoardPosition) -> CardPlayResult): CardPlayResult =
+        when (target) {
+            is CardTarget.BoardPosition -> block(target)
+            else -> CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${request.card.name} needs a board position, got $target"))
         }
 
     private inline fun requireAllTokenTargets(request: CardPlayRequest, block: (List<CardTarget.Token>) -> CardPlayResult): CardPlayResult {

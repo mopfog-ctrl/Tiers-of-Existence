@@ -77,6 +77,16 @@ class MarauderPool(val owner: PlayerColor) {
         slots.clear()
     }
 
+    /** Destroys every Marauder currently at [position] on [tier] in one sweep — stacking is
+     * legal, same as [TierTokenPool.destroyAllAt]. Used by whole-square-sweep effects like
+     * Plasma Burst. A no-op if nothing is there. */
+    fun destroyAllAt(tier: TierLevel, position: Int) {
+        val slots = inPlay.getValue(tier).filter { it.position == position }
+        if (slots.isEmpty()) return
+        inPlay.getValue(tier).removeAll(slots)
+        ionBattery += slots.size
+    }
+
     /** A Marauder Transport moves the Marauder to a neighboring Tier's Birth Canal. Its
      * [TokenId] is retired and a fresh one minted on the destination Tier, since [TokenId]
      * carries the Tier as part of identity (a Marauder's Tier is one of the things that makes it

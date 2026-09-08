@@ -37,11 +37,16 @@ sealed class CardTarget {
     data class StagingPileToken(val owner: PlayerColor, val tier: TierLevel) : CardTarget()
 
     /** A whole Tier, chosen without picking a specific token on it (e.g. which Tier to build a
-     * Marauder on, which Tier Plasma Burst/Phase Control acts on). */
+     * Marauder on, which Tier Phase Control acts on). */
     data class TierChoice(val tier: TierLevel) : CardTarget()
 
     /** Another player, not a token (Cleansing's "choose an opponent"). */
     data class PlayerChoice(val color: PlayerColor) : CardTarget()
+
+    /** A specific square on [tier]'s board, not a token — Plasma Burst's "3 neighboring
+     * squares," identified by the first of the 3 (the resolver derives the other two from the
+     * board's own wraparound indexing, same as any other movement). */
+    data class BoardPosition(val tier: TierLevel, val position: Int) : CardTarget()
 }
 
 /** The Tier a target refers to, where it has one — null for [CardTarget.PlayerChoice]. */
@@ -51,15 +56,18 @@ val CardTarget.tierOrNull: TierLevel?
         is CardTarget.StagingPileToken -> tier
         is CardTarget.TierChoice -> tier
         is CardTarget.PlayerChoice -> null
+        is CardTarget.BoardPosition -> tier
     }
 
 /** The player who owns a target, where it has an owner distinct from the acting player — null
- * for [CardTarget.TierChoice] and [CardTarget.PlayerChoice] (that IS the owner-like value there,
- * accessed via [CardTarget.PlayerChoice.color] instead). */
+ * for [CardTarget.TierChoice], [CardTarget.PlayerChoice] (that IS the owner-like value there,
+ * accessed via [CardTarget.PlayerChoice.color] instead), and [CardTarget.BoardPosition] (a
+ * location, not a piece — it has no owner at all). */
 val CardTarget.ownerOrNull: PlayerColor?
     get() = when (this) {
         is CardTarget.Token -> id.owner
         is CardTarget.StagingPileToken -> owner
         is CardTarget.TierChoice -> null
         is CardTarget.PlayerChoice -> null
+        is CardTarget.BoardPosition -> null
     }

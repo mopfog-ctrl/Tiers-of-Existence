@@ -266,6 +266,30 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         refillInPlayIfRoom()
     }
 
+    /** Destroys every in-play token currently at [position] in one sweep — stacking is legal
+     * (landing on a token doesn't destroy it, so more than one may share a square), so this can
+     * remove more than one at once. Used by whole-square-sweep effects like Plasma Burst. A
+     * no-op if nothing is there. */
+    fun destroyAllAt(position: Int) {
+        val slots = inPlay.filter { it.position == position }
+        if (slots.isEmpty()) return
+        inPlay.removeAll(slots)
+        ionBattery += slots.size
+        refillInPlayIfRoom()
+    }
+
+    /** Destroys every token currently resident in Zone [zoneNumber] in one sweep — more than one
+     * player's token can occupy the same Zone, since nothing about [enterZone] prevents it. Used
+     * by named rule-12 exceptions that reach a whole Zone at once, like Plasma Burst via its own
+     * entry square. A no-op if none are there; same legality caveat as [destroyInZone]. */
+    fun destroyAllInZone(zoneNumber: Int) {
+        val slots = inZone.filter { it.zoneNumber == zoneNumber }
+        if (slots.isEmpty()) return
+        inZone.removeAll(slots)
+        ionBattery += slots.size
+        refillInPlayIfRoom()
+    }
+
     /**
      * Refills empty in-play slots after a token leaves play (destroyed, staged, promoted, or
      * moved into a Zone) — looping since a single event can free more than one slot at once
