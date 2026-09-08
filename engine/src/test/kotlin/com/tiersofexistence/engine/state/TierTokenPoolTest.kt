@@ -229,4 +229,42 @@ class TierTokenPoolTest {
         assertEquals(0, pool.stagingPile)
         assertEquals(4, pool.ionBattery) // back to the starting count
     }
+
+    // --- Whole-Tier wipe (Fluidic Wave) ---
+
+    @Test
+    fun `destroying all in-play and staging pile tokens returns them to the Ion Battery`() {
+        val pool = TierTokenPool(TierLevel.THIRD, RED) // no 1st-Tier auto-replenish to complicate the count
+        pool.startToken()
+        pool.startToken() // 2 in play
+        pool.sendToStagingPile(0) // 1 in play, 1 staged (2nd in-play slot stays empty on Tier 3)
+        assertEquals(1, pool.inPlayCount)
+        assertEquals(1, pool.stagingPile)
+
+        pool.destroyAllInPlayAndStagingPile()
+
+        assertTrue(pool.inPlayPositions.isEmpty())
+        assertEquals(0, pool.stagingPile)
+        assertEquals(4, pool.ionBattery) // every one of the 4 tokens is back where it started
+        assertEquals(4, pool.totalOwned)
+    }
+
+    @Test
+    fun `destroying all in-play and staging pile tokens leaves Zone-of-Protection residents untouched`() {
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
+        pool.startToken()
+        pool.moveInPlay(0, 10)
+        pool.enterZone(fromPosition = 10, zoneNumber = 2)
+        pool.startToken() // fills the resulting open in-play slot
+        pool.sendToStagingPile(0)
+
+        pool.destroyAllInPlayAndStagingPile()
+
+        assertEquals(listOf(2), pool.zoneResidents) // untouched — not "in play" or "in Staging Piles"
+        assertEquals(0, pool.stagingPile)
+        assertEquals(8, pool.totalOwned)
+        // 1st Tier auto-replenishes the wiped-out loop slot back from the Ion Battery afterward,
+        // same as any other slot-freeing mutation.
+        assertEquals(listOf(0), pool.inPlayPositions)
+    }
 }

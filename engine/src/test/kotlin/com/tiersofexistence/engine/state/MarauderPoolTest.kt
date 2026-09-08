@@ -44,4 +44,19 @@ class MarauderPoolTest {
         assertEquals(4, pool.ionBattery)
         assertEquals(0, pool.inPlayCount(TierLevel.THIRD))
     }
+
+    @Test
+    fun `destroying all in-play Marauders on a Tier only affects that Tier`() {
+        val pool = MarauderPool(RED)
+        pool.placeOnBirthCanal(TierLevel.FIRST, bypassCap = true)
+        pool.placeOnBirthCanal(TierLevel.FIRST, bypassCap = true)
+        pool.placeOnBirthCanal(TierLevel.SECOND)
+        assertEquals(1, pool.ionBattery) // 4 total - 3 placed
+
+        pool.destroyAllInPlay(TierLevel.FIRST)
+
+        assertEquals(0, pool.inPlayCount(TierLevel.FIRST))
+        assertEquals(1, pool.inPlayCount(TierLevel.SECOND)) // untouched
+        assertEquals(3, pool.ionBattery)
+    }
 }

@@ -343,6 +343,10 @@ the same primitive is reused across cards that need it instead of reinvented per
 - **Ambiguities:** None on scope/targets (text is unusually explicit for this card); the
   general Reprieve-doesn't-apply-to-direct-destroys reasoning above should be captured as an
   explicit regression test since it's easy to accidentally over-protect.
+- **Implemented.** Confirmed with the user: the wipe goes no further than the card's own
+  printed wording — a player's Ion Battery reserves are untouched, since a token sitting in
+  reserve was never "on the 1st Tier" to begin with; only in-play and Staging Pile tokens are
+  removed. See `FluidicWaveResolver`.
 
 #### 8. Parallel Phasing
 - **Rarity/copies:** Single ×1

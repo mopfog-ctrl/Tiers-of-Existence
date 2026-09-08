@@ -67,6 +67,16 @@ class MarauderPool(val owner: PlayerColor) {
         ionBattery += 1
     }
 
+    /** Destroys every Marauder currently in play on [tier] — used by whole-Tier-wipe effects
+     * like Fluidic Wave. A Marauder can never be a Zone of Protection resident (Tier tokens
+     * only), so unlike [TierTokenPool.destroyAllInPlayAndStagingPile] there's no exclusion to
+     * apply here. */
+    fun destroyAllInPlay(tier: TierLevel) {
+        val slots = inPlay.getValue(tier)
+        ionBattery += slots.size
+        slots.clear()
+    }
+
     /** A Marauder Transport moves the Marauder to a neighboring Tier's Birth Canal. Its
      * [TokenId] is retired and a fresh one minted on the destination Tier, since [TokenId]
      * carries the Tier as part of identity (a Marauder's Tier is one of the things that makes it

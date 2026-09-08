@@ -62,6 +62,7 @@ object CardEffectDispatcher {
             "Infernal Abyss" -> requireTokenTarget(request, target0) { InfernalAbyssResolver.resolve(state, request, it) }
             "Corpuscle Rot" -> requireTokenTarget(request, target0) { CorpuscleRotResolver.resolve(state, request, it) }
             "Graviton Rift" -> requireAllTokenTargets(request) { GravitonRiftResolver.resolve(state, request, it) }
+            "Fluidic Wave" -> FluidicWaveResolver.resolve(state, request)
 
             // --- Turn manipulation ---
             "Phase Loss" -> PhaseLossResolver.resolve(state, request)

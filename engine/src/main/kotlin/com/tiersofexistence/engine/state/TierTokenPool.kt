@@ -205,6 +205,23 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         ionBattery += 1
     }
 
+    /**
+     * Fluidic Wave: destroys every in-play token and empties the Staging Pile in one sweep, all
+     * returning to the Ion Battery — but deliberately leaves [inZone] (and [hatchery]) alone,
+     * matching the card's own text: "removes all tokens from the 1st Tier... in play as well as
+     * tokens in Staging Piles, but does not include Tier tokens in the Zone of Protection." Runs
+     * no promotion check (these tokens are being destroyed, not banked toward a Wormhole-style
+     * advance) but does run [refillInPlayIfRoom] afterward like every other slot-freeing
+     * mutation — on the 1st Tier this can immediately repopulate up to 2 fresh in-play tokens
+     * from the Ion Battery, per that Tier's own auto-replenishment rule.
+     */
+    fun destroyAllInPlayAndStagingPile() {
+        ionBattery += inPlay.size + stagingPile
+        inPlay.clear()
+        stagingPile = 0
+        refillInPlayIfRoom()
+    }
+
     /** Adds a token directly to the Staging Pile (Lucky/Luckier/Emitting Nebula), running the
      * same promotion check a Nebula landing would. Returns true if a promotion was triggered
      * (caller must then start a token on the next Tier), matching [sendToStagingPile]'s caller

@@ -141,7 +141,7 @@ between the two). It does NOT protect Marauders — "Marauders can be [destroyed
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
 
-## Card engine: shared infrastructure plus 24 of 32 cards implemented
+## Card engine: shared infrastructure plus 25 of 32 cards implemented
 
 `docs/card-mechanics-matrix.md` is the implementation spec — an audit of all 32 unique Fate
 Harvest cards' actual mechanical requirements (targets, Zone-of-Protection/Reprieve
@@ -206,7 +206,7 @@ that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) a
 `GameState`, instead of every caller needing to know which resolver object handles which
 card.
 
-**Cards implemented** (24 of 32), via shared resolvers rather than one class per card
+**Cards implemented** (25 of 32), via shared resolvers rather than one class per card
 (`cards/resolvers/`):
 - `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
   limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
@@ -230,22 +230,31 @@ card.
   `DestructionCardResolver`'s core.
 - `PhaseLossResolver`, `PhaseControlResolver` — thin wrappers over `DeferredTurnModifier`
   (below).
+- `FluidicWaveResolver` (Fluidic Wave only) — an unconditional wipe of the entire 1st Tier:
+  every player's in-play tokens and Staging Pile contents, Tier tokens and Marauders alike (no
+  target to choose), except Tier tokens currently in a Zone of Protection. Confirmed with the
+  user: goes no further than the card's own printed wording — Ion Battery reserves are
+  untouched, only in-play/Staging Pile tokens are swept (see `TierTokenPool
+  .destroyAllInPlayAndStagingPile`/`MarauderPool.destroyAllInPlay`, the new bulk-clear
+  operations this needed). The 1st Tier's own auto-replenishment rule still applies afterward,
+  same as any other slot-freeing mutation — the wipe doesn't leave a player's 1st Tier
+  permanently empty if their Ion Battery has tokens left.
 - Annulment (Antimatter) has no resolver of its own — it's handled structurally by
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.
 
-That's 23 cards dispatched by name plus Annulment = 24 of 32 actually playable end to end.
+That's 24 cards dispatched by name plus Annulment = 25 of 32 actually playable end to end.
 
-**Not yet implemented** (8 of 32), each blocked on a specific open rules question rather than
+**Not yet implemented** (7 of 32), each blocked on a specific open rules question rather than
 missing effort — see the cited matrix question before attempting:
 - **Plasma Burst** — how "3 neighboring squares" are selected (§4 Q8).
 - **Last Gasp** — whether its pass-through destroys the mover's own other tokens too, since
-  its wording omits the usual owner-exemption clause (§4 Q14).
-- **Fluidic Wave**, **Galactic Roundabout** — cross-Tier/whole-board effects; Galactic
-  Roundabout also has an open question about whether its Marauder movement triggers
-  pass-through destruction and how simultaneous near-wins resolve (§4 Q5). Of the 6
-  Precedence-flagged cards, 4 are implemented (Tactical Motion, Tactical Step, Annulment,
-  Graviton Rift) — Fluidic Wave and Last Gasp are the two still not implemented.
+  its wording omits the usual owner-exemption clause (§4 Q14). Of the 6 Precedence-flagged
+  cards, 5 are now implemented (Tactical Motion, Tactical Step, Annulment, Graviton Rift,
+  Fluidic Wave) — Last Gasp is the only one still not implemented.
+- **Galactic Roundabout** — cross-Tier/whole-board effect; open question about whether its
+  Marauder movement triggers pass-through destruction and how simultaneous near-wins resolve
+  (§4 Q5).
 - **Cleansing** — needs a generalized pending-decision primitive for "a player other than the
   one who played the card must choose" (sketched as `PendingDecision` but not wired up).
 - **Radiation Burst** — whose Staging Piles "all" refers to, and whether emptying triggers
