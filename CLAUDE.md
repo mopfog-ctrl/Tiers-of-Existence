@@ -212,7 +212,7 @@ that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) a
 `GameState`, instead of every caller needing to know which resolver object handles which
 card.
 
-**Cards implemented** (30 of 32), via shared resolvers rather than one class per card
+**Cards implemented** (31 of 32), via shared resolvers rather than one class per card
 (`cards/resolvers/`):
 - `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
   limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
@@ -308,18 +308,32 @@ card.
   token can share a Zone) — its 3 pre-existing callers (`MovementCardResolver`/
   `ParallelPhasingResolver`/`LastGaspResolver`) updated accordingly, no behavior change for
   any of them since each already had the specific id in hand.
+- `CleansingResolver` (Cleansing only) — the one card whose resolution can't finish
+  synchronously: the source player chooses an opponent (`CardTarget.PlayerChoice`), but
+  *which* of that opponent's own held cards to discard is the opponent's own choice, not
+  something the resolver or the source player can pick for them. Once Cleansing itself is
+  legally played (color/Phase/per-Phase-limit checks, discarding Cleansing itself), `resolve`
+  returns `CardPlayResult.AwaitingDecision(request, PendingDecision.OpponentDiscardChoice
+  (opponent))` rather than `Resolved` — mirroring the existing "offer, don't auto-apply"
+  pattern (`SquareEffect.MayEnterZone`/`MayBuildMarauder`/`MayTransport`) instead of building a
+  second, parallel pending-decision engine alongside `InteractionChain`: whatever's driving the
+  game is expected to prompt the named opponent and then call `CleansingResolver
+  .completeDiscard(state, decidingPlayer, cardToDiscard)` once they've answered, same as it's
+  already expected to call `TurnEngine.enterZoneOfProtection` once a player answers *that*
+  offer. Confirmed by the user, resolving matrix §4 Q12: if the targeted opponent's hand is
+  empty, that's a no-op (nothing to force) — `resolve` returns `Resolved` directly in that
+  case instead of a pending decision nobody could ever answer; Cleansing itself is still
+  discarded and still counts against the Phase's card-play limit either way, since the target
+  itself was legal.
 - Annulment (Antimatter) has no resolver of its own — it's handled structurally by
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.
 
-That's 29 cards dispatched by name plus Annulment = 30 of 32 actually playable end to end.
+That's 30 cards dispatched by name plus Annulment = 31 of 32 actually playable end to end.
 
-**Not yet implemented** (2 of 32), each blocked on a specific open rules question rather than
-missing effort — see the cited matrix question before attempting:
-- **Cleansing** — needs a generalized pending-decision primitive for "a player other than the
-  one who played the card must choose" (sketched as `PendingDecision` but not wired up).
-- **Delayed Motion** — needs a post-roll/pre-move checkpoint in `TurnEngine` that doesn't
-  exist yet (no other card modifies a roll rather than a token).
+**Not yet implemented** (1 of 32): **Delayed Motion** — needs a post-roll/pre-move checkpoint
+in `TurnEngine` that doesn't exist yet (no other card modifies a roll rather than a token); see
+`docs/card-mechanics-matrix.md` §27.
 
 **Warp is implemented**, not deferred — see below; it was the one item in this section that
 used to say "ambiguous," and isn't anymore.

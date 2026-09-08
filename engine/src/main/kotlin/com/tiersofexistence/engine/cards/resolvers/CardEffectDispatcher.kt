@@ -73,6 +73,9 @@ object CardEffectDispatcher {
             "Phase Loss" -> PhaseLossResolver.resolve(state, request)
             "Phase Control" -> requireTierChoice(request, target0) { PhaseControlResolver.resolve(state, request, it) }
 
+            // --- Hand/card-state ---
+            "Cleansing (Atmospheric)" -> requirePlayerChoice(request, target0) { CleansingResolver.resolve(state, request, it) }
+
             else -> error("No resolver registered yet for ${request.card.name}")
         }
     }
@@ -96,6 +99,12 @@ object CardEffectDispatcher {
         when (target) {
             is CardTarget.TierChoice -> block(target.tier)
             else -> CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${request.card.name} needs a Tier choice, got $target"))
+        }
+
+    private inline fun requirePlayerChoice(request: CardPlayRequest, target: CardTarget?, block: (CardTarget.PlayerChoice) -> CardPlayResult): CardPlayResult =
+        when (target) {
+            is CardTarget.PlayerChoice -> block(target)
+            else -> CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${request.card.name} needs a player choice, got $target"))
         }
 
     private inline fun requireBoardPosition(request: CardPlayRequest, target: CardTarget?, block: (CardTarget.BoardPosition) -> CardPlayResult): CardPlayResult =

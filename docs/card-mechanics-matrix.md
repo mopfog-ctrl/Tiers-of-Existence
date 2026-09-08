@@ -955,9 +955,16 @@ the same primitive is reused across cards that need it instead of reinvented per
   systems.
 - **Known interactions:** None named.
 - **Rulebook citation:** rulebook.txt:729-735.
-- **Ambiguities:** What happens if the targeted opponent's hand is empty (nothing to
-  discard)? No-op is the obvious reading (there's nothing to force), but flagged since the
-  rulebook doesn't address it explicitly. §4 Q12.
+- **Ambiguities:** Resolved — see §4 Q12.
+- **Implemented.** Confirmed by the user: an empty target hand is a no-op, exactly the
+  high-confidence default this entry originally flagged. `CleansingResolver.resolve` returns
+  `CardPlayResult.AwaitingDecision(request, PendingDecision.OpponentDiscardChoice(opponent))`
+  once Cleansing itself is legally played, instead of a generalized shared primitive with
+  `InteractionChain` — the "Required engine state" note above suggested unifying this with
+  Precedence's pending-response machinery, but the simpler, already-established "offer, don't
+  auto-apply" pattern (`SquareEffect.MayEnterZone` and friends) covers it just as well without
+  a new engine subsystem: whatever drives the game calls `CleansingResolver.completeDiscard`
+  once the named opponent has chosen.
 
 #### 27. Delayed Motion
 - **Rarity/copies:** Triple ×3
@@ -1452,8 +1459,9 @@ movement, movement altered mid-interaction-chain, and the roundabout-style near-
     cancellation, once applied, stay permanently removed from the chain regardless of what
     happens to the Annulment that caused it? The rulebook's rule 22 only describes the
     two-card case explicitly.
-12. Cleansing: no-op confirmation when the targeted opponent's hand is empty (high-confidence
-    default, not explicitly stated).
+12. ~~Cleansing: no-op confirmation when the targeted opponent's hand is empty...~~ —
+    **Resolved**, confirmed by the user: yes, a no-op, exactly the high-confidence default
+    this entry originally flagged. See §2's Cleansing entry.
 13. Delayed Motion: can it be played on any player's pending roll, or only the roller's own
     (no explicit Your-Turn restatement for this card, unlike most other turn-scoped cards)?
 14. ~~**Last Gasp**: does "any tokens you pass are destroyed" include the mover's *own* other
