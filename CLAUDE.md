@@ -182,6 +182,34 @@ Marauders existing at once when legal effects produce that (proving there's no h
 cap), destroying a Marauder not replenishing anything, and repeated spawn/destroy cycles
 (deliberately far more than 4) never depending on any component inventory.
 
+## Empty-Phase skipping: canonical behavior, plus a stalled-state fail-safe
+
+`GameState.skipEmptyPhases()`'s canonical behavior is unchanged: any number of consecutive
+empty Phases (an upper Tier with no player's tokens on it, an empty Marauder Phase) skip
+straight through to the next Phase with an eligible turn — "Phases skip when there's nothing
+to be done in them" — and this can legitimately mean traversing most or all of
+`Phase.ROUND_ORDER` in one call (Round 1 always does: Marauder/4th/3rd/2nd are all empty until
+the 1st Tier Phase, the only one anyone has tokens on yet). Nothing about that changed.
+
+**Added: a defensive fail-safe, not a gameplay rule.** The previous unbounded `while` loop
+would spin forever on a genuinely impossible/corrupted `GameState` — no Phase has an eligible
+turn in any player, *and* no winner is declared. Ordinary canonical play can never legally
+reach that state (the 1st Tier's own auto-replenishment — `TierTokenPool.refillInPlayIfRoom`
+— keeps that Phase eligible for as long as any player has 1st Tier tokens left anywhere, and
+the game ends once someone wins), but a malformed `GameState` (e.g. hand-built with every
+pool emptied out) could. `skipEmptyPhases` now counts consecutive `advancePhase()` calls
+within one search and throws `GameStalledException` (a dedicated, descriptively-named
+`IllegalStateException` subtype in `state/GameState.kt`) once a full Phase cycle
+(`Phase.ROUND_ORDER.size` Phases) has been traversed with nothing found — never a draw, loss,
+elimination, or any other gameplay outcome, purely an engine-invariant diagnostic. See
+`GameStateTest`'s "skipEmptyPhases: canonical skipping, and the fail-safe stalled-state guard"
+section: one empty upper-Tier Phase, several consecutive empty Tier Phases, and reaching the
+correct next Phase with the correct player queued all still skip normally (no exception); a
+deliberately-constructed all-empty `GameState` (raw `PlayerState`s, no tokens started
+anywhere, bypassing `GameState.newGame`) throws `GameStalledException` instead of hanging; and
+a dedicated test demonstrates 1st-Tier auto-replenishment is exactly the mechanism that keeps
+ordinary play from ever reaching the stalled state in the first place.
+
 ## Turn-resolution engine: base mechanics
 
 `rules/TurnEngine.kt` does the roll → move → resolve-the-landed-square work, on top of

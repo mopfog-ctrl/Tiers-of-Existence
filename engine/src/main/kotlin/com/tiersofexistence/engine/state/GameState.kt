@@ -12,6 +12,17 @@ import com.tiersofexistence.engine.rules.PendingRoll
 import com.tiersofexistence.engine.rules.TurnOrder
 
 /**
+ * Thrown by [GameState.skipEmptyPhases] when a full Phase cycle has been traversed with no
+ * player eligible for a turn in any Phase and no winner declared — an engine invariant
+ * violation (malformed/corrupted [GameState]), never a gameplay outcome. Deliberately not
+ * modeled as a draw/loss/elimination result: ordinary canonical play can never legally reach
+ * this state (see [GameState.skipEmptyPhases]'s own doc for why), so there is no rule to encode
+ * for it, only a fail-safe against an unbounded loop if it's ever somehow reached anyway (e.g.
+ * a hand-built test [GameState] with every pool emptied out).
+ */
+class GameStalledException(message: String) : IllegalStateException(message)
+
+/**
  * Top-level mutable game state: one entry per player, the four boards, the Fate Harvest
  * deck, and where we are in the Round/Phase cycle.
  *
@@ -155,9 +166,39 @@ class GameState(
      * Idempotent: a no-op if [currentTurn] is already non-null. Call this once to kick off
      * turn-driving on a fresh [GameState] (a new game always starts on the empty Marauder
      * Phase); [endTurn] calls it automatically afterward.
+     *
+     * Ordinary empty-Phase skipping is unbounded-loop-shaped on purpose — several consecutive
+     * empty upper-Tier Phases skipping straight through to whichever Phase actually has a turn
+     * is normal, canonical behavior, not something this method second-guesses. The one thing it
+     * guards against is a genuinely impossible/corrupted state: no Phase has an eligible turn
+     * *and* no winner has been declared, so the ordinary loop would spin forever. That can't
+     * happen in legally-reached play (the 1st Tier's own auto-replenishment — see
+     * [com.tiersofexistence.engine.state.TierTokenPool.refillInPlayIfRoom] — keeps that Phase
+     * eligible for as long as any player has 1st Tier tokens left anywhere, and the game ends
+     * once someone wins), but a deliberately/accidentally malformed [GameState] (e.g. hand-built
+     * in a test with every pool emptied out) could reach it. This is a defensive engine-invariant
+     * check, not a new gameplay rule — it never produces a draw/loss/elimination outcome, only
+     * [GameStalledException] once a full Phase cycle ([Phase.ROUND_ORDER]'s length) has been
+     * traversed without finding a single eligible turn.
      */
     fun skipEmptyPhases() {
-        while (turnQueue.isEmpty() && winner == null) advancePhase()
+        var phasesTraversedThisSearch = 0
+        while (turnQueue.isEmpty() && winner == null) {
+            advancePhase()
+            phasesTraversedThisSearch += 1
+            if (phasesTraversedThisSearch > Phase.ROUND_ORDER.size) {
+                throw GameStalledException(
+                    "GameState.skipEmptyPhases traversed a full Phase cycle " +
+                        "(${Phase.ROUND_ORDER.size} Phases: ${Phase.ROUND_ORDER}) starting from Round " +
+                        "$roundNumber without finding any player with an eligible turn in any Phase, and " +
+                        "no winner is declared. This is not a legal gameplay outcome (ordinary play always " +
+                        "keeps at least the 1st Tier Phase eligible for any player with 1st Tier tokens " +
+                        "remaining, per TierTokenPool's auto-replenishment) — it indicates a malformed or " +
+                        "corrupted GameState (e.g. every player's token pools emptied out with no winner " +
+                        "declared), not a stalemate the game itself should ever reach.",
+                )
+            }
+        }
     }
 
     /**

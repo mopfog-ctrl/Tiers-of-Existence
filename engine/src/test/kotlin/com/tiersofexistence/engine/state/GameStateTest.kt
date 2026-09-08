@@ -1,10 +1,14 @@
 package com.tiersofexistence.engine.state
 
 import com.tiersofexistence.engine.model.PlayerColor
+import com.tiersofexistence.engine.model.PlayerColor.GREEN
+import com.tiersofexistence.engine.model.PlayerColor.RED
 import com.tiersofexistence.engine.model.TierLevel
 import com.tiersofexistence.engine.rules.Phase
+import com.tiersofexistence.engine.rules.TurnOrder
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class GameStateTest {
@@ -218,5 +222,70 @@ class GameStateTest {
 
         assertEquals(second, game.pendingRoll)
         assertEquals(PlayerColor.GREEN, game.pendingRoll!!.player)
+    }
+
+    // --- skipEmptyPhases: canonical skipping, and the fail-safe stalled-state guard ---
+
+    @Test
+    fun `one empty upper-Tier Phase skips normally to the next playable Phase`() {
+        val game = GameState.newGame(listOf(RED))
+        game.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()
+        game.advancePhase() // Marauder -> Tier(FOURTH), still empty
+        assertEquals(Phase.Tier(TierLevel.FOURTH), game.currentPhase)
+        assertEquals(null, game.currentTurn)
+
+        game.skipEmptyPhases()
+
+        assertEquals(Phase.Tier(TierLevel.THIRD), game.currentPhase)
+        assertEquals(RED, game.currentTurn)
+    }
+
+    @Test
+    fun `several consecutive empty Tier Phases skip normally to the next playable Phase`() {
+        val game = GameState.newGame(listOf(RED))
+        game.players.getValue(RED).tierPool(TierLevel.SECOND).startToken()
+
+        game.skipEmptyPhases() // skips Marauder, Tier(FOURTH), Tier(THIRD) — 3 consecutive empty Phases
+
+        assertEquals(Phase.Tier(TierLevel.SECOND), game.currentPhase)
+        assertEquals(RED, game.currentTurn)
+    }
+
+    @Test
+    fun `skipEmptyPhases reaches the correct next playable Phase with the correct player queued`() {
+        val game = GameState.newGame(listOf(RED, GREEN)) // both start with a 1st Tier token only
+        game.players.getValue(GREEN).tierPool(TierLevel.THIRD).startToken()
+
+        game.skipEmptyPhases()
+
+        assertEquals(Phase.Tier(TierLevel.THIRD), game.currentPhase)
+        assertEquals(GREEN, game.currentTurn) // only GREEN is eligible on the 3rd Tier
+    }
+
+    @Test
+    fun `1st Tier auto-replenishment keeps that Phase eligible after a player's only token is destroyed, preventing the ordinary soft-lock`() {
+        val game = GameState.newGame(listOf(RED, GREEN))
+        game.skipEmptyPhases()
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        val redPool = game.players.getValue(RED).tierPool(TierLevel.FIRST)
+        assertEquals(1, redPool.inPlayCount)
+
+        redPool.destroyInPlay(0) // RED's only 1st Tier token, destroyed by some ordinary effect
+
+        // Auto-replenished from the Ion Battery (TierTokenPool.refillInPlayIfRoom) — RED still
+        // has a legal 1st Tier turn, so the 1st Tier Phase never permanently loses them.
+        assertTrue(redPool.inPlayCount > 0)
+        assertTrue(RED in game.turnOrder.turnsFor(Phase.Tier(TierLevel.FIRST), game.players))
+    }
+
+    @Test
+    fun `a deliberately impossible all-empty state throws GameStalledException instead of looping forever`() {
+        // No player has any Tier token or Marauder anywhere, and no winner is declared — every
+        // Phase is permanently empty. Constructed directly (bypassing GameState.newGame, which
+        // always starts a 1st Tier token) specifically to reach this otherwise-unreachable state.
+        val players = mapOf(RED to PlayerState(RED), GREEN to PlayerState(GREEN))
+        val game = GameState(players, TurnOrder(listOf(RED, GREEN)))
+
+        assertFailsWith<GameStalledException> { game.skipEmptyPhases() }
     }
 }
