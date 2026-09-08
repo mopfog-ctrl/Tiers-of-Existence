@@ -1,6 +1,7 @@
 package com.tiersofexistence.engine.cards.resolvers
 
 import com.tiersofexistence.engine.board.BoardLayouts
+import com.tiersofexistence.engine.board.ProtectionZone
 import com.tiersofexistence.engine.board.Square
 import com.tiersofexistence.engine.board.SquareType
 import com.tiersofexistence.engine.board.TierBoard
@@ -35,6 +36,14 @@ class ParallelPhasingResolverTest {
     private fun plain(index: Int) = Square(index, SquareType.PLAIN)
 
     private fun boardOf6() = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL)) + (1..5).map { plain(it) })
+
+    /** 6 squares like [boardOf6], but square 1 is Zone [zoneNumber]'s own entry square, with a
+     * 3-slot Zone behind it — for tests that need to move a token out of a Zone. */
+    private fun boardOf6WithZone(zoneNumber: Int) = TierBoard(
+        TierLevel.FIRST,
+        listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = zoneNumber)) + (2..5).map { plain(it) },
+        protectionZones = listOf(ProtectionZone(zoneNumber, squares = List(3) { SquareType.PLAIN })),
+    )
 
     private fun gameWith(board: TierBoard, colors: List<PlayerColor> = listOf(RED, GREEN)): GameState {
         val players = colors.associateWith { PlayerState(it) }
@@ -145,11 +154,12 @@ class ParallelPhasingResolverTest {
     }
 
     @Test
-    fun `the player's own token in their own Zone of Protection is a legal target but moving it out is not yet implemented`() {
-        val state = gameWith(boardOf6())
+    fun `the player's own token in their own Zone of Protection is moved out via moveZoneToken`() {
+        val state = gameWith(boardOf6WithZone(zoneNumber = 2))
         val ownPool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
         val ownId = ownPool.startToken()
-        ownPool.enterZone(fromPosition = 0, zoneNumber = 2)
+        ownPool.moveInPlay(0, 1)
+        ownPool.enterZone(fromPosition = 1, zoneNumber = 2) // zone position 1, in a 3-slot Zone
         val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
 
         val result = ParallelPhasingResolver.resolve(
@@ -159,9 +169,12 @@ class ParallelPhasingResolverTest {
             CardTarget.Token(opponentId),
         )
 
-        assertIs<CardPlayResult.Rejected>(result)
-        assertIs<TargetValidationError.CardSpecificRestriction>(result.reason) // legal per rule 12, just not implemented
-        assertEquals(0, state.deck.discardPileSize)
+        assertIs<CardPlayResult.Resolved>(result)
+        // 1 (zone position) + 4 spaces = 5, overflows the 3-slot Zone by 2 — exits at the entry
+        // square (index 1) and continues 2 more spaces on the main loop, landing at index 3.
+        assertTrue(ownPool.zoneResidents.isEmpty())
+        assertEquals(listOf(3), ownPool.inPlayPositions)
+        assertEquals(listOf(4), state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayPositions)
     }
 
     @Test

@@ -27,10 +27,14 @@ data class Square(
  *
  * [squares] lists the zone's own slots in board order (usually [SquareType.PLAIN], i.e.
  * "empty spaces" with no effect beyond the protection itself) — empty where a photo hasn't
- * confirmed the count/contents yet. This is deliberately NOT a dice-driven sub-path the
- * rulebook never describes moving square-by-square once inside a Zone, only entering and
- * later leaving it (e.g. via specific Fate Harvest cards, rule #12); [squares] just records
- * what's physically printed there. Notably, a Zone can itself contain a
+ * confirmed the count/contents yet. **Confirmed by the user (correcting an earlier, wrong
+ * assumption baked in here): a Zone IS a dice-driven sub-path.** A resident token can be
+ * chosen and moved during an ordinary Tier-Phase turn (or by a card, e.g. Galactic
+ * Roundabout) by rolling/adding spaces to its own position *within* [squares] — see
+ * [com.tiersofexistence.engine.state.TierTokenPool.zonePositionOf]/
+ * [com.tiersofexistence.engine.rules.TurnEngine.moveZoneToken] for the actual movement
+ * mechanic: moving past the end of [squares] exits the Zone, continuing the leftover spaces
+ * from this Zone's own main-loop entry square. Notably, a Zone can itself contain a
  * [SquareType.WORMHOLE_OF_CONSTRUCTION] slot (confirmed for the 1st Tier's Zone 2) — the
  * rulebook's "square that says to move to the Wormhole of Construction" turned out to live
  * inside a Zone of Protection, not on the main loop.
@@ -85,4 +89,19 @@ data class TierBoard(
         }
         return null
     }
+
+    /** This Tier's [ProtectionZone] numbered [number]. Throws if this Tier has no such Zone —
+     * an internal-consistency check (callers only ever reach here for a Zone a token is
+     * actually resident in), not a player-facing legality check. */
+    fun protectionZone(number: Int): ProtectionZone =
+        protectionZones.firstOrNull { it.number == number }
+            ?: error("No Zone of Protection $number on $tier")
+
+    /** The main-loop index of Zone [number]'s own numbered entry square (see
+     * [SquareType.ZONE_OF_PROTECTION]/[Square.magnitude]) — where a token re-enters the main
+     * loop after moving past the end of that Zone's own [ProtectionZone.squares]. Same
+     * throws-if-absent contract as [protectionZone]. */
+    fun zoneEntryIndex(number: Int): Int =
+        squares.firstOrNull { it.type == SquareType.ZONE_OF_PROTECTION && it.magnitude == number }?.index
+            ?: error("No Zone of Protection $number entry square on $tier")
 }

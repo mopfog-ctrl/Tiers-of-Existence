@@ -142,6 +142,24 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   not an oversight. Double-check this specific card any time pass-through logic
   (`TurnEngine.destroyTokensPassed`) changes — it's the one caller that needs
   `exemptMoverOwnTokens = false`; every other caller should keep the default `true`.
+- **A Zone of Protection is a real dice-driven sub-path, not just an undifferentiated
+  "protected" flag** — confirmed by the user, reversing an earlier, wrong assumption baked
+  into the original implementation (`BoardLayouts.kt`'s class doc used to say the opposite;
+  now corrected). A resident Tier token can be chosen and moved during an ordinary Tier-Phase
+  turn — rolling dice for it exactly like any main-loop token — or by a card (the owner's
+  own-token-own-Zone movement-card carve-out, or Galactic Roundabout's confirmed "+2,
+  advancing back into the normal board as necessary"). `TierTokenPool` tracks each resident's
+  own 1-indexed position within its Zone's own `ProtectionZone.squares`
+  (`zonePositionOf`/`advanceInZone`); `TurnEngine.moveZoneToken` is the movement primitive —
+  adding spaces to that position either keeps the token a Zone resident (resolving that
+  zone-internal square's own effect) or, once the total overflows past the Zone's last slot,
+  exits it back onto the main loop, continuing the leftover spaces from the Zone's own
+  numbered entry square (so further chaining — a Warp square right there, Hyperthrust, etc. —
+  resolves exactly as it would for any other main-loop move). Pass-through destruction never
+  reaches *other* tokens resident in the same Zone as the mover, even for Last Gasp — matches
+  every pass-through card's own printed "except tokens in the Zone of Protection" clause, so
+  double-check this any time Zone-traversal code changes: only the exiting (main-loop) leg of
+  a Zone-originating move should ever be able to destroy anything.
 
 Keep answers focused and cite sources. Don't speculate about UI/UX, Android APIs, or
 anything outside "what does the rulebook say / does the code match it."

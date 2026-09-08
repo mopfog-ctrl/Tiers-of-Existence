@@ -27,11 +27,11 @@ import com.tiersofexistence.engine.state.GameState
  * play, not two independent half-plays that could partially succeed.
  *
  * The card's own text draws the Zone-of-Protection line differently per side: the owner's own
- * token gets rule 12's "your own movement card on your own token" carve-out (though, same as
- * [MovementCardResolver], actually moving a Zone-resident token back out isn't implemented, so
- * that target still gets an honest "not yet implemented" rejection rather than a ZoP block); the
- * opponent's token gets no carve-out at all — Parallel Phasing is not one of the 5 named rule-12
- * exceptions, so a Zone-resident opponent token is simply illegal to target, full stop.
+ * token gets rule 12's "your own movement card on your own token" carve-out — implemented via
+ * [TurnEngine.moveZoneToken], same as [MovementCardResolver] (§4 Q17, resolved: a Zone is a real
+ * dice-driven sub-path); the opponent's token gets no carve-out at all — Parallel Phasing is not
+ * one of the 5 named rule-12 exceptions, so a Zone-resident opponent token is simply illegal to
+ * target, full stop.
  */
 object ParallelPhasingResolver {
     fun resolve(state: GameState, request: CardPlayRequest, ownTarget: CardTarget.Token, opponentTarget: CardTarget.Token): CardPlayResult {
@@ -56,15 +56,16 @@ object ParallelPhasingResolver {
         val playResult = CardLifecycle.attemptPlay(state, request)
         if (playResult !is CardPlayResult.Resolved) return playResult
 
-        move(state, ownTarget, (ownCheck as MovableCheck.Movable).fromPosition)
-        move(state, opponentTarget, (opponentCheck as MovableCheck.Movable).fromPosition)
+        move(state, ownTarget, ownCheck)
+        move(state, opponentTarget, opponentCheck)
         return playResult
     }
 
     /** The outcome of checking whether one target can legally be moved — either its current
-     * in-play position, or the [CardPlayResult.Rejected] to return instead. */
+     * position (in play or in a Zone), or the [CardPlayResult.Rejected] to return instead. */
     private sealed class MovableCheck {
-        data class Movable(val fromPosition: Int) : MovableCheck()
+        data class InPlayAt(val fromPosition: Int) : MovableCheck()
+        data class InZoneAt(val zoneNumber: Int) : MovableCheck()
         data class Blocked(val result: CardPlayResult.Rejected) : MovableCheck()
     }
 
@@ -81,25 +82,21 @@ object ParallelPhasingResolver {
             ownTokenMovementAllowed = ownTokenMovementAllowed,
         )
         if (zoneError != null) return MovableCheck.Blocked(CardPlayResult.Rejected(request, zoneError))
-        if (location is TokenLocation.InZone) {
-            // Legal per rule 12 (the ZoP check above already rejects any other case) but moving a
-            // token OUT of a Zone isn't implemented yet — see MovementCardResolver's class doc.
-            return MovableCheck.Blocked(
-                CardPlayResult.Rejected(
-                    request,
-                    TargetValidationError.CardSpecificRestriction(
-                        "Moving a token out of a Zone of Protection is not yet implemented (see docs/card-mechanics-matrix.md §4 Q17)",
-                    ),
-                ),
-            )
+        return when (location) {
+            is TokenLocation.InZone -> MovableCheck.InZoneAt(location.zoneNumber) // legal per rule 12; the ZoP check above already rejects any other case
+            is TokenLocation.InPlay -> MovableCheck.InPlayAt(location.position)
+            is TokenLocation.NoLongerExists -> error("unreachable — handled above")
         }
-        return MovableCheck.Movable((location as TokenLocation.InPlay).position)
     }
 
-    private fun move(state: GameState, target: CardTarget.Token, fromPosition: Int) {
-        when (target.id.kind) {
-            TokenKind.TIER_TOKEN -> TurnEngine.moveTierToken(state, target.id.owner, target.id.tier, fromPosition, spaces = 4)
-            TokenKind.MARAUDER -> TurnEngine.moveMarauder(state, target.id.owner, target.id.tier, fromPosition, spaces = 4)
+    private fun move(state: GameState, target: CardTarget.Token, check: MovableCheck) {
+        when (check) {
+            is MovableCheck.InZoneAt -> TurnEngine.moveZoneToken(state, target.id.owner, target.id.tier, check.zoneNumber, spaces = 4)
+            is MovableCheck.InPlayAt -> when (target.id.kind) {
+                TokenKind.TIER_TOKEN -> TurnEngine.moveTierToken(state, target.id.owner, target.id.tier, check.fromPosition, spaces = 4)
+                TokenKind.MARAUDER -> TurnEngine.moveMarauder(state, target.id.owner, target.id.tier, check.fromPosition, spaces = 4)
+            }
+            is MovableCheck.Blocked -> error("unreachable — caller already handled Blocked before calling move()")
         }
     }
 }

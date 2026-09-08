@@ -7,8 +7,12 @@ import com.tiersofexistence.engine.model.TokenKind
 /** One in-play token's stable identity paired with its current main-loop position. */
 private data class InPlaySlot(val id: TokenId, val position: Int)
 
-/** One Zone-resident token's stable identity paired with which Zone it's currently in. */
-private data class ZoneSlot(val id: TokenId, val zoneNumber: Int)
+/** One Zone-resident token's stable identity, which Zone it's currently in, and its own
+ * position within that Zone's [com.tiersofexistence.engine.board.ProtectionZone.squares] —
+ * 1-indexed, since a Zone is a real dice-driven sub-path (confirmed by the user), not just an
+ * undifferentiated "protected" flag. Position 1 is the first slot, entered directly from the
+ * Zone's own main-loop entry square. */
+private data class ZoneSlot(val id: TokenId, val zoneNumber: Int, val zonePosition: Int)
 
 /**
  * One player's Tier tokens for a single Tier. Physical tokens are fungible in the sense that
@@ -84,6 +88,10 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
 
     /** [id]'s current Zone number, or null if it's not a Zone resident right now. */
     fun zoneOf(id: TokenId): Int? = inZone.firstOrNull { it.id == id }?.zoneNumber
+
+    /** [id]'s current 1-indexed position within its Zone's own square sequence, or null if it's
+     * not a Zone resident right now. See [ZoneSlot]. */
+    fun zonePositionOf(id: TokenId): Int? = inZone.firstOrNull { it.id == id }?.zonePosition
 
     /**
      * Starts a token on this Tier's Birth Canal (index 0), per rulebook "Birth Canal" rule.
@@ -243,27 +251,63 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
     }
 
     /**
-     * Moves an in-play token off the main loop and into Zone [zoneNumber] — landing on that
-     * Zone's numbered entry square (Gameboard Rules: "Zone of Protection"). See the class doc:
-     * this removes the token from [inPlayPositions] entirely, which is what makes it invisible
-     * to ordinary movement/pass-through scans without a separate check. The token's [TokenId] is
-     * carried over unchanged.
+     * Moves an in-play token off the main loop and into Zone [zoneNumber], at the Zone's own
+     * first slot (position 1) — landing on that Zone's numbered entry square (Gameboard Rules:
+     * "Zone of Protection"). See the class doc: this removes the token from [inPlayPositions]
+     * entirely, which is what makes it invisible to ordinary movement/pass-through scans without
+     * a separate check. The token's [TokenId] is carried over unchanged.
      */
     fun enterZone(fromPosition: Int, zoneNumber: Int) {
         val slot = inPlay.firstOrNull { it.position == fromPosition }
         require(slot != null) { "No in-play token at position $fromPosition on $tier" }
         inPlay.remove(slot)
-        inZone += ZoneSlot(slot.id, zoneNumber)
+        inZone += ZoneSlot(slot.id, zoneNumber, zonePosition = 1)
     }
 
-    /** Moves a token out of Zone [zoneNumber] back onto the main loop at [toPosition] — only
-     * ever triggered by a specific card effect (the rulebook describes no ordinary/dice-driven
-     * way to leave a Zone; see `docs/card-mechanics-matrix.md` §4 Q17). */
-    fun leaveZone(zoneNumber: Int, toPosition: Int) {
-        val slot = inZone.firstOrNull { it.zoneNumber == zoneNumber }
-        require(slot != null) { "No token in Zone $zoneNumber on $tier" }
+    /** Moves [id] to [newZonePosition] within the Zone it's already resident in, without leaving
+     * it — the "stay inside the Zone" case of [com.tiersofexistence.engine.rules.TurnEngine
+     * .moveZoneToken], now that a Zone is a confirmed real dice-driven sub-path. */
+    fun advanceInZone(id: TokenId, newZonePosition: Int) {
+        val slot = inZone.firstOrNull { it.id == id }
+        require(slot != null) { "Token $id is not a Zone resident on $tier" }
         inZone.remove(slot)
-        inPlay += InPlaySlot(slot.id, toPosition)
+        inZone += ZoneSlot(id, slot.zoneNumber, newZonePosition)
+    }
+
+    /** Moves the token identified by [id] out of whichever Zone it's resident in, back onto the
+     * main loop at [toPosition] — either via a specific card effect (rule 12's own-token-own-Zone
+     * carve-out) or via [com.tiersofexistence.engine.rules.TurnEngine.moveZoneToken] moving it
+     * past the end of its Zone's own square sequence. Identity-based (not zone-number-based)
+     * since more than one token can share a Zone. */
+    fun leaveZone(id: TokenId, toPosition: Int) {
+        val slot = inZone.firstOrNull { it.id == id }
+        require(slot != null) { "Token $id is not a Zone resident on $tier" }
+        inZone.remove(slot)
+        inPlay += InPlaySlot(id, toPosition)
+    }
+
+    /** Zone-internal Nebula: moves the Zone-resident token [id] straight to the Staging Pile,
+     * same as [sendToStagingPile] does for a main-loop Nebula — the token leaves the Zone
+     * entirely (no longer resident anywhere), matching how landing on a main-loop Nebula removes
+     * a token from [inPlayPositions]. */
+    fun sendZoneResidentToStagingPile(id: TokenId) {
+        val slot = inZone.firstOrNull { it.id == id }
+        require(slot != null) { "Token $id is not a Zone resident on $tier" }
+        inZone.remove(slot)
+        stagingPile += 1
+        refillInPlayIfRoom()
+    }
+
+    /** Zone-internal Wormhole of Construction: promotes the Zone-resident token [id] to the next
+     * Tier, same as [promoteInPlayToken] does for a main-loop Wormhole (confirmed for the 1st
+     * Tier's Zone 2, which has one of these as its own 4th slot) — the caller is responsible for
+     * starting the next Tier's token, same contract as [promoteInPlayToken]. */
+    fun promoteZoneResident(id: TokenId) {
+        val slot = inZone.firstOrNull { it.id == id }
+        require(slot != null) { "Token $id is not a Zone resident on $tier" }
+        inZone.remove(slot)
+        ionBattery += 1
+        refillInPlayIfRoom()
     }
 
     /** Destroys a token that's currently inside Zone [zoneNumber] — only legal for the 5 named

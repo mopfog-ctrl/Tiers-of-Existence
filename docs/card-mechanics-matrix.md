@@ -1086,7 +1086,11 @@ the same primitive is reused across cards that need it instead of reinvented per
   the mover's own other tokens — the general Marauder-pass-through owner exemption does
   *not* carry over to this card. See `LastGaspResolver`, and the new `destroysPassedTokens`/
   `exemptMoverOwnTokens` parameters this needed on `TurnEngine.moveTierToken`/`moveMarauder`
-  (defaulted to preserve every other caller's existing behavior unchanged).
+  (defaulted to preserve every other caller's existing behavior unchanged). If the target is
+  currently a Zone resident, this now moves it via `TurnEngine.moveZoneToken` (§4 Q17,
+  resolved) rather than the earlier honest "not yet implemented" rejection — pass-through
+  destruction from that call never reaches other Zone residents, per the card's own "except
+  tokens in the Zone of Protection" clause.
 
 #### 30. Phase Control
 - **Rarity/copies:** Quadruple ×4
@@ -1297,11 +1301,25 @@ Already partially designed by the existing `ProtectionZone`/`TierBoard` data (se
   Corpuscle Rot, Galactic Roundabout, Plasma Burst, Graviton Rift.
 - The owner's-own-movement-card carve-out (rule 12's second sentence): any movement card,
   named-exception or not, can move the *owner's own* token while it's in their own Zone.
-- Leaving a Zone: the rulebook never describes a dice-driven path *out* of a Zone (Zones
-  aren't a numbered sub-track token-by-token) — the only confirmed way a token leaves is via
-  a card that moves it elsewhere (e.g., one of the 5 exceptions, or the owner's own
-  movement) or is destroyed while still inside. This needs explicit user confirmation before
-  building any "automatic Zone exit" logic — flagged, §4 Q17.
+- **Zones ARE a dice-driven sub-track (§4 Q17, resolved — reversing this section's original
+  assumption).** A resident token can be chosen and moved during an ordinary Tier-Phase turn,
+  rolling dice for it exactly like any main-loop token, or by a card (a movement card via the
+  owner's-own carve-out above, or Galactic Roundabout's confirmed "+2, advancing back into
+  the normal board as necessary"). This needs, per-Tier-token, a position *within* its Zone's
+  own `ProtectionZone.squares` sequence (1-indexed, position 1 = the first slot, entered
+  directly from the Zone's numbered entry square) — see `TierTokenPool.zonePositionOf`.
+  Moving N spaces from zone-position P computes P+N: if that still fits within the Zone's own
+  square count, the token stays a resident there (that zone-internal square's own effect
+  resolves — e.g. the 1st Tier Zone 2's Wormhole slot promotes it, a Zone-internal Nebula
+  sends it to the Staging Pile); otherwise it exits, continuing the overflow (P+N minus the
+  Zone's square count) from the Zone's own main-loop entry square, resolving normally from
+  there (including further chaining — a Warp square right at the entry point, Hyperthrust,
+  etc.). See `TurnEngine.moveZoneToken`. Pass-through destruction (Last Gasp, the only card
+  with a pass-through effect that can start inside a Zone) never reaches other tokens
+  resident in that same Zone — matches every pass-through card's own printed "except tokens
+  in the Zone of Protection" clause — so this is scoped to the exiting portion of the move
+  only, via the same `destroysPassedTokens`/`exemptMoverOwnTokens` parameters `moveTierToken`
+  already had.
 
 ### 3.4 Marauder-driven pass-through as a movement property, not a card property
 
@@ -1442,10 +1460,14 @@ movement, movement altered mid-interaction-chain, and the roundabout-style near-
     (b) a token already in a Zone simply isn't a legal target at all. See §2's Circulate
     entry. Still blocked on missing infrastructure (the "next Zone of Protection" board
     query), not a rules question.
-17. Zone of Protection: the rulebook never describes an ordinary (non-card) way to leave a
-    Zone once entered — confirm there is genuinely no dice-driven exit path before the
-    engine assumes Zone residence is otherwise permanent until a qualifying card moves the
-    token out or destroys it.
+17. ~~Zone of Protection: the rulebook never describes an ordinary (non-card) way to leave a
+    Zone once entered...~~ — **Resolved, and the opposite of the original assumption**:
+    confirmed by the user that a Zone of Protection genuinely IS a dice-driven sub-path — a
+    resident token can be chosen and moved during an ordinary Tier-Phase turn (rolling dice
+    for it, same as any main-loop token), advancing within the Zone's own square sequence and
+    exiting back onto the main loop (continuing the leftover roll from the Zone's own entry
+    square) once the move overflows past the Zone's last slot. See `TierTokenPool
+    .zonePositionOf`/`TurnEngine.moveZoneToken` and §3.3 below (updated).
 
 ---
 

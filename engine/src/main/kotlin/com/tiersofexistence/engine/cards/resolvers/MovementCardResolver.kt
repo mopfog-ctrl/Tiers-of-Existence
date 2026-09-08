@@ -26,10 +26,11 @@ import com.tiersofexistence.engine.state.GameState
  * recorded when the target was chosen (the fix for the stale-target bug documented in
  * `docs/card-mechanics-matrix.md` and exercised in `PrecedenceCardEffectIntegrationTest`). If the
  * token no longer exists by resolution time, this rejects gracefully rather than crashing.
- * Moving a token OUT of a Zone of Protection (the rule-12 "own token, own Zone" carve-out) is
- * still deliberately not implemented — the rulebook never states what distance/starting point
- * that move would use (§4 Q17) — so a target that resolves to a Zone gets an honest
- * "not implemented" rejection distinct from an actual Zone-of-Protection block.
+ * Moving a token OUT of a Zone of Protection (the rule-12 "own token, own Zone" carve-out) is now
+ * implemented via [TurnEngine.moveZoneToken] — a Zone is a real dice-driven sub-path (confirmed by
+ * the user, resolving §4 Q17), so this card's own printed distance is simply applied to the
+ * token's position within its Zone, exiting back onto the main loop if that overflows past the
+ * Zone's last slot.
  */
 object MovementCardResolver {
     fun resolve(state: GameState, request: CardPlayRequest, target: CardTarget.Token, spaces: Int): CardPlayResult {
@@ -49,15 +50,12 @@ object MovementCardResolver {
 
         if (location is TokenLocation.InZone) {
             // Legal per rule 12 (this is the player's own token in their own Zone, or the ZoP
-            // check above would already have rejected it) but moving a token OUT of a Zone isn't
-            // implemented yet — see the class doc. Honest about the gap rather than silently
-            // no-op'ing or crashing.
-            return CardPlayResult.Rejected(
-                request,
-                TargetValidationError.CardSpecificRestriction(
-                    "Moving a token out of a Zone of Protection is not yet implemented (see docs/card-mechanics-matrix.md §4 Q17)",
-                ),
-            )
+            // check above would already have rejected it) — a Marauder can never be a Zone
+            // resident (see MarauderPool's class doc), so this is always a Tier token.
+            val playResult = CardLifecycle.attemptPlay(state, request)
+            if (playResult !is CardPlayResult.Resolved) return playResult
+            TurnEngine.moveZoneToken(state, target.id.owner, target.id.tier, location.zoneNumber, spaces)
+            return playResult
         }
         val fromPosition = (location as TokenLocation.InPlay).position
 

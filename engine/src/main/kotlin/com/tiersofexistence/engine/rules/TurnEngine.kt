@@ -10,6 +10,7 @@ import com.tiersofexistence.engine.model.TierLevel
 import com.tiersofexistence.engine.model.TokenKind
 import com.tiersofexistence.engine.state.GameState
 import com.tiersofexistence.engine.state.TierTokenPool
+import com.tiersofexistence.engine.state.TokenId
 
 /** A token found at a specific board position, identified by owner/kind/position for pass-through
  * scanning purposes — deliberately NOT the same as [com.tiersofexistence.engine.state.TokenId]'s
@@ -48,6 +49,15 @@ data class MoveResult(
     val effect: SquareEffect,
 )
 
+/** The result of [TurnEngine.moveZoneToken] — either the token is still inside its Zone (now at
+ * a new [ProtectionZone][com.tiersofexistence.engine.board.ProtectionZone]-relative position), or
+ * it moved past the end of the Zone's own square sequence and re-entered the main loop, in which
+ * case this wraps the ordinary [MoveResult] for whatever it landed on there. */
+sealed class ZoneMoveResult {
+    data class StillInZone(val zoneNumber: Int, val zonePosition: Int, val effect: SquareEffect) : ZoneMoveResult()
+    data class ExitedZone(val moveResult: MoveResult) : ZoneMoveResult()
+}
+
 /**
  * Rolls dice, moves tokens, and resolves landing-square effects — the base mechanics of a turn.
  * Deliberately does NOT interpret Fate Harvest card effects (beyond drawing and, for [CardTiming.HELD]
@@ -69,6 +79,14 @@ data class MoveResult(
  * Warp squares move 5, the 2nd Tier's moves 7, and the 1st Tier's compound Birth-Canal-with-Warp-
  * note ("Start. If you land here, Warp 5 spaces.") chains a second Warp move after the Birth
  * Canal's own (no-op) landing resolves, exactly matching what's printed there.
+ *
+ * A Zone of Protection is itself a real dice-driven sub-path (confirmed by the user, correcting
+ * an earlier wrong assumption) — [moveZoneToken] moves a Zone-resident token within its own
+ * [com.tiersofexistence.engine.board.ProtectionZone.squares], exiting back onto the main loop
+ * (via the ordinary [moveTierToken] path) once the move overflows past the Zone's last slot. This
+ * is a sibling entry point to [moveTierToken], not a variant of it — same as ordinary main-loop
+ * movement, choosing *which* of a player's tokens to move (a main-loop one vs. a Zone-resident
+ * one) is left to whatever's driving the turn.
  */
 object TurnEngine {
 
@@ -144,6 +162,106 @@ object TurnEngine {
      * turn ends (see that effect's doc for what happens if it isn't). */
     fun enterZoneOfProtection(state: GameState, color: PlayerColor, tier: TierLevel, position: Int, zoneNumber: Int) {
         state.players.getValue(color).tierPool(tier).enterZone(position, zoneNumber)
+    }
+
+    /**
+     * Moves the Tier token [color] has resident in Zone [zoneNumber] forward [spaces] within
+     * that Zone's own square sequence — confirmed by the user: a Zone of Protection is a real
+     * dice-driven sub-path, not just an undifferentiated "protected" flag, so a resident token
+     * can be chosen and moved during an ordinary Tier-Phase turn (rolling dice for it same as
+     * any other token) or by a card (Galactic Roundabout's confirmed "+2, advancing back into
+     * the normal board as necessary").
+     *
+     * If the new zone-relative position still fits within the Zone's own
+     * [com.tiersofexistence.engine.board.ProtectionZone.squares], the token stays a Zone
+     * resident at that new position, and that zone-internal square's own effect resolves (see
+     * [resolveZoneLanding]) — [ZoneMoveResult.StillInZone]. Otherwise it exits the Zone entirely:
+     * the overflow (spaces beyond the Zone's last slot) continues from the Zone's own main-loop
+     * entry square via the ordinary [moveTierToken] path, so any further chaining (a Warp square
+     * right at the entry point, Hyperthrust, etc.) resolves exactly as it would for any other
+     * main-loop move — [ZoneMoveResult.ExitedZone].
+     *
+     * [destroysPassedTokens]/[exemptMoverOwnTokens] mirror [moveTierToken]'s own parameters of
+     * the same name, applied only to the main-loop portion of an exit (via that same
+     * [moveTierToken] call) — never to other tokens resident in this same Zone. That's not an
+     * oversight: the rulebook's pass-through-destroy cards all exempt "tokens in the Zone of
+     * Protection" by name (Last Gasp included), so a Zone is never a place pass-through
+     * destruction reaches into, even when the mover itself started there.
+     */
+    fun moveZoneToken(
+        state: GameState,
+        color: PlayerColor,
+        tier: TierLevel,
+        zoneNumber: Int,
+        spaces: Int,
+        destroysPassedTokens: Boolean = false,
+        exemptMoverOwnTokens: Boolean = true,
+    ): ZoneMoveResult {
+        val board = state.boards.getValue(tier)
+        val pool = state.players.getValue(color).tierPool(tier)
+        val id = requireNotNull(pool.idInZone(zoneNumber)) { "No $color token in Zone $zoneNumber on $tier" }
+        val currentZonePosition = requireNotNull(pool.zonePositionOf(id)) { "Token $id has no zone position on $tier" }
+        val zone = board.protectionZone(zoneNumber)
+        val newZonePosition = currentZonePosition + spaces
+
+        if (newZonePosition <= zone.squares.size) {
+            return resolveZoneLanding(state, color, tier, pool, id, zoneNumber, newZonePosition, zone.squares[newZonePosition - 1])
+        }
+
+        val entryIndex = board.zoneEntryIndex(zoneNumber)
+        val overflow = newZonePosition - zone.squares.size
+        pool.leaveZone(id, entryIndex)
+        return ZoneMoveResult.ExitedZone(
+            moveTierToken(state, color, tier, entryIndex, overflow, destroysPassedTokens, exemptMoverOwnTokens),
+        )
+    }
+
+    /** Resolves landing on zone-internal square [squareType] at 1-indexed [newZonePosition] within
+     * Zone [zoneNumber] — the "still inside the Zone" half of [moveZoneToken]. Nebula and Wormhole
+     * of Construction remove the token from the Zone entirely (same as their main-loop
+     * counterparts remove a token from [com.tiersofexistence.engine.state.TierTokenPool
+     * .inPlayPositions]), so those report as [ZoneMoveResult.ExitedZone] even though the token
+     * never touched the main loop — everything else leaves it a Zone resident at its new position. */
+    private fun resolveZoneLanding(
+        state: GameState,
+        color: PlayerColor,
+        tier: TierLevel,
+        pool: TierTokenPool,
+        id: TokenId,
+        zoneNumber: Int,
+        newZonePosition: Int,
+        squareType: SquareType,
+    ): ZoneMoveResult {
+        val entryIndex = state.boards.getValue(tier).zoneEntryIndex(zoneNumber)
+        return when (squareType) {
+            SquareType.NEBULA -> {
+                pool.sendZoneResidentToStagingPile(id)
+                val promoted = pool.tryPromoteFromStagingPile()
+                if (promoted) tier.next()?.let { state.players.getValue(color).tierPool(it).startToken() }
+                ZoneMoveResult.ExitedZone(MoveResult(entryIndex, emptyList(), squareType, SquareEffect.SentToStagingPile(promoted)))
+            }
+            SquareType.WORMHOLE_OF_CONSTRUCTION -> {
+                pool.promoteZoneResident(id)
+                val next = tier.next()
+                next?.let { state.players.getValue(color).tierPool(it).startToken() }
+                ZoneMoveResult.ExitedZone(MoveResult(entryIndex, emptyList(), squareType, next?.let { SquareEffect.Promoted(it) } ?: SquareEffect.None))
+            }
+            SquareType.FATE_HARVEST -> {
+                pool.advanceInZone(id, newZonePosition)
+                val card = state.deck.draw()
+                if (card.timing == CardTiming.HELD) state.players.getValue(color).hand += card
+                ZoneMoveResult.StillInZone(zoneNumber, newZonePosition, SquareEffect.DrewCard(card))
+            }
+            else -> {
+                // PLAIN, MARAUDER_TRANSPORT (Tier tokens aren't affected by Transport squares —
+                // only Marauders are, per the rulebook's Marauders section), and
+                // PROTECTION_REJECTED (its own printed "move two more spaces" chain is a
+                // pre-existing, separately flagged gap — see SquareType.PROTECTION_REJECTED —
+                // not something this change resolves).
+                pool.advanceInZone(id, newZonePosition)
+                ZoneMoveResult.StillInZone(zoneNumber, newZonePosition, SquareEffect.None)
+            }
+        }
     }
 
     private fun resolveTierLanding(

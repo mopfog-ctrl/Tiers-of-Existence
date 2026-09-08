@@ -24,10 +24,11 @@ import com.tiersofexistence.engine.state.GameState
  * scan (see [com.tiersofexistence.engine.state.TierTokenPool]'s class doc).
  *
  * [target] must be the source player's own token — any type, Tier token or Marauder. If it's
- * currently inside a Zone of Protection, this rejects the same honest "not yet implemented" way
- * [MovementCardResolver] does for any other movement card (moving a token *out* of a Zone isn't
- * modeled yet — matrix §4 Q17); this card's rule-12 "your own token, your own Zone" carve-out
- * doesn't change that.
+ * currently inside a Zone of Protection (only possible for a Tier token — a Marauder can never be
+ * a Zone resident), this card's rule-12 "your own token, your own Zone" carve-out applies, moving
+ * it via [TurnEngine.moveZoneToken] (§4 Q17, resolved: a Zone is a real dice-driven sub-path) —
+ * the pass-through destroy never reaches other tokens resident in that same Zone, matching this
+ * card's own "except tokens in the Zone of Protection" clause (see that function's doc).
  */
 object LastGaspResolver {
     private const val SPACES = 8
@@ -41,29 +42,29 @@ object LastGaspResolver {
         }
 
         val location = TokenLocator.locate(state, target.id)
-        val fromPosition = when (location) {
-            is TokenLocation.InPlay -> location.position
-            is TokenLocation.InZone -> return CardPlayResult.Rejected(
-                request,
-                TargetValidationError.CardSpecificRestriction(
-                    "Moving a token out of a Zone of Protection is not yet implemented (see docs/card-mechanics-matrix.md §4 Q17)",
-                ),
-            )
-            is TokenLocation.NoLongerExists -> return CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${target.id} no longer exists"))
+        if (location is TokenLocation.NoLongerExists) {
+            return CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${target.id} no longer exists"))
         }
 
         val playResult = CardLifecycle.attemptPlay(state, request)
         if (playResult !is CardPlayResult.Resolved) return playResult
 
-        when (target.id.kind) {
-            TokenKind.TIER_TOKEN -> TurnEngine.moveTierToken(
-                state, target.id.owner, target.id.tier, fromPosition, SPACES,
+        when (location) {
+            is TokenLocation.InZone -> TurnEngine.moveZoneToken(
+                state, target.id.owner, target.id.tier, location.zoneNumber, SPACES,
                 destroysPassedTokens = true, exemptMoverOwnTokens = false,
             )
-            TokenKind.MARAUDER -> TurnEngine.moveMarauder(
-                state, target.id.owner, target.id.tier, fromPosition, SPACES,
-                exemptMoverOwnTokens = false,
-            )
+            is TokenLocation.InPlay -> when (target.id.kind) {
+                TokenKind.TIER_TOKEN -> TurnEngine.moveTierToken(
+                    state, target.id.owner, target.id.tier, location.position, SPACES,
+                    destroysPassedTokens = true, exemptMoverOwnTokens = false,
+                )
+                TokenKind.MARAUDER -> TurnEngine.moveMarauder(
+                    state, target.id.owner, target.id.tier, location.position, SPACES,
+                    exemptMoverOwnTokens = false,
+                )
+            }
+            is TokenLocation.NoLongerExists -> error("unreachable — handled above")
         }
 
         // "As well as the moved token" — destroyed on arrival, unless its own landing square

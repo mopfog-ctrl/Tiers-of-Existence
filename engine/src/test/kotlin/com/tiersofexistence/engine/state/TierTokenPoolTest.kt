@@ -5,6 +5,7 @@ import com.tiersofexistence.engine.model.PlayerColor.RED
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TierTokenPoolTest {
@@ -179,14 +180,67 @@ class TierTokenPoolTest {
     @Test
     fun `leaving a Zone returns the token to the main loop`() {
         val pool = TierTokenPool(TierLevel.FIRST, RED)
-        pool.startToken()
+        val id = pool.startToken()
         pool.moveInPlay(0, 10)
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
 
-        pool.leaveZone(zoneNumber = 2, toPosition = 14)
+        pool.leaveZone(id, toPosition = 14)
 
         assertTrue(pool.zoneResidents.isEmpty())
         assertEquals(listOf(14), pool.inPlayPositions)
+    }
+
+    @Test
+    fun `entering a Zone places the token at zone position 1`() {
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
+        val id = pool.startToken()
+        pool.moveInPlay(0, 10)
+
+        pool.enterZone(fromPosition = 10, zoneNumber = 2)
+
+        assertEquals(1, pool.zonePositionOf(id))
+    }
+
+    @Test
+    fun `advancing within a Zone updates position without leaving it`() {
+        val pool = TierTokenPool(TierLevel.FIRST, RED)
+        val id = pool.startToken()
+        pool.moveInPlay(0, 10)
+        pool.enterZone(fromPosition = 10, zoneNumber = 2)
+
+        pool.advanceInZone(id, 4)
+
+        assertEquals(4, pool.zonePositionOf(id))
+        assertEquals(2, pool.zoneOf(id))
+        assertEquals(listOf(2), pool.zoneResidents)
+    }
+
+    @Test
+    fun `a Zone-internal Nebula sends the resident straight to the Staging Pile`() {
+        val pool = TierTokenPool(TierLevel.THIRD, RED) // avoid 1st-Tier auto-replenish noise
+        val id = pool.startToken()
+        pool.moveInPlay(0, 1)
+        pool.enterZone(fromPosition = 1, zoneNumber = 4)
+
+        pool.sendZoneResidentToStagingPile(id)
+
+        assertTrue(pool.zoneResidents.isEmpty())
+        assertEquals(1, pool.stagingPile)
+        assertNull(pool.zonePositionOf(id))
+    }
+
+    @Test
+    fun `a Zone-internal Wormhole promotes the resident, same as a main-loop one`() {
+        val pool = TierTokenPool(TierLevel.THIRD, RED)
+        val id = pool.startToken()
+        pool.moveInPlay(0, 1)
+        pool.enterZone(fromPosition = 1, zoneNumber = 4)
+        val ionBefore = pool.ionBattery
+
+        pool.promoteZoneResident(id)
+
+        assertTrue(pool.zoneResidents.isEmpty())
+        assertEquals(ionBefore + 1, pool.ionBattery)
     }
 
     @Test

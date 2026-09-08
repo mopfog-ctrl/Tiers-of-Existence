@@ -1,6 +1,7 @@
 package com.tiersofexistence.engine.cards.resolvers
 
 import com.tiersofexistence.engine.board.BoardLayouts
+import com.tiersofexistence.engine.board.ProtectionZone
 import com.tiersofexistence.engine.board.Square
 import com.tiersofexistence.engine.board.SquareType
 import com.tiersofexistence.engine.board.TierBoard
@@ -20,6 +21,7 @@ import com.tiersofexistence.engine.state.PlayerState
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -198,8 +200,14 @@ class LastGaspResolverTest {
     }
 
     @Test
-    fun `a target already inside a Zone of Protection is rejected as not yet implemented, not moved out`() {
-        val board = TierBoard(TierLevel.THIRD, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), Square(2, SquareType.ZONE_OF_PROTECTION, magnitude = 1)))
+    fun `a target already inside a Zone of Protection is moved out via moveZoneToken, then destroyed on arrival`() {
+        // Zone 1 has 3 slots; entering at zone position 1 and moving 8 overflows by 6, exiting at
+        // the entry square (index 2) and continuing 6 more spaces on the main loop to index 8.
+        val board = TierBoard(
+            TierLevel.THIRD,
+            listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), Square(2, SquareType.ZONE_OF_PROTECTION, magnitude = 1), plain(3), plain(4), plain(5), plain(6), plain(7), plain(8), plain(9)),
+            protectionZones = listOf(ProtectionZone(1, squares = List(3) { SquareType.PLAIN })),
+        )
         val state = gameWith(board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.THIRD)
         val id = pool.startToken()
@@ -208,9 +216,10 @@ class LastGaspResolverTest {
 
         val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
 
-        assertIs<CardPlayResult.Rejected>(result)
-        assertIs<TargetValidationError.CardSpecificRestriction>(result.reason)
-        assertEquals(listOf(1), pool.zoneResidents) // untouched
+        assertIs<CardPlayResult.Resolved>(result)
+        assertTrue(pool.zoneResidents.isEmpty())
+        // "As well as the moved token" — destroyed once it arrives on the main loop.
+        assertNull(pool.positionOf(id))
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.tiersofexistence.engine.rules
 
 import com.tiersofexistence.engine.board.BoardLayouts
+import com.tiersofexistence.engine.board.ProtectionZone
 import com.tiersofexistence.engine.board.Square
 import com.tiersofexistence.engine.board.SquareType
 import com.tiersofexistence.engine.board.TierBoard
@@ -13,12 +14,17 @@ import com.tiersofexistence.engine.state.GameState
 import com.tiersofexistence.engine.state.PlayerState
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TurnEngineTest {
 
     private fun boardOf(tier: TierLevel, vararg squares: Square): TierBoard = TierBoard(tier, squares.toList())
+
+    private fun boardWithZone(tier: TierLevel, mainLoop: List<Square>, zone: ProtectionZone): TierBoard =
+        TierBoard(tier, mainLoop, protectionZones = listOf(zone))
 
     private fun plain(index: Int) = Square(index, SquareType.PLAIN)
 
@@ -399,6 +405,185 @@ class TurnEngineTest {
 
         assertTrue(result.destroyedTokens.isEmpty())
         assertEquals(listOf(2), green.tierPool(TierLevel.FIRST).zoneResidents)
+    }
+
+    // --- Zone of Protection traversal: a Zone IS a dice-driven sub-path (§4 Q17, resolved) ---
+
+    @Test
+    fun `moving within a Zone updates the resident's position without exiting it`() {
+        val board = boardWithZone(
+            TierLevel.FIRST,
+            listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9)),
+            ProtectionZone(9, squares = List(4) { SquareType.PLAIN }),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+        val red = game.players.getValue(RED)
+        val pool = red.tierPool(TierLevel.FIRST)
+        val id = pool.startToken()
+        pool.moveInPlay(0, 1)
+        pool.enterZone(fromPosition = 1, zoneNumber = 9)
+
+        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 2)
+
+        val stillIn = assertIs<ZoneMoveResult.StillInZone>(result)
+        assertEquals(9, stillIn.zoneNumber)
+        assertEquals(3, stillIn.zonePosition)
+        assertIs<SquareEffect.None>(stillIn.effect)
+        assertEquals(3, pool.zonePositionOf(id))
+        assertEquals(listOf(9), pool.zoneResidents)
+    }
+
+    @Test
+    fun `moving exactly to a Zone's last slot stays resident there`() {
+        val board = boardWithZone(
+            TierLevel.FIRST,
+            listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9)),
+            ProtectionZone(9, squares = List(4) { SquareType.PLAIN }),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+        val pool = game.players.getValue(RED).tierPool(TierLevel.FIRST)
+        val id = pool.startToken()
+        pool.moveInPlay(0, 1)
+        pool.enterZone(fromPosition = 1, zoneNumber = 9)
+
+        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 3)
+
+        assertIs<ZoneMoveResult.StillInZone>(result)
+        assertEquals(4, pool.zonePositionOf(id))
+        assertEquals(listOf(9), pool.zoneResidents)
+    }
+
+    @Test
+    fun `moving past the end of a Zone exits back onto the main loop with the leftover spaces`() {
+        val board = boardWithZone(
+            TierLevel.FIRST,
+            listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9), plain(2), plain(3), plain(4)),
+            ProtectionZone(9, squares = listOf(SquareType.PLAIN, SquareType.PLAIN, SquareType.PLAIN)),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+        val pool = game.players.getValue(RED).tierPool(TierLevel.FIRST)
+        val id = pool.startToken()
+        pool.moveInPlay(0, 1)
+        pool.enterZone(fromPosition = 1, zoneNumber = 9) // zone position 1
+
+        // 1 (current) + 5 spaces = 6, overflows the 3-slot Zone by 3 — exits at entry square (1)
+        // and continues 3 more spaces on the main loop, landing at 1 + 3 = 4.
+        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 5)
+
+        val exited = assertIs<ZoneMoveResult.ExitedZone>(result)
+        assertEquals(4, exited.moveResult.finalPosition)
+        assertEquals(SquareType.PLAIN, exited.moveResult.landedSquareType)
+        assertTrue(pool.zoneResidents.isEmpty())
+        assertNull(pool.zonePositionOf(id))
+        assertEquals(listOf(4), pool.inPlayPositions)
+    }
+
+    @Test
+    fun `exiting a Zone chains into further landing resolution, same as any other main-loop move`() {
+        val board = boardWithZone(
+            TierLevel.FIRST,
+            listOf(
+                Square(0, SquareType.BIRTH_CANAL),
+                Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9),
+                plain(2),
+                Square(3, SquareType.WARP, magnitude = 2),
+                plain(4),
+                plain(5),
+            ),
+            ProtectionZone(9, squares = listOf(SquareType.PLAIN, SquareType.PLAIN)),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+        val pool = game.players.getValue(RED).tierPool(TierLevel.FIRST)
+        pool.startToken()
+        pool.moveInPlay(0, 1)
+        pool.enterZone(fromPosition = 1, zoneNumber = 9) // zone position 1
+
+        // 1 + 3 = 4, overflows the 2-slot Zone by 2 — exits at entry square (1), continues 2 more
+        // spaces to square 3 (Warp, magnitude 2), which chains a further move to square 5.
+        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 3)
+
+        val exited = assertIs<ZoneMoveResult.ExitedZone>(result)
+        assertEquals(5, exited.moveResult.finalPosition)
+        assertEquals(SquareType.PLAIN, exited.moveResult.landedSquareType)
+        assertEquals(listOf(5), pool.inPlayPositions)
+    }
+
+    @Test
+    fun `a Zone-internal Nebula sends the resident to the Staging Pile and reports it as exiting`() {
+        val board = boardWithZone(
+            TierLevel.THIRD, // avoid the 1st-Tier auto-replenish rule complicating the assertions
+            listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9)),
+            ProtectionZone(9, squares = listOf(SquareType.PLAIN, SquareType.NEBULA)),
+        )
+        val game = gameWith(TierLevel.THIRD, board)
+        val pool = game.players.getValue(RED).tierPool(TierLevel.THIRD)
+        val id = pool.startToken()
+        pool.moveInPlay(0, 1)
+        pool.enterZone(fromPosition = 1, zoneNumber = 9)
+
+        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.THIRD, zoneNumber = 9, spaces = 1)
+
+        val exited = assertIs<ZoneMoveResult.ExitedZone>(result)
+        assertEquals(SquareEffect.SentToStagingPile(promotedToNextTier = false), exited.moveResult.effect)
+        assertEquals(1, pool.stagingPile)
+        assertTrue(pool.zoneResidents.isEmpty())
+        assertNull(pool.zonePositionOf(id))
+    }
+
+    @Test
+    fun `a Zone-internal Wormhole of Construction promotes the resident, same as a main-loop one`() {
+        val board = boardWithZone(
+            TierLevel.THIRD,
+            listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9)),
+            ProtectionZone(9, squares = listOf(SquareType.PLAIN, SquareType.WORMHOLE_OF_CONSTRUCTION)),
+        )
+        val game = gameWith(TierLevel.THIRD, board)
+        val red = game.players.getValue(RED)
+        val pool = red.tierPool(TierLevel.THIRD)
+        val id = pool.startToken()
+        pool.moveInPlay(0, 1)
+        pool.enterZone(fromPosition = 1, zoneNumber = 9)
+
+        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.THIRD, zoneNumber = 9, spaces = 1)
+
+        val exited = assertIs<ZoneMoveResult.ExitedZone>(result)
+        assertEquals(SquareEffect.Promoted(TierLevel.FOURTH), exited.moveResult.effect)
+        assertTrue(pool.zoneResidents.isEmpty())
+        assertNull(pool.zonePositionOf(id))
+        assertEquals(1, red.tierPool(TierLevel.FOURTH).inPlayCount)
+    }
+
+    @Test
+    fun `a Zone-internal Fate Harvest draws a card and stays resident`() {
+        val board = boardWithZone(
+            TierLevel.THIRD,
+            listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9)),
+            ProtectionZone(9, squares = listOf(SquareType.PLAIN, SquareType.FATE_HARVEST)),
+        )
+        val game = gameWith(TierLevel.THIRD, board)
+        val pool = game.players.getValue(RED).tierPool(TierLevel.THIRD)
+        val id = pool.startToken()
+        pool.moveInPlay(0, 1)
+        pool.enterZone(fromPosition = 1, zoneNumber = 9)
+
+        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.THIRD, zoneNumber = 9, spaces = 1)
+
+        val stillIn = assertIs<ZoneMoveResult.StillInZone>(result)
+        assertIs<SquareEffect.DrewCard>(stillIn.effect)
+        assertEquals(2, pool.zonePositionOf(id))
+        assertEquals(listOf(9), pool.zoneResidents)
+    }
+
+    @Test
+    fun `moveZoneToken throws if the player has no token resident in that Zone`() {
+        val board = boardWithZone(
+            TierLevel.FIRST,
+            listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9)),
+            ProtectionZone(9, squares = List(3) { SquareType.PLAIN }),
+        )
+        val game = gameWith(TierLevel.FIRST, board)
+
+        assertFailsWith<IllegalArgumentException> { TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 1) }
     }
 
     // --- Warp (Phase H: each square's own printed magnitude, not a hardcoded global) ---

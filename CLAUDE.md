@@ -29,8 +29,9 @@ several rounds of photos, zoomed crops, and the user directly dictating/correcti
 order — including every Zone of Protection's contents. See the `BoardLayouts` class doc
 comment for the structural rules that came out of this process (loop = outer perimeter
 only; Zone of Protection is real off-loop squares reached from a numbered entry square on
-the main loop, not a dice-driven sub-path; Wormhole of Construction's position on the loop
-varies by Tier — inside a Zone on the 1st Tier, directly on the main loop on the 2nd).
+the main loop, and — corrected later, see below — IS itself a dice-driven sub-path once
+entered; Wormhole of Construction's position on the loop varies by Tier — inside a Zone on
+the 1st Tier, directly on the main loop on the 2nd).
 
 Still worth treating this as "digitized and confirmed so far," not permanently settled —
 several earlier "confident" reads (based on a flat photo) turned out wrong once the user
@@ -303,11 +304,39 @@ used to say "ambiguous," and isn't anymore.
 `TierTokenPool` tracks Zone-resident tokens (`zoneResidents`/`enterZone`/`leaveZone`/
 `destroyInZone`) separately from main-loop positions — entering a Zone removes a token from
 `inPlayPositions` entirely, which is what makes ordinary movement/pass-through scans skip
-protected tokens automatically. Still counts toward the Tier's max-in-play cap. Moving a
-token *out* of a Zone via a movement card (rule 12's "your own token, your own Zone"
-carve-out) is still not implemented — the rulebook never states what distance/starting point
-that move would use (matrix §4 Q17) — `MovementCardResolver` gives an honest
-"not yet implemented" rejection rather than silently no-op'ing.
+protected tokens automatically. Still counts toward the Tier's max-in-play cap.
+
+**A Zone of Protection is a real dice-driven sub-path, not just an undifferentiated
+"protected" flag** — confirmed by the user, reversing this section's own original assumption
+(matrix §4 Q17, resolved) and closing what had been the last "moving a token *out* of a Zone
+isn't implemented" gap. `TierTokenPool` now tracks each Zone resident's own 1-indexed
+position within its Zone's `ProtectionZone.squares` sequence (`zonePositionOf`/
+`advanceInZone`; `enterZone` starts a token at position 1, the first slot, directly from the
+Zone's numbered entry square). `TurnEngine.moveZoneToken(state, color, tier, zoneNumber,
+spaces)` is the movement primitive: it adds `spaces` to the resident's zone position; if the
+result still fits within that Zone's own square count, the token stays a resident there and
+that zone-internal square's own effect resolves (a zone-internal Nebula sends it to the
+Staging Pile, a zone-internal Wormhole of Construction promotes it — confirmed for the 1st
+Tier's Zone 2, which has one of these as its own 4th slot — a zone-internal Fate Harvest
+draws a card, anything else is a no-op) — `ZoneMoveResult.StillInZone`. Otherwise it exits:
+the overflow (spaces beyond the Zone's last slot) continues from the Zone's own main-loop
+entry square via the ordinary `moveTierToken` path, so further chaining (a Warp square right
+at the entry point, Hyperthrust, etc.) resolves exactly as any other main-loop move would —
+`ZoneMoveResult.ExitedZone`. This is the mechanism behind the user's stated primary case: "A
+tier token in the ZOP CAN be chosen to be moved during a player's turn, then rolling the dice
+for it" — same as ordinary main-loop movement, *which* of a player's tokens to move on a
+given turn (a main-loop one vs. a Zone-resident one) is a decision for whatever's driving the
+turn, not something `TurnEngine` itself picks.
+
+`MovementCardResolver`/`ParallelPhasingResolver`/`LastGaspResolver`'s own-token-own-Zone
+carve-out (rule 12's second sentence) now dispatches to `moveZoneToken` with the card's own
+fixed distance, instead of the earlier honest "not yet implemented" rejection. Pass-through
+destruction (Last Gasp is the only card that both starts from a possibly-Zone-resident mover
+and destroys what it passes) never reaches *other* tokens resident in that same Zone while
+the mover is still inside it — only the exiting portion of the move (the ordinary main-loop
+leg) can destroy anything, matching every pass-through card's own printed "except tokens in
+the Zone of Protection" clause, so a Zone is never a place pass-through destruction reaches
+into even when the mover itself started there.
 
 **Entering a Zone is the player's own choice, not automatic** — confirmed by the user,
 correcting an earlier assumption baked into the original implementation. Landing on a Zone's
