@@ -205,6 +205,17 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         ionBattery += 1
     }
 
+    /** Radiation Burst: empties the Staging Pile entirely, returning every token in it to the
+     * Ion Battery. Confirmed by the user: this runs NO promotion check, even if the pile
+     * happened to be at or above [TierLevel.stagingPileThreshold] when emptied — unlike an
+     * ordinary Nebula landing or a direct add ([addToStagingPileDirectly]), reaching the
+     * threshold this way never counts as "enough to promote." A no-op if already empty. */
+    fun emptyStagingPile() {
+        if (stagingPile == 0) return
+        ionBattery += stagingPile
+        stagingPile = 0
+    }
+
     /**
      * Fluidic Wave: destroys every in-play token and empties the Staging Pile in one sweep, all
      * returning to the Ion Battery — but deliberately leaves [inZone] (and [hatchery]) alone,

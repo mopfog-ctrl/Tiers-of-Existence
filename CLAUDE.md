@@ -141,14 +141,16 @@ between the two). It does NOT protect Marauders — "Marauders can be [destroyed
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
 
-## Card engine: shared infrastructure plus 26 of 32 cards implemented
+## Card engine: shared infrastructure plus 27 of 32 cards implemented
 
 `docs/card-mechanics-matrix.md` is the implementation spec — an audit of all 32 unique Fate
 Harvest cards' actual mechanical requirements (targets, Zone-of-Protection/Reprieve
 interaction, Precedence/Annulment behavior, required engine state) cross-checked against
 `docs/rulebook.txt` and independently re-verified once. Read it before touching card logic;
-it also lists 17 open rules questions the rulebook doesn't resolve (§4), several of which are
-why specific cards below aren't implemented yet.
+it also lists 17 rules questions the rulebook itself doesn't resolve (§4) — several have since
+been resolved by direct user rulings (struck through in place, not deleted, so the original
+question stays visible) and are why specific cards below are now implemented; the remaining
+open ones are why specific cards below still aren't.
 
 **Runtime card-play model** (`cards/play/`), deliberately separate from the catalog
 (`FateHarvestCard` stays a plain data description, never mutated into carrying runtime
@@ -207,7 +209,7 @@ that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) a
 `GameState`, instead of every caller needing to know which resolver object handles which
 card.
 
-**Cards implemented** (26 of 32), via shared resolvers rather than one class per card
+**Cards implemented** (27 of 32), via shared resolvers rather than one class per card
 (`cards/resolvers/`):
 - `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
   limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
@@ -249,13 +251,19 @@ card.
   sweep. New bulk-clear operations this needed: `TierTokenPool.destroyAllAt`/
   `destroyAllInZone`, `MarauderPool.destroyAllAt` (stacking is legal, so more than one token
   can occupy a single square or Zone).
+- `RadiationBurstResolver` (Radiation Burst only) — empties every player's Staging Pile
+  across every Tier (no target to choose). Confirmed with the user: "all" means every
+  player's, every Tier, not just the caster's own or one Tier; emptying never triggers that
+  Tier's normal promotion, even if a pile happened to be at or above threshold. New pool
+  primitive: `TierTokenPool.emptyStagingPile` (bulk-return to the Ion Battery, no promotion
+  check — distinct from `destroyFromStagingPile`'s single-token removal).
 - Annulment (Antimatter) has no resolver of its own — it's handled structurally by
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.
 
-That's 25 cards dispatched by name plus Annulment = 26 of 32 actually playable end to end.
+That's 26 cards dispatched by name plus Annulment = 27 of 32 actually playable end to end.
 
-**Not yet implemented** (6 of 32), each blocked on a specific open rules question rather than
+**Not yet implemented** (5 of 32), each blocked on a specific open rules question rather than
 missing effort — see the cited matrix question before attempting:
 - **Last Gasp** — whether its pass-through destroys the mover's own other tokens too, since
   its wording omits the usual owner-exemption clause (§4 Q14). Of the 6 Precedence-flagged
@@ -266,12 +274,14 @@ missing effort — see the cited matrix question before attempting:
   (§4 Q5).
 - **Cleansing** — needs a generalized pending-decision primitive for "a player other than the
   one who played the card must choose" (sketched as `PendingDecision` but not wired up).
-- **Radiation Burst** — whose Staging Piles "all" refers to, and whether emptying triggers
-  promotion (§4 Q6).
 - **Delayed Motion** — needs a post-roll/pre-move checkpoint in `TurnEngine` that doesn't
   exist yet (no other card modifies a roll rather than a token).
-- **Circulate** — needs a "find the next Zone of Protection from here" board query, plus an
-  open question about targeting an opponent's token (§4 Q16).
+- **Circulate** — confirmed with the user, resolving §4 Q16: it can target any player's Tier
+  token, not just the caster's own, but never one already in a Zone of Protection (which also
+  settles the "already in a Zone" half of Q16 — that state is simply not a legal target at
+  all, rather than a question of which Zone "the next" one means). Still blocked purely on
+  missing infrastructure now, not a rules question: a "find the next Zone of Protection from
+  here" board query doesn't exist yet.
 
 **Warp is implemented**, not deferred — see below; it was the one item in this section that
 used to say "ambiguous," and isn't anymore.

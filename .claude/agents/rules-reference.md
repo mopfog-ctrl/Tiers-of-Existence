@@ -124,6 +124,16 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   all tokens from the 1st Tier" stops at the card's own printed wording (in-play + Staging Pile
   only) — a player's Ion Battery reserves are explicitly untouched, confirmed by the user rather
   than left to guesswork — see `FluidicWaveResolver`.
+- **Radiation Burst's "All Staging Piles" is every player's, every Tier, with no promotion
+  check** — confirmed by the user; the unqualified rulebook text alone doesn't say whose piles
+  or settle the promotion question, so don't assume a narrower ("just the caster's own") or
+  more generous ("promotes if at threshold") reading from the printed wording — see
+  `RadiationBurstResolver`/`TierTokenPool.emptyStagingPile`.
+- **Circulate can target any player's Tier token, but never one already inside a Zone of
+  Protection** — confirmed by the user (resolving what the rulebook itself leaves open). A
+  token already Zone-resident isn't a legal target at all; this isn't one of the 5 named
+  rule-12 exceptions, so ordinary Zone protection applies to it like any other card without a
+  carve-out.
 
 Keep answers focused and cite sources. Don't speculate about UI/UX, Android APIs, or
 anything outside "what does the rulebook say / does the code match it."

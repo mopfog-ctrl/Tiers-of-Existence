@@ -232,9 +232,10 @@ the same primitive is reused across cards that need it instead of reinvented per
   Staging-Pile-touching card (Insidious Flux, Lucky Nebula, Luckier Nebula, Emitting Nebula)
   purely by sharing the same pool primitive — no special-case behavior beyond that.
 - **Rulebook citation:** rulebook.txt:526-531.
-- **Ambiguities:** (1) "All Staging Piles" — every player's, or just the caster's own? (2)
-  Does emptying skip or trigger the promotion-threshold check if a pile happened to be at or
-  above threshold the instant before it's emptied? See §4 Q6.
+- **Implemented.** Both ambiguities resolved, confirmed by the user: "All Staging Piles"
+  means every player's, across every Tier (not just the caster's own or one Tier); emptying
+  never triggers the promotion-threshold check, even if a pile happened to be at or above
+  threshold. See `RadiationBurstResolver`/`TierTokenPool.emptyStagingPile`.
 
 #### 5. Materialize Army
 - **Rarity/copies:** Single ×1
@@ -1147,8 +1148,10 @@ the same primitive is reused across cards that need it instead of reinvented per
 - **Scope:** Your Turn
 - **Color restriction:** None
 - **Precedence:** No
-- **Legal targets:** Any Tier token (Marauders excluded — they can't enter a Zone anyway);
-  owner unqualified — see Ambiguities for whether this can target an opponent's token.
+- **Legal targets:** Any Tier token, any owner (Marauders excluded — they can't enter a Zone
+  anyway) — confirmed by the user, resolving Ambiguity (1). Never a token already inside a
+  Zone of Protection — confirmed by the user, resolving Ambiguity (2) too: that state simply
+  isn't a legal target, rather than a question of which Zone "the next" one skips to.
 - **Affected token types:** Tier token only.
 - **Affected Tier(s):** Wherever the target is.
 - **Movement effect:** Teleport directly into "the next Zone of Protection on that Tier,"
@@ -1172,12 +1175,9 @@ the same primitive is reused across cards that need it instead of reinvented per
   ZoneResidence to record the resulting protected state.
 - **Known interactions:** None named.
 - **Rulebook citation:** rulebook.txt:779-784.
-- **Ambiguities:** (1) Can this target an opponent's Tier token (moving them into safety,
-  seemingly always a "helpful" effect regardless of who plays it), or is it implicitly
-  self-only like most other "your turn" positioning cards? (2) If the chosen token is
-  already inside a Zone, does "the next Zone of Protection" mean the *following* Zone
-  further around the loop (skipping the current one), or is this an illegal/no-op play?
-  §4 Q16.
+- **Ambiguities:** Both resolved — see Legal targets above and §4 Q16. Still blocked purely
+  on missing infrastructure: the `nextZoneEntry(tier, fromPosition)` board query doesn't
+  exist yet.
 
 #### 32. Sidestep (Extinction Avoidance)
 - **Rarity/copies:** Quadruple ×4
@@ -1394,9 +1394,11 @@ movement, movement altered mid-interaction-chain, and the roundabout-style near-
    ordinary pass-through destruction per-Marauder, and (b) if two players' tokens land
    exactly on their respective 4th Tier You-Win squares within the same resolution, is
    there a defined winner-ordering rule (first in turn order, first token processed, etc.)?
-6. Radiation Burst: (a) "All Staging Piles" — every player's every Tier, or just the
+6. ~~Radiation Burst: (a) "All Staging Piles" — every player's every Tier, or just the
    caster's own? (b) Does emptying a pile that happens to be at/above its promotion
-   threshold trigger the promotion, or does emptying bypass it entirely?
+   threshold trigger the promotion, or does emptying bypass it entirely?~~ — **Resolved**,
+   confirmed by the user: (a) every player's, every Tier; (b) bypassed entirely, no
+   promotion. See §2's Radiation Burst entry.
 7. `CardScope` (currently `YOUR_TURN | ANY_TIME`) can't express two real restrictions found
    in this audit: a "your turn, but only during Tier X's specific Phase" restriction
    (Planetary Nebula → 2nd Tier Phase, Emitting Nebula → 1st Tier Phase), and Delayed
@@ -1437,9 +1439,11 @@ movement, movement altered mid-interaction-chain, and the roundabout-style near-
     currently resolving, or "next, out of normal Phase order, once the current action
     finishes" (the latter is more consistent with this card being Immediate rather than
     Precedence, but isn't stated outright)?
-16. Circulate: (a) can it target an opponent's Tier token, or is it implicitly self-only;
-    (b) if the chosen token is already inside a Zone, does "the next Zone of Protection"
-    mean the following Zone further around the loop, or is the play illegal/a no-op?
+16. ~~Circulate: (a) can it target an opponent's Tier token...; (b) if the chosen token is
+    already inside a Zone...~~ — **Resolved**, confirmed by the user: (a) any player's token;
+    (b) a token already in a Zone simply isn't a legal target at all. See §2's Circulate
+    entry. Still blocked on missing infrastructure (the "next Zone of Protection" board
+    query), not a rules question.
 17. Zone of Protection: the rulebook never describes an ordinary (non-card) way to leave a
     Zone once entered — confirm there is genuinely no dice-driven exit path before the
     engine assumes Zone residence is otherwise permanent until a qualifying card moves the
@@ -1458,7 +1462,7 @@ For Phase J's grouping, the cards in this matrix sort into:
 - **Group 2 (destruction/protection, needs Zone + Reprieve validation):** Corpuscle Rot,
   Divine Assistance, Insidious Flux, Infernal Abyss, Plasma Burst.
 - **Group 3 (turn manipulation, needs deferred-turn state):** Phase Loss, Phase Control,
-  Radiation Burst (pool-wide, arguably its own bucket — see §4 Q6), Circulate (Zone-entry
+  Radiation Burst (pool-wide, arguably its own bucket — implemented, see §2), Circulate (Zone-entry
   movement, arguably Group 2/4 hybrid), Cleansing (needs the pending-decision primitive,
   not deferred-turn, but shares "can't resolve synchronously" shape).
 - **Group 4 (cross-Tier/global effects):** Galactic Roundabout, Fluidic Wave.

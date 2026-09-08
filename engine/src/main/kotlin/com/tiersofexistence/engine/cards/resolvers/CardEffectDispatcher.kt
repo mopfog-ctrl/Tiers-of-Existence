@@ -64,6 +64,7 @@ object CardEffectDispatcher {
             "Graviton Rift" -> requireAllTokenTargets(request) { GravitonRiftResolver.resolve(state, request, it) }
             "Fluidic Wave" -> FluidicWaveResolver.resolve(state, request)
             "Plasma Burst" -> requireBoardPosition(request, target0) { PlasmaBurstResolver.resolve(state, request, it) }
+            "Radiation Burst" -> RadiationBurstResolver.resolve(state, request)
 
             // --- Turn manipulation ---
             "Phase Loss" -> PhaseLossResolver.resolve(state, request)
