@@ -19,8 +19,9 @@ data class TokenRef(val color: PlayerColor, val kind: TokenKind, val position: I
 
 /** What happened as a result of landing on a square, beyond the plain position update. */
 sealed class SquareEffect {
-    /** Nothing beyond moving there — includes squares whose effect isn't implemented yet (see
-     * [TurnEngine]'s class doc for what's deferred: most Time Wrinkle variants). */
+    /** Nothing beyond moving there — includes squares whose effect isn't implemented yet
+     * (e.g. a Time Wrinkle square whose printed text doesn't match any of the 3 confirmed
+     * variants — see [GoAgain]/[LoseNextTierTurn]/[GrantedExtraTierTurn]). */
     data object None : SquareEffect()
     data class SentToStagingPile(val promotedToNextTier: Boolean) : SquareEffect()
     data object SentToStart : SquareEffect()
@@ -38,6 +39,22 @@ sealed class SquareEffect {
     data object MayBuildMarauder : SquareEffect()
     /** A Marauder landed on a Marauder Transport — moving is optional; call [TurnEngine.transportMarauder]. */
     data object MayTransport : SquareEffect()
+    /** Landed on a "Go again" Time Wrinkle square — mandatory, not optional (unlike the `May*`
+     * effects above): whoever's driving the turn must grant another turn to the same player,
+     * e.g. via `GameState.endTurn(grantAnotherTurn = true)`. `TurnEngine` itself never ends a
+     * turn, so this is purely informational — nothing about [GameState] is mutated for it. */
+    data object GoAgain : SquareEffect()
+    /** Landed on a "Lose next turn on this Tier" Time Wrinkle square — already auto-applied
+     * (this Tier's [GameState.queueSkipNextTierTurn] was already called for the landing player,
+     * same as every other mandatory, non-optional square effect); reported here only so a
+     * driver/UI can narrate it. */
+    data object LoseNextTierTurn : SquareEffect()
+    /** Landed on a "Take an extra turn, First Tier" Time Wrinkle square — already auto-applied
+     * ([GameState.queueExtraTierTurn] was already called for [tier], the printed card's own
+     * named Tier — always [TierLevel.FIRST] for the one confirmed square with this text, but
+     * carried explicitly rather than hardcoded at the call site in case a future board digitizes
+     * a variant naming a different Tier); reported here only so a driver/UI can narrate it. */
+    data class GrantedExtraTierTurn(val tier: TierLevel) : SquareEffect()
 }
 
 /** The result of moving one token: where it ended up, what it destroyed along the way (Marauder/
@@ -63,13 +80,16 @@ sealed class ZoneMoveResult {
  * Deliberately does NOT interpret Fate Harvest card effects (beyond drawing and, for [CardTiming.HELD]
  * cards, holding them) — that's a separate, much larger layer to build on top of this once the base
  * mechanics are solid. Specific things left unimplemented here, flagged rather than guessed:
- * - Most Time Wrinkle variants — "Go again" is supported structurally via [GameState.endTurn]'s
- *   `grantAnotherTurn` parameter (the caller decides to pass that when a Go Again square/card fires),
- *   but "lose next turn on this Tier" and "take an extra turn, First Tier" need deferred/cross-Phase
- *   state (see `docs/card-mechanics-matrix.md` §3.5) that doesn't exist yet.
  * - Precedence-card interruption mid-roll (rulebook rule #23) — a live multi-player synchronization
  *   concern for whatever orchestrates turns (the eventual UI), not something a stateless engine
  *   function can represent.
+ *
+ * All 3 confirmed Time Wrinkle variants are now implemented (see [resolveTimeWrinkle]): "Lose next
+ * turn on this Tier" and "Take an extra turn, First Tier" are mandatory, auto-applied effects
+ * (queuing [GameState.queueSkipNextTierTurn]/[GameState.queueExtraTierTurn] immediately, same as
+ * every other non-optional landing here); "Go again" stays purely reported via [SquareEffect.GoAgain]
+ * since ending/chaining a turn is [GameState.endTurn]'s job, owned by whoever's driving turns (see
+ * `TurnDriver`) — [GameState.endTurn]'s `grantAnotherTurn` parameter is exactly that mechanism.
  *
  * Now implemented: Zone of Protection as real token state ([com.tiersofexistence.engine.state.TierTokenPool.enterZone]),
  * though entering one is the player's own choice rather than automatic — landing on a Zone's entry
@@ -407,6 +427,7 @@ object TurnEngine {
                 MoveResult(square.index, emptyList(), square.type, SquareEffect.MayEnterZone(zoneNumber))
             }
             SquareType.WARP -> resolveWarp(state, color, tier, board, square)
+            SquareType.TIME_WRINKLE -> resolveTimeWrinkle(state, color, tier, square)
             else -> MoveResult(square.index, emptyList(), square.type, SquareEffect.None)
         }
     }
@@ -424,6 +445,37 @@ object TurnEngine {
         val landed = board.squareAt(square.index + magnitude)
         pool.moveInPlay(square.index, landed.index)
         return resolveTierLanding(state, color, tier, board, landed)
+    }
+
+    /**
+     * Time Wrinkle: the board data only records each variant's printed text as [Square.note]
+     * (see that field's own doc — "prefer promoting a recurring note to a real
+     * [SquareType]/field once its rule is cross-checked"), since not every physical Time Wrinkle
+     * square's exact text/rule has been confirmed. Of the 3 confirmed variants across all four
+     * boards, 2 are mandatory, auto-applied effects (matching every other non-optional landing
+     * in this file — Nebula, Vortex, Wormhole, etc.): "Lose next turn on this Tier" queues
+     * [GameState.queueSkipNextTierTurn] immediately, "Take an extra turn, First Tier" queues
+     * [GameState.queueExtraTierTurn] immediately. "Go again" is the one variant `TurnEngine`
+     * itself can't apply — ending/chaining a turn is [GameState.endTurn]'s job, owned by
+     * whoever's driving turns — so it's purely reported via [SquareEffect.GoAgain] for that
+     * caller to act on. An unrecognized or absent note (e.g. the generic `placeholder()` test
+     * board's un-annotated Time Wrinkle) resolves to [SquareEffect.None], same as any other
+     * not-yet-modeled square.
+     */
+    private fun resolveTimeWrinkle(state: GameState, color: PlayerColor, tier: TierLevel, square: Square): MoveResult {
+        val effect = when (square.note) {
+            "Go again" -> SquareEffect.GoAgain
+            "Lose next turn on this Tier" -> {
+                state.queueSkipNextTierTurn(color, tier)
+                SquareEffect.LoseNextTierTurn
+            }
+            "Take an extra turn, First Tier" -> {
+                state.queueExtraTierTurn(color, TierLevel.FIRST)
+                SquareEffect.GrantedExtraTierTurn(TierLevel.FIRST)
+            }
+            else -> SquareEffect.None
+        }
+        return MoveResult(square.index, emptyList(), square.type, effect)
     }
 
     private fun resolveMarauderLanding(

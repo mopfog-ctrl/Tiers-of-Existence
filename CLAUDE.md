@@ -134,8 +134,10 @@ entry, Fate Harvest (draw + hold), and Marauder Construction Facility (flagged, 
 separate opt-in call); Marauder movement with pass-through destruction (Reprieve-protected),
 and the rulebook's "only Transport/Sensor/Abyss affect a Marauder" landing rules.
 `GameState.endTurn(grantAnotherTurn = true)` is the mechanism for "Go again" chaining —
-deciding *when* to pass that flag is left to whatever drives turns; `DeferredTurnModifier`
-(below) handles the two Time Wrinkle variants "Go again" can't.
+deciding *when* to pass that flag is left to whatever drives turns (`TurnDriver`, below);
+`DeferredTurnModifier` (below) handles the two Time Wrinkle variants "Go again" can't, and all
+3 confirmed Time Wrinkle variants are now implemented — see `SquareEffect.GoAgain`/
+`LoseNextTierTurn`/`GrantedExtraTierTurn` and `TurnEngine.resolveTimeWrinkle`.
 
 **Resolved:** Reprieve's protection is unconditional for Tier tokens — "Any normal token on
 Reprieve cannot be destroyed," confirmed by the user, applying to Marauder pass-through
@@ -143,6 +145,50 @@ Reprieve cannot be destroyed," confirmed by the user, applying to Marauder pass-
 between the two). It does NOT protect Marauders — "Marauders can be [destroyed]" even while
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
+
+## Turn-driving loop: mechanical roll → move → offer, cards still deferred
+
+`rules/TurnDriver.kt` is the first actual orchestrator sitting on top of `TurnEngine`/
+`GameState` — until now, every doc reference to "whatever's driving turns" described a
+responsibility with no concrete owner. `TurnDriver.driveOneTurn(state)` drives exactly one
+player's turn to completion: reads `state.currentTurn`/`currentPhase`, rolls (via an
+injectable `rollForPhase: (Phase) -> Int`, defaulting to `Dice.rollForPhase` — genuinely
+random in real play, a fixed lambda in tests, since forcing an exact sequence out of
+`kotlin.random.Random`'s internals is awkward), asks a `TurnDecisionProvider` which of the
+player's eligible tokens/Marauders to move, moves it via the identity-based movers
+(`TurnEngine.moveTierTokenById`/`moveMarauderById`/`moveZoneToken` — never the position-based
+`moveTierToken`/`moveMarauder`, since more than one of a player's own tokens can legally stack
+on the same square and a position-based move risks silently moving the wrong one), resolves
+whatever that landing produces, then ends the turn — chaining another turn on a "Go again"
+square, otherwise advancing via `GameState.endTurn`.
+
+**Deliberately scoped to the mechanical loop only, per the user's explicit choice — Fate
+Harvest card play is a separate, later pass.** A `CardTiming.HELD` card drawn from a Fate
+Harvest square is still added to the player's hand automatically (unchanged, pre-existing
+`TurnEngine` behavior); a `CardTiming.IMMEDIATE` card drawn is queued via the new
+`GameState.queuePendingImmediateCard`/`pendingImmediateCards` rather than actually applied —
+rule 14's "must be played the instant it's drawn" isn't honored yet, since resolving one needs
+per-card target selection through `CardEffectDispatcher`, out of scope here. The queue exists
+specifically so a drawn Immediate card is never silently dropped while this gap stands.
+
+**`TurnDecisionProvider`** is the pluggable seam (the user's explicit choice over a
+default-policy-only loop) for every real choice a player makes in this mechanical loop: which
+eligible token/Marauder to move, and whether to take each of the three optional square offers
+(`MayEnterZone`/`MayBuildMarauder`/`MayTransport`). A UI or an AI implements this interface
+directly; `FirstCandidateDecisionProvider` (always the first candidate, always decline every
+offer) is the deterministic, dependency-free default for tests/simulations that only care
+about the mechanical loop running correctly, not about realistic play.
+
+**New `TurnEngine` capability this needed**: all 3 confirmed Time Wrinkle variants are now
+real, modeled effects rather than free-text `Square.note` a caller would have to parse itself
+(the two mandatory ones — "Lose next turn on this Tier," "Take an extra turn, First Tier" —
+are auto-applied inside `TurnEngine.resolveTimeWrinkle` immediately on landing, same as every
+other non-optional square in this file; "Go again" stays purely reported via
+`SquareEffect.GoAgain`, since ending/chaining a turn is `GameState.endTurn`'s job). An
+unrecognized or absent Time Wrinkle note (the generic `placeholder()` test board's
+un-annotated square) still resolves to `SquareEffect.None`, same as any other not-yet-modeled
+square — no real board currently has a Time Wrinkle square whose text isn't one of the 3
+confirmed variants, so this fallback isn't observed in practice yet, only guarded against.
 
 ## Card engine: shared infrastructure plus all 32 cards implemented
 

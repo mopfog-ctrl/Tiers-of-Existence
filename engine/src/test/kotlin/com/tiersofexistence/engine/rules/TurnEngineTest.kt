@@ -588,6 +588,64 @@ class TurnEngineTest {
         assertFailsWith<IllegalArgumentException> { TurnEngine.moveZoneToken(game, unregisteredId, spaces = 1) }
     }
 
+    // --- Time Wrinkle: the 3 confirmed variants ---
+
+    @Test
+    fun `Go again is reported but not auto-applied — ending a turn is the caller's job`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.TIME_WRINKLE, note = "Go again"))
+        val game = gameWith(TierLevel.FIRST, board)
+        game.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 1)
+
+        assertIs<SquareEffect.GoAgain>(result.effect)
+        // Nothing about GameState's turn queue changes just from landing here.
+        game.skipEmptyPhases()
+        assertEquals(RED, game.currentTurn)
+    }
+
+    @Test
+    fun `Lose next turn on this Tier is auto-applied immediately on landing`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.TIME_WRINKLE, note = "Lose next turn on this Tier"))
+        val game = gameWith(TierLevel.FIRST, board)
+        game.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        game.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        game.skipEmptyPhases()
+        assertEquals(RED, game.currentTurn)
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 1)
+        assertIs<SquareEffect.LoseNextTierTurn>(result.effect)
+
+        // RED's next 1st Tier turn (next Round) is skipped — the queued modifier already fired.
+        game.endTurn() // RED's current turn ends
+        assertEquals(GREEN, game.currentTurn)
+        game.endTurn() // GREEN's turn ends, wraps to a new Round
+        assertEquals(GREEN, game.currentTurn) // RED's slot was skipped
+    }
+
+    @Test
+    fun `Take an extra turn, First Tier is auto-applied immediately on landing`() {
+        val board = boardOf(TierLevel.SECOND, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.TIME_WRINKLE, note = "Take an extra turn, First Tier"))
+        val game = gameWith(TierLevel.SECOND, board)
+        game.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        game.players.getValue(RED).tierPool(TierLevel.SECOND).startToken()
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.SECOND, fromPosition = 0, spaces = 1)
+
+        assertEquals(SquareEffect.GrantedExtraTierTurn(TierLevel.FIRST), result.effect)
+    }
+
+    @Test
+    fun `an unrecognized Time Wrinkle note resolves to None, same as any other not-yet-modeled square`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.TIME_WRINKLE))
+        val game = gameWith(TierLevel.FIRST, board)
+        game.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+
+        val result = TurnEngine.moveTierToken(game, RED, TierLevel.FIRST, fromPosition = 0, spaces = 1)
+
+        assertIs<SquareEffect.None>(result.effect)
+    }
+
     // --- Warp (Phase H: each square's own printed magnitude, not a hardcoded global) ---
 
     @Test

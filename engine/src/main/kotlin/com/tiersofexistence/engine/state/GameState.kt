@@ -2,6 +2,7 @@ package com.tiersofexistence.engine.state
 
 import com.tiersofexistence.engine.board.BoardLayouts
 import com.tiersofexistence.engine.board.TierBoard
+import com.tiersofexistence.engine.cards.FateHarvestCard
 import com.tiersofexistence.engine.cards.FateHarvestDeck
 import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
@@ -54,6 +55,16 @@ class GameState(
      * currently pending; see [beginPendingRoll]/[clearPendingRoll]. */
     var pendingRoll: PendingRoll? = null
         private set
+
+    private val _pendingImmediateCards: MutableList<FateHarvestCard> = mutableListOf()
+
+    /** Immediate Fate Harvest cards drawn during play whose effect hasn't been resolved yet —
+     * a deliberately simple holding queue for a driver (`TurnDriver`) that isn't playing cards
+     * yet at all. An ordinary drawn Immediate card is normally mandatory to play the instant
+     * it's drawn (rule 14) and never sits here for long in a fully-wired driver; this queue
+     * exists so a driver that defers card resolution never silently loses one, rather than
+     * pretending the draw never happened. See [queuePendingImmediateCard]. */
+    val pendingImmediateCards: List<FateHarvestCard> get() = _pendingImmediateCards
 
     init {
         turnQueue = buildTurnQueue()
@@ -217,6 +228,11 @@ class GameState(
      * itself never reads or clears this. */
     fun clearPendingRoll() {
         pendingRoll = null
+    }
+
+    /** Records [card] (an Immediate-timing draw) as not-yet-resolved — see [pendingImmediateCards]. */
+    fun queuePendingImmediateCard(card: FateHarvestCard) {
+        _pendingImmediateCards += card
     }
 
     companion object {
