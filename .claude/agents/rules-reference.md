@@ -161,5 +161,17 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   double-check this any time Zone-traversal code changes: only the exiting (main-loop) leg of
   a Zone-originating move should ever be able to destroy anything.
 
+- **Galactic Roundabout's whole-board Marauder movement is exempt from pass-through
+  destruction, and simultaneous exact You-Win landings within its one resolution are a
+  genuine tie** — both confirmed by the user, resolving matrix §4 Q5 (the rulebook's own
+  card text is silent on both). This is the one place `TurnEngine.moveMarauder`/
+  `moveMarauderById`'s `destroysPassedTokens` parameter is passed `false` — every other
+  caller (ordinary dice-driven movement, movement cards) keeps the default `true`. It's also
+  the one place `GameState.declareSimultaneousWinners` is called instead of the ordinary
+  single-winner `declareWinner` — double-check both any time `GalacticRoundaboutResolver` or
+  the Marauder/winner-declaration primitives it calls change; a bug here would either
+  silently start destroying tokens this card's own ruling says survive, or silently drop a
+  tied player's win.
+
 Keep answers focused and cite sources. Don't speculate about UI/UX, Android APIs, or
 anything outside "what does the rulebook say / does the code match it."

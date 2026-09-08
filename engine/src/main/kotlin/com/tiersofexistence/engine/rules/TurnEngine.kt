@@ -121,6 +121,39 @@ object TurnEngine {
         return MoveResult(after.finalPosition, destroyed + after.destroyedTokens, after.landedSquareType, after.effect)
     }
 
+    /**
+     * Identity-based sibling of [moveTierToken]: resolves [id]'s current main-loop position
+     * fresh via [com.tiersofexistence.engine.state.TierTokenPool.positionOf] rather than taking
+     * a caller-supplied position, so it's unambiguous even when another token already shares
+     * that position — needed for a whole-board sweep (Galactic Roundabout) that must move every
+     * snapshotted token exactly once, even if an earlier token in the same sweep has already
+     * moved onto a not-yet-processed token's position. Throws if [id] isn't currently in play on
+     * the main loop — callers are expected to have already confirmed that (e.g. via
+     * [com.tiersofexistence.engine.state.TierTokenPool.positionOf] returning non-null), same
+     * contract as [com.tiersofexistence.engine.state.TierTokenPool.destroyById].
+     */
+    fun moveTierTokenById(
+        state: GameState,
+        id: TokenId,
+        spaces: Int,
+        destroysPassedTokens: Boolean = false,
+        exemptMoverOwnTokens: Boolean = true,
+    ): MoveResult {
+        val pool = state.players.getValue(id.owner).tierPool(id.tier)
+        val fromPosition = requireNotNull(pool.positionOf(id)) { "Token $id is not in play on the main loop on ${id.tier}" }
+        val board = state.boards.getValue(id.tier)
+        val toRaw = fromPosition + spaces
+        val destroyed = if (destroysPassedTokens) {
+            destroyTokensPassed(state, id.tier, id.owner, board, fromPosition, toRaw, exemptMoverOwnTokens)
+        } else {
+            emptyList()
+        }
+        val landed = board.squareAt(toRaw)
+        pool.moveById(id, landed.index)
+        val after = resolveTierLanding(state, id.owner, id.tier, board, landed)
+        return MoveResult(after.finalPosition, destroyed + after.destroyedTokens, after.landedSquareType, after.effect)
+    }
+
     /** Builds a Marauder on [tier]'s Birth Canal — the player's choice after landing on a Marauder
      * Construction Facility ([SquareEffect.MayBuildMarauder]). */
     fun buildMarauder(state: GameState, color: PlayerColor, tier: TierLevel) {
@@ -133,7 +166,12 @@ object TurnEngine {
      * rulebook, only Marauder Transport/Sensor/Abyss squares affect a Marauder at all.
      * [exemptMoverOwnTokens] defaults to true (the general Marauder-pass-through rule); Last
      * Gasp passes false when its target is a Marauder, per that card's own wording — see
-     * [com.tiersofexistence.engine.cards.resolvers.LastGaspResolver].
+     * [com.tiersofexistence.engine.cards.resolvers.LastGaspResolver]. [destroysPassedTokens]
+     * defaults to true, matching ordinary card-driven/dice-driven Marauder movement's rule-8
+     * pass-through-destroy; Galactic Roundabout is the one caller that passes false — confirmed
+     * by the user that its uniform "shift everyone 2 spaces" isn't a targeted move in the usual
+     * sense, so it doesn't trigger pass-through destruction for any Marauder — see
+     * [com.tiersofexistence.engine.cards.resolvers.GalacticRoundaboutResolver].
      */
     fun moveMarauder(
         state: GameState,
@@ -142,13 +180,42 @@ object TurnEngine {
         fromPosition: Int,
         spaces: Int,
         exemptMoverOwnTokens: Boolean = true,
+        destroysPassedTokens: Boolean = true,
     ): MoveResult {
         val board = state.boards.getValue(tier)
         val toRaw = fromPosition + spaces
-        val destroyed = destroyTokensPassed(state, tier, color, board, fromPosition, toRaw, exemptMoverOwnTokens)
+        val destroyed = if (destroysPassedTokens) {
+            destroyTokensPassed(state, tier, color, board, fromPosition, toRaw, exemptMoverOwnTokens)
+        } else {
+            emptyList()
+        }
         val landed = board.squareAt(toRaw)
         state.players.getValue(color).marauders.move(tier, fromPosition, landed.index)
         return resolveMarauderLanding(state, color, tier, board, landed, destroyed)
+    }
+
+    /** Identity-based sibling of [moveMarauder] — see [moveTierTokenById] for why this exists
+     * (Galactic Roundabout's whole-board sweep). Throws if [id] isn't currently in play, same
+     * contract as [com.tiersofexistence.engine.state.MarauderPool.destroyById]. */
+    fun moveMarauderById(
+        state: GameState,
+        id: TokenId,
+        spaces: Int,
+        exemptMoverOwnTokens: Boolean = true,
+        destroysPassedTokens: Boolean = true,
+    ): MoveResult {
+        val marauders = state.players.getValue(id.owner).marauders
+        val fromPosition = requireNotNull(marauders.positionOf(id)) { "Marauder $id is not in play on ${id.tier}" }
+        val board = state.boards.getValue(id.tier)
+        val toRaw = fromPosition + spaces
+        val destroyed = if (destroysPassedTokens) {
+            destroyTokensPassed(state, id.tier, id.owner, board, fromPosition, toRaw, exemptMoverOwnTokens)
+        } else {
+            emptyList()
+        }
+        val landed = board.squareAt(toRaw)
+        marauders.moveById(id, landed.index)
+        return resolveMarauderLanding(state, id.owner, id.tier, board, landed, destroyed)
     }
 
     /** Moves a Marauder that landed on a Marauder Transport to [toTier]'s Birth Canal — optional,
@@ -165,54 +232,54 @@ object TurnEngine {
     }
 
     /**
-     * Moves the Tier token [color] has resident in Zone [zoneNumber] forward [spaces] within
-     * that Zone's own square sequence — confirmed by the user: a Zone of Protection is a real
-     * dice-driven sub-path, not just an undifferentiated "protected" flag, so a resident token
-     * can be chosen and moved during an ordinary Tier-Phase turn (rolling dice for it same as
-     * any other token) or by a card (Galactic Roundabout's confirmed "+2, advancing back into
-     * the normal board as necessary").
+     * Moves the Zone-resident Tier token [id] forward [spaces] within its own Zone's square
+     * sequence — confirmed by the user: a Zone of Protection is a real dice-driven sub-path, not
+     * just an undifferentiated "protected" flag, so a resident token can be chosen and moved
+     * during an ordinary Tier-Phase turn (rolling dice for it same as any other token) or by a
+     * card (Galactic Roundabout's confirmed "+2, advancing back into the normal board as
+     * necessary"). Identity-based (not zone-number-based) since more than one token can share a
+     * Zone — throws if [id] isn't currently a Zone resident, same contract as [moveTierTokenById].
      *
      * If the new zone-relative position still fits within the Zone's own
      * [com.tiersofexistence.engine.board.ProtectionZone.squares], the token stays a Zone
      * resident at that new position, and that zone-internal square's own effect resolves (see
      * [resolveZoneLanding]) — [ZoneMoveResult.StillInZone]. Otherwise it exits the Zone entirely:
      * the overflow (spaces beyond the Zone's last slot) continues from the Zone's own main-loop
-     * entry square via the ordinary [moveTierToken] path, so any further chaining (a Warp square
-     * right at the entry point, Hyperthrust, etc.) resolves exactly as it would for any other
-     * main-loop move — [ZoneMoveResult.ExitedZone].
+     * entry square via [moveTierTokenById] (identity-based, since another ordinary token can
+     * already be sitting on that same entry square — see that function's doc), so any further
+     * chaining (a Warp square right at the entry point, Hyperthrust, etc.) resolves exactly as it
+     * would for any other main-loop move — [ZoneMoveResult.ExitedZone].
      *
      * [destroysPassedTokens]/[exemptMoverOwnTokens] mirror [moveTierToken]'s own parameters of
      * the same name, applied only to the main-loop portion of an exit (via that same
-     * [moveTierToken] call) — never to other tokens resident in this same Zone. That's not an
+     * [moveTierTokenById] call) — never to other tokens resident in this same Zone. That's not an
      * oversight: the rulebook's pass-through-destroy cards all exempt "tokens in the Zone of
      * Protection" by name (Last Gasp included), so a Zone is never a place pass-through
      * destruction reaches into, even when the mover itself started there.
      */
     fun moveZoneToken(
         state: GameState,
-        color: PlayerColor,
-        tier: TierLevel,
-        zoneNumber: Int,
+        id: TokenId,
         spaces: Int,
         destroysPassedTokens: Boolean = false,
         exemptMoverOwnTokens: Boolean = true,
     ): ZoneMoveResult {
-        val board = state.boards.getValue(tier)
-        val pool = state.players.getValue(color).tierPool(tier)
-        val id = requireNotNull(pool.idInZone(zoneNumber)) { "No $color token in Zone $zoneNumber on $tier" }
-        val currentZonePosition = requireNotNull(pool.zonePositionOf(id)) { "Token $id has no zone position on $tier" }
+        val board = state.boards.getValue(id.tier)
+        val pool = state.players.getValue(id.owner).tierPool(id.tier)
+        val zoneNumber = requireNotNull(pool.zoneOf(id)) { "Token $id is not a Zone resident on ${id.tier}" }
+        val currentZonePosition = requireNotNull(pool.zonePositionOf(id)) { "Token $id has no zone position on ${id.tier}" }
         val zone = board.protectionZone(zoneNumber)
         val newZonePosition = currentZonePosition + spaces
 
         if (newZonePosition <= zone.squares.size) {
-            return resolveZoneLanding(state, color, tier, pool, id, zoneNumber, newZonePosition, zone.squares[newZonePosition - 1])
+            return resolveZoneLanding(state, id.owner, id.tier, pool, id, zoneNumber, newZonePosition, zone.squares[newZonePosition - 1])
         }
 
         val entryIndex = board.zoneEntryIndex(zoneNumber)
         val overflow = newZonePosition - zone.squares.size
         pool.leaveZone(id, entryIndex)
         return ZoneMoveResult.ExitedZone(
-            moveTierToken(state, color, tier, entryIndex, overflow, destroysPassedTokens, exemptMoverOwnTokens),
+            moveTierTokenById(state, id, overflow, destroysPassedTokens, exemptMoverOwnTokens),
         )
     }
 

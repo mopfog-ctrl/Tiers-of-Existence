@@ -26,6 +26,11 @@ class MarauderPool(val owner: PlayerColor) {
 
     fun positions(tier: TierLevel): List<Int> = inPlay.getValue(tier).map { it.position }
 
+    /** [TokenId]s of every Marauder in play on [tier], in no particular guaranteed order — one
+     * entry per Marauder, including stacked duplicates at the same position. See
+     * [TierTokenPool.inPlayIds] for why this exists (Galactic Roundabout's whole-board sweep). */
+    fun inPlayIds(tier: TierLevel): List<TokenId> = inPlay.getValue(tier).map { it.id }
+
     /** The [TokenId] of the Marauder at [position] on [tier], or null if none is there. */
     fun idAt(tier: TierLevel, position: Int): TokenId? = inPlay.getValue(tier).firstOrNull { it.position == position }?.id
 
@@ -109,5 +114,15 @@ class MarauderPool(val owner: PlayerColor) {
         require(slot != null) { "No Marauder at position $fromPosition on $tier" }
         inPlay.getValue(tier).remove(slot)
         inPlay.getValue(tier) += MarauderSlot(slot.id, toPosition)
+    }
+
+    /** Moves the Marauder [id] to [toPosition] — identity-based, so it's unambiguous even when
+     * another Marauder already shares [id]'s starting position. See
+     * [TierTokenPool.moveById] for why this exists. */
+    fun moveById(id: TokenId, toPosition: Int) {
+        val slot = inPlay.getValue(id.tier).firstOrNull { it.id == id }
+        require(slot != null) { "Marauder $id no longer exists" }
+        inPlay.getValue(id.tier).remove(slot)
+        inPlay.getValue(id.tier) += MarauderSlot(id, toPosition)
     }
 }

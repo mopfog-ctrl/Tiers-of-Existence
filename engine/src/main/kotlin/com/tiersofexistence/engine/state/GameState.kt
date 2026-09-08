@@ -29,8 +29,16 @@ class GameState(
     var phaseIndex: Int = 0
         private set
 
-    var winner: PlayerColor? = null
-        private set
+    private val _winners: MutableSet<PlayerColor> = mutableSetOf()
+
+    /** Every declared winner — normally at most one ([declareWinner]'s "first sticks" rule),
+     * but a genuine tie is possible: [declareSimultaneousWinners] (Galactic Roundabout is the
+     * only card that can trigger it) can populate this with more than one color at once. */
+    val winners: Set<PlayerColor> get() = _winners
+
+    /** The first declared winner, or null if none yet — kept for the common (non-tied) case;
+     * see [winners] for the full, tie-aware set. */
+    val winner: PlayerColor? get() = _winners.firstOrNull()
 
     val currentPhase: Phase get() = Phase.ROUND_ORDER[phaseIndex]
 
@@ -149,15 +157,38 @@ class GameState(
 
     /**
      * Records [color] as the winner — a no-op if a winner is already set. "The first player to
-     * land on You Win! wins the game" (rulebook p.1) means exactly one true winner, so once
-     * declared it must never be overwritten by a later exact landing in the same or a later
-     * resolution (e.g. two tokens both landing exactly on their own 4th Tier You Win square
-     * within one Galactic Roundabout resolution — see `docs/card-mechanics-matrix.md` §4 Q5:
-     * which one is "first" when a card moves multiple tokens at once is the caller's processing
-     * order, still an open question, but whichever gets declared first here is final regardless).
+     * land on You Win! wins the game" (rulebook p.1) means exactly one true winner in the
+     * ordinary sequential-turn case, so once declared it must never be overwritten by a later
+     * exact landing in a later resolution. The one confirmed exception is a genuine tie within a
+     * single Galactic Roundabout resolution — see [declareSimultaneousWinners].
      */
     fun declareWinner(color: PlayerColor) {
-        if (winner == null) winner = color
+        if (_winners.isEmpty()) _winners += color
+    }
+
+    /**
+     * Declares every color in [colors] a winner at once, as one atomic batch — confirmed by the
+     * user (`docs/card-mechanics-matrix.md` §4 Q5): if Galactic Roundabout's simultaneous
+     * whole-board move lands more than one player's token exactly on their own 4th Tier You Win
+     * square in the very same resolution, that's a genuine tie/shared win, not "whichever token
+     * happened to be processed first." A no-op if [colors] is empty.
+     *
+     * Unlike [declareWinner] (which only ever records the very first color it's ever called
+     * with), this OVERWRITES whatever single winner an earlier call from within that same sweep
+     * already locked in — see each landed token's own [declareWinner] call inside
+     * `TurnEngine.resolveTierLanding`'s `YOU_WIN` case, which still fires per-token as that sweep
+     * runs. This is only safe because [GalacticRoundaboutResolver][com.tiersofexistence.engine
+     * .cards.resolvers.GalacticRoundaboutResolver] calls it exactly once, right after its own
+     * move loop finishes, with the complete set of colors whose token landed exactly on You Win
+     * during that one loop — and only when this game had no winner before the loop began (an
+     * already-decided game is never resolving another card in the first place, so that
+     * precondition is expected to already hold by the time this is reachable, not re-checked
+     * here).
+     */
+    fun declareSimultaneousWinners(colors: Collection<PlayerColor>) {
+        if (colors.isEmpty()) return
+        _winners.clear()
+        _winners += colors
     }
 
     companion object {

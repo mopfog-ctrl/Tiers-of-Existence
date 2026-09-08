@@ -12,6 +12,7 @@ import com.tiersofexistence.engine.model.TierLevel
 import com.tiersofexistence.engine.model.TokenKind
 import com.tiersofexistence.engine.state.GameState
 import com.tiersofexistence.engine.state.PlayerState
+import com.tiersofexistence.engine.state.TokenIdGenerator
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -423,7 +424,7 @@ class TurnEngineTest {
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 
-        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 2)
+        val result = TurnEngine.moveZoneToken(game, id, spaces = 2)
 
         val stillIn = assertIs<ZoneMoveResult.StillInZone>(result)
         assertEquals(9, stillIn.zoneNumber)
@@ -446,7 +447,7 @@ class TurnEngineTest {
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 
-        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 3)
+        val result = TurnEngine.moveZoneToken(game, id, spaces = 3)
 
         assertIs<ZoneMoveResult.StillInZone>(result)
         assertEquals(4, pool.zonePositionOf(id))
@@ -468,7 +469,7 @@ class TurnEngineTest {
 
         // 1 (current) + 5 spaces = 6, overflows the 3-slot Zone by 3 — exits at entry square (1)
         // and continues 3 more spaces on the main loop, landing at 1 + 3 = 4.
-        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 5)
+        val result = TurnEngine.moveZoneToken(game, id, spaces = 5)
 
         val exited = assertIs<ZoneMoveResult.ExitedZone>(result)
         assertEquals(4, exited.moveResult.finalPosition)
@@ -494,13 +495,13 @@ class TurnEngineTest {
         )
         val game = gameWith(TierLevel.FIRST, board)
         val pool = game.players.getValue(RED).tierPool(TierLevel.FIRST)
-        pool.startToken()
+        val id = pool.startToken()
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9) // zone position 1
 
         // 1 + 3 = 4, overflows the 2-slot Zone by 2 — exits at entry square (1), continues 2 more
         // spaces to square 3 (Warp, magnitude 2), which chains a further move to square 5.
-        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 3)
+        val result = TurnEngine.moveZoneToken(game, id, spaces = 3)
 
         val exited = assertIs<ZoneMoveResult.ExitedZone>(result)
         assertEquals(5, exited.moveResult.finalPosition)
@@ -521,7 +522,7 @@ class TurnEngineTest {
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 
-        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.THIRD, zoneNumber = 9, spaces = 1)
+        val result = TurnEngine.moveZoneToken(game, id, spaces = 1)
 
         val exited = assertIs<ZoneMoveResult.ExitedZone>(result)
         assertEquals(SquareEffect.SentToStagingPile(promotedToNextTier = false), exited.moveResult.effect)
@@ -544,7 +545,7 @@ class TurnEngineTest {
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 
-        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.THIRD, zoneNumber = 9, spaces = 1)
+        val result = TurnEngine.moveZoneToken(game, id, spaces = 1)
 
         val exited = assertIs<ZoneMoveResult.ExitedZone>(result)
         assertEquals(SquareEffect.Promoted(TierLevel.FOURTH), exited.moveResult.effect)
@@ -566,7 +567,7 @@ class TurnEngineTest {
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 
-        val result = TurnEngine.moveZoneToken(game, RED, TierLevel.THIRD, zoneNumber = 9, spaces = 1)
+        val result = TurnEngine.moveZoneToken(game, id, spaces = 1)
 
         val stillIn = assertIs<ZoneMoveResult.StillInZone>(result)
         assertIs<SquareEffect.DrewCard>(stillIn.effect)
@@ -575,15 +576,16 @@ class TurnEngineTest {
     }
 
     @Test
-    fun `moveZoneToken throws if the player has no token resident in that Zone`() {
+    fun `moveZoneToken throws if the id is not currently a Zone resident`() {
         val board = boardWithZone(
             TierLevel.FIRST,
             listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9)),
             ProtectionZone(9, squares = List(3) { SquareType.PLAIN }),
         )
         val game = gameWith(TierLevel.FIRST, board)
+        val unregisteredId = TokenIdGenerator.next(RED, TokenKind.TIER_TOKEN, TierLevel.FIRST)
 
-        assertFailsWith<IllegalArgumentException> { TurnEngine.moveZoneToken(game, RED, TierLevel.FIRST, zoneNumber = 9, spaces = 1) }
+        assertFailsWith<IllegalArgumentException> { TurnEngine.moveZoneToken(game, unregisteredId, spaces = 1) }
     }
 
     // --- Warp (Phase H: each square's own printed magnitude, not a hardcoded global) ---

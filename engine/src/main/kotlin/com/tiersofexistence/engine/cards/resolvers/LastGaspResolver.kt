@@ -51,7 +51,7 @@ object LastGaspResolver {
 
         when (location) {
             is TokenLocation.InZone -> TurnEngine.moveZoneToken(
-                state, target.id.owner, target.id.tier, location.zoneNumber, SPACES,
+                state, target.id, SPACES,
                 destroysPassedTokens = true, exemptMoverOwnTokens = false,
             )
             is TokenLocation.InPlay -> when (target.id.kind) {

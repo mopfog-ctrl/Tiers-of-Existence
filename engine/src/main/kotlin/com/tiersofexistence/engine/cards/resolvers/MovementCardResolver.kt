@@ -54,7 +54,7 @@ object MovementCardResolver {
             // resident (see MarauderPool's class doc), so this is always a Tier token.
             val playResult = CardLifecycle.attemptPlay(state, request)
             if (playResult !is CardPlayResult.Resolved) return playResult
-            TurnEngine.moveZoneToken(state, target.id.owner, target.id.tier, location.zoneNumber, spaces)
+            TurnEngine.moveZoneToken(state, target.id, spaces)
             return playResult
         }
         val fromPosition = (location as TokenLocation.InPlay).position

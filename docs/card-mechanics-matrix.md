@@ -169,11 +169,17 @@ the same primitive is reused across cards that need it instead of reinvented per
   You-Win squares in the same resolution if two players are close enough — see §4 Q5 for
   the ordering/tie question that creates for Phase I.
 - **Rulebook citation:** rulebook.txt:509-515, 433-438 (rule 12).
-- **Ambiguities:** (a) Does moving every Marauder by this card trigger the same
-  pass-through-destroy as rule 8's normal card-driven Marauder movement, for every Marauder
-  simultaneously, or is a uniform "shift everyone" effect exempt from that rule (it isn't a
-  targeted "move a token" play in the usual sense)? (b) Resolution order across multiple
-  players' tokens when it matters for pass-through/tie purposes. Both flagged in §4.
+- **Ambiguities:** Both resolved — see §4 Q5.
+- **Implemented.** Confirmed by the user: (a) this uniform "shift everyone" does NOT trigger
+  rule 8's pass-through-destroy for any Marauder — `GalacticRoundaboutResolver` moves every
+  Marauder via `TurnEngine.moveMarauderById(..., destroysPassedTokens = false)`; (b) two or
+  more players' tokens landing exactly on their own You Win square within this one resolution
+  is a genuine tie/shared win — every such color is collected during the sweep and declared
+  together via `GameState.declareSimultaneousWinners`. See `GalacticRoundaboutResolver`'s
+  class doc for the full design, including the identity-based movement primitives
+  (`TierTokenPool.moveById`/`inPlayIds`/`zoneResidentIds`, `MarauderPool.moveById`/
+  `inPlayIds`, `TurnEngine.moveTierTokenById`/`moveMarauderById`) this needed so the whole
+  sweep can snapshot every token safely before any of them move.
 
 #### 3. Dwarf Star
 - **Rarity/copies:** Single ×1
@@ -1407,10 +1413,14 @@ movement, movement altered mid-interaction-chain, and the roundabout-style near-
    move) or the **card-player** (a literal reading of rule 8's "yours are immune to your
    Marauder," which presumes the mover and owner are the same person)? This affects every
    any-token movement card whenever it's used on someone else's Marauder.
-5. Galactic Roundabout: (a) does its simultaneous whole-board Marauder movement trigger
+5. ~~Galactic Roundabout: (a) does its simultaneous whole-board Marauder movement trigger
    ordinary pass-through destruction per-Marauder, and (b) if two players' tokens land
    exactly on their respective 4th Tier You-Win squares within the same resolution, is
-   there a defined winner-ordering rule (first in turn order, first token processed, etc.)?
+   there a defined winner-ordering rule...~~ — **Resolved**, confirmed by the user: (a) no,
+   this uniform "shift everyone" effect is exempt from rule 8's pass-through-destroy,
+   regardless of whether other tokens are in a Marauder's 2-space path; (b) it's a genuine
+   tie/shared win, not an ordering question — every player whose token lands exactly on You
+   Win within the one resolution wins together. See §2's Galactic Roundabout entry.
 6. ~~Radiation Burst: (a) "All Staging Piles" — every player's every Tier, or just the
    caster's own? (b) Does emptying a pile that happens to be at/above its promotion
    threshold trigger the promotion, or does emptying bypass it entirely?~~ — **Resolved**,

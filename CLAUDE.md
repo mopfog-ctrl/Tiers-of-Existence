@@ -125,7 +125,9 @@ AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
 Phase). Implemented: Tier token movement and landing effects for Nebula (staging pile +
 promotion), Vortex of Regression, Wormhole of Construction, You Win (exact-landing only,
 idempotent — `GameState.declareWinner` no-ops once a winner is set, so a later token's exact
-landing in the same or a later resolution can never overwrite the first), Infernal Abyss,
+landing in the same or a later resolution can never overwrite the first; the one confirmed
+exception is a genuine tie within a single Galactic Roundabout resolution, see that card's
+entry below and `GameState.declareSimultaneousWinners`), Infernal Abyss,
 Hyperthrust (pass-through destroy + chained landing resolution), Warp (chained like
 Hyperthrust but never destroys anything passed — see "Card engine" below), Zone of Protection
 entry, Fate Harvest (draw + hold), and Marauder Construction Facility (flagged, build is a
@@ -210,7 +212,7 @@ that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) a
 `GameState`, instead of every caller needing to know which resolver object handles which
 card.
 
-**Cards implemented** (29 of 32), via shared resolvers rather than one class per card
+**Cards implemented** (30 of 32), via shared resolvers rather than one class per card
 (`cards/resolvers/`):
 - `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
   limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
@@ -280,18 +282,40 @@ card.
   (staged on a Nebula), the explicit self-destruct step is a no-op rather than a crash or a
   double-destroy — `TokenId` identity means it's always found wherever it actually ended up,
   or correctly recognized as already gone.
+- `GalacticRoundaboutResolver` (Galactic Roundabout only) — unconditional whole-board sweep,
+  no target to choose: every Tier token (including Zone residents, a named rule-12 exception)
+  and every Marauder, every player, every Tier, moves 2 spaces. Two rulings confirmed by the
+  user, resolving matrix §4 Q5: (a) this uniform "shift everyone" does NOT trigger the normal
+  Marauder pass-through-destroy rule — every Marauder here moves via the new
+  `TurnEngine.moveMarauderById(..., destroysPassedTokens = false)`, the one caller that opts
+  out (`moveMarauder`'s own `destroysPassedTokens` parameter defaults to `true` for every
+  other, pre-existing caller, unchanged); (b) two or more players' tokens landing exactly on
+  their own 4th Tier You Win square within this one resolution is a genuine tie/shared
+  win, not "whichever token got processed first" — every such color is collected during the
+  sweep and declared together via the new `GameState.declareSimultaneousWinners`, which can
+  override the single winner an in-sweep `GameState.declareWinner` call already locked in
+  (only when the game had no winner before the sweep began — see `GameState.winners`, the new
+  tie-aware superset of the pre-existing single-winner `GameState.winner`). Needed new
+  identity-based movement primitives to snapshot every token safely before any of them move
+  (so a token created as a side effect mid-sweep, e.g. a Nebula promotion, never also gets
+  swept up, and a token can't get double-moved or skipped just because an earlier move in the
+  same sweep shifted who's standing where): `TierTokenPool.moveById`/`inPlayIds`/
+  `zoneResidentIds`, `MarauderPool.moveById`/`inPlayIds`, and `TurnEngine.moveTierTokenById`/
+  `moveMarauderById` (thin identity-based siblings of `moveTierToken`/`moveMarauder`, resolving
+  each token's position fresh via `positionOf` rather than trusting a caller-supplied one).
+  `TurnEngine.moveZoneToken` itself was refactored to take the specific `TokenId` directly
+  (instead of re-deriving "the" resident of a Zone by number, ambiguous once more than one
+  token can share a Zone) — its 3 pre-existing callers (`MovementCardResolver`/
+  `ParallelPhasingResolver`/`LastGaspResolver`) updated accordingly, no behavior change for
+  any of them since each already had the specific id in hand.
 - Annulment (Antimatter) has no resolver of its own — it's handled structurally by
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.
 
-That's 28 cards dispatched by name plus Annulment = 29 of 32 actually playable end to end.
+That's 29 cards dispatched by name plus Annulment = 30 of 32 actually playable end to end.
 
-**Not yet implemented** (3 of 32), each blocked on a specific open rules question rather than
+**Not yet implemented** (2 of 32), each blocked on a specific open rules question rather than
 missing effort — see the cited matrix question before attempting:
-- **Galactic Roundabout** — cross-Tier/whole-board effect; open question about whether its
-  Marauder movement triggers pass-through destruction and how simultaneous near-wins resolve
-  (§4 Q5). Of the 6 Precedence-flagged cards, this is the only one still not implemented
-  (Tactical Motion, Tactical Step, Annulment, Graviton Rift, Fluidic Wave, Last Gasp all are).
 - **Cleansing** — needs a generalized pending-decision primitive for "a player other than the
   one who played the card must choose" (sketched as `PendingDecision` but not wired up).
 - **Delayed Motion** — needs a post-roll/pre-move checkpoint in `TurnEngine` that doesn't

@@ -61,8 +61,20 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
      * read-only view for callers that only care about positions, not identity. */
     val inPlayPositions: List<Int> get() = inPlay.map { it.position }
 
+    /** [TokenId]s of every in-play (main-loop) token, in no particular guaranteed order — one
+     * entry per token, including stacked duplicates at the same position. Unlike
+     * [inPlayPositions], this lets a caller that needs to move or check on *every* token (e.g.
+     * Galactic Roundabout's whole-board sweep) snapshot identities up front and resolve each
+     * one's position fresh via [positionOf] at the moment it's actually moved, rather than
+     * re-deriving identity from a position that may have already shifted underneath it. */
+    val inPlayIds: List<TokenId> get() = inPlay.map { it.id }
+
     /** Zone numbers of every Zone-resident token — a read-only view; see [inPlayPositions]. */
     val zoneResidents: List<Int> get() = inZone.map { it.zoneNumber }
+
+    /** [TokenId]s of every Zone-resident token, in no particular guaranteed order — one entry
+     * per token, including more than one token sharing the same Zone; see [inPlayIds]. */
+    val zoneResidentIds: List<TokenId> get() = inZone.map { it.id }
 
     val inPlayCount: Int get() = inPlay.size + inZone.size
 
@@ -203,6 +215,19 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         require(slot != null) { "No in-play token at position $fromPosition on $tier" }
         inPlay.remove(slot)
         inPlay += InPlaySlot(slot.id, toPosition)
+    }
+
+    /** Moves the in-play token [id] to [toPosition] — identity-based, so it's unambiguous even
+     * when another token (this pool's own or another player's) already shares [id]'s starting
+     * position. Prefer this over [moveInPlay] whenever the specific token is already known by
+     * id, rather than derived from a position lookup — e.g. Galactic Roundabout's whole-board
+     * sweep, which must move each snapshotted token exactly once even if an earlier token in
+     * the same sweep has already moved onto a not-yet-processed token's position. */
+    fun moveById(id: TokenId, toPosition: Int) {
+        val slot = inPlay.firstOrNull { it.id == id }
+        require(slot != null) { "Token $id is not in play on $tier" }
+        inPlay.remove(slot)
+        inPlay += InPlaySlot(id, toPosition)
     }
 
     /** Removes a Staging Pile token directly (Insidious Flux, Divine Assistance) — no board

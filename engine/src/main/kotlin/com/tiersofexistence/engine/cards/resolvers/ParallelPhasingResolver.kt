@@ -65,7 +65,7 @@ object ParallelPhasingResolver {
      * position (in play or in a Zone), or the [CardPlayResult.Rejected] to return instead. */
     private sealed class MovableCheck {
         data class InPlayAt(val fromPosition: Int) : MovableCheck()
-        data class InZoneAt(val zoneNumber: Int) : MovableCheck()
+        data object InZone : MovableCheck()
         data class Blocked(val result: CardPlayResult.Rejected) : MovableCheck()
     }
 
@@ -83,7 +83,7 @@ object ParallelPhasingResolver {
         )
         if (zoneError != null) return MovableCheck.Blocked(CardPlayResult.Rejected(request, zoneError))
         return when (location) {
-            is TokenLocation.InZone -> MovableCheck.InZoneAt(location.zoneNumber) // legal per rule 12; the ZoP check above already rejects any other case
+            is TokenLocation.InZone -> MovableCheck.InZone // legal per rule 12; the ZoP check above already rejects any other case
             is TokenLocation.InPlay -> MovableCheck.InPlayAt(location.position)
             is TokenLocation.NoLongerExists -> error("unreachable — handled above")
         }
@@ -91,7 +91,7 @@ object ParallelPhasingResolver {
 
     private fun move(state: GameState, target: CardTarget.Token, check: MovableCheck) {
         when (check) {
-            is MovableCheck.InZoneAt -> TurnEngine.moveZoneToken(state, target.id.owner, target.id.tier, check.zoneNumber, spaces = 4)
+            is MovableCheck.InZone -> TurnEngine.moveZoneToken(state, target.id, spaces = 4)
             is MovableCheck.InPlayAt -> when (target.id.kind) {
                 TokenKind.TIER_TOKEN -> TurnEngine.moveTierToken(state, target.id.owner, target.id.tier, check.fromPosition, spaces = 4)
                 TokenKind.MARAUDER -> TurnEngine.moveMarauder(state, target.id.owner, target.id.tier, check.fromPosition, spaces = 4)
