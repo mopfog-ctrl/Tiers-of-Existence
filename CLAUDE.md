@@ -141,7 +141,7 @@ between the two). It does NOT protect Marauders — "Marauders can be [destroyed
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
 
-## Card engine: shared infrastructure plus 28 of 32 cards implemented
+## Card engine: shared infrastructure plus 29 of 32 cards implemented
 
 `docs/card-mechanics-matrix.md` is the implementation spec — an audit of all 32 unique Fate
 Harvest cards' actual mechanical requirements (targets, Zone-of-Protection/Reprieve
@@ -209,7 +209,7 @@ that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) a
 `GameState`, instead of every caller needing to know which resolver object handles which
 card.
 
-**Cards implemented** (28 of 32), via shared resolvers rather than one class per card
+**Cards implemented** (29 of 32), via shared resolvers rather than one class per card
 (`cards/resolvers/`):
 - `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
   limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
@@ -264,21 +264,33 @@ card.
   in play is a legal target, not just the caster's own, but never one already inside a Zone
   of Protection — Circulate isn't a named rule-12 exception, so that's simply not a legal
   target at all, with no carve-out even for the player's own token.
+- `LastGaspResolver` (Last Gasp only) — moves the player's own token (any type) 8 spaces,
+  destroying everything passed *and* the moved token itself on arrival — the single most
+  destructive card in the deck. Confirmed with the user: unlike every other pass-through
+  effect (Marauder movement, Hyperthrust), Last Gasp's own other tokens caught in the path
+  are destroyed too, no owner exemption. `TurnEngine.moveTierToken`/`moveMarauder` gained
+  optional `destroysPassedTokens`/`exemptMoverOwnTokens` parameters for this (defaulting to
+  preserve every existing caller's behavior exactly — Last Gasp is the only caller that opts
+  out of the exemption). Zone-of-Protection residents stay immune either way (invisible to
+  the position-based scan, as always); Reprieve protects a passed Tier token the same as it
+  already does for Marauder/Hyperthrust pass-through, but not a passed Marauder, and not the
+  mover from its own self-destruct (that's not a pass-through). If the mover's own landing
+  square already destroys it (Infernal Abyss) or retires its identity into a fungible pool
+  (staged on a Nebula), the explicit self-destruct step is a no-op rather than a crash or a
+  double-destroy — `TokenId` identity means it's always found wherever it actually ended up,
+  or correctly recognized as already gone.
 - Annulment (Antimatter) has no resolver of its own — it's handled structurally by
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.
 
-That's 27 cards dispatched by name plus Annulment = 28 of 32 actually playable end to end.
+That's 28 cards dispatched by name plus Annulment = 29 of 32 actually playable end to end.
 
-**Not yet implemented** (4 of 32), each blocked on a specific open rules question rather than
+**Not yet implemented** (3 of 32), each blocked on a specific open rules question rather than
 missing effort — see the cited matrix question before attempting:
-- **Last Gasp** — whether its pass-through destroys the mover's own other tokens too, since
-  its wording omits the usual owner-exemption clause (§4 Q14). Of the 6 Precedence-flagged
-  cards, 5 are now implemented (Tactical Motion, Tactical Step, Annulment, Graviton Rift,
-  Fluidic Wave) — Last Gasp is the only one still not implemented.
 - **Galactic Roundabout** — cross-Tier/whole-board effect; open question about whether its
   Marauder movement triggers pass-through destruction and how simultaneous near-wins resolve
-  (§4 Q5).
+  (§4 Q5). Of the 6 Precedence-flagged cards, this is the only one still not implemented
+  (Tactical Motion, Tactical Step, Annulment, Graviton Rift, Fluidic Wave, Last Gasp all are).
 - **Cleansing** — needs a generalized pending-decision primitive for "a player other than the
   one who played the card must choose" (sketched as `PendingDecision` but not wired up).
 - **Delayed Motion** — needs a post-roll/pre-move checkpoint in `TurnEngine` that doesn't

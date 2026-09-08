@@ -1081,14 +1081,12 @@ the same primitive is reused across cards that need it instead of reinvented per
   Hyperthrust square can do that, and that no other movement card (even a
   Precedence-flagged one like Tactical Motion) can.
 - **Rulebook citation:** rulebook.txt:759-768, 428-429 (rule 10).
-- **Ambiguities:** Does "any tokens you pass are destroyed" include the mover's *own* other
-  tokens caught in the 8-space path, or is the general Marauder-pass-through "yours are
-  immune" exemption implicitly still in force here too? The card text's wording is
-  meaningfully different from every other pass-through rule in the rulebook (it omits the
-  usual owner-exemption clause entirely, right where it explicitly calls out the ZoP
-  exemption instead) — this materially changes the card's risk/reward and needs explicit
-  user confirmation rather than inferring the general rule applies. §4 Q14 (flagged as
-  high-priority, since it blocks correctly implementing this card at all).
+- **Ambiguities:** Resolved — see §4 Q14.
+- **Implemented.** Confirmed by the user: "any tokens you pass are destroyed" does include
+  the mover's own other tokens — the general Marauder-pass-through owner exemption does
+  *not* carry over to this card. See `LastGaspResolver`, and the new `destroysPassedTokens`/
+  `exemptMoverOwnTokens` parameters this needed on `TurnEngine.moveTierToken`/`moveMarauder`
+  (defaulted to preserve every other caller's existing behavior unchanged).
 
 #### 30. Phase Control
 - **Rarity/copies:** Quadruple ×4
@@ -1430,11 +1428,10 @@ movement, movement altered mid-interaction-chain, and the roundabout-style near-
     default, not explicitly stated).
 13. Delayed Motion: can it be played on any player's pending roll, or only the roller's own
     (no explicit Your-Turn restatement for this card, unlike most other turn-scoped cards)?
-14. **Last Gasp**: does "any tokens you pass are destroyed" include the mover's *own* other
-    tokens caught in the 8-space path (the card's wording omits the usual owner-exemption
-    clause present in every other pass-through rule), or does the general Marauder-style
-    owner exemption still implicitly apply? High-priority — this materially changes the
-    card's risk profile and blocks a confident implementation.
+14. ~~**Last Gasp**: does "any tokens you pass are destroyed" include the mover's *own* other
+    tokens caught in the 8-space path...~~ — **Resolved**, confirmed by the user: yes, it
+    includes the player's own tokens passed as well — the general Marauder-style owner
+    exemption does not apply to this card. See §2's Last Gasp entry.
 15. Phase Control's case (b) ("play your turn on that Tier immediately" when the Tier's
     Phase already ended this Round): does "immediately" mean a true interrupt of whatever's
     currently resolving, or "next, out of normal Phase order, once the current action

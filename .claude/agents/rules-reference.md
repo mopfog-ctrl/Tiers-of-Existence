@@ -134,6 +134,14 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   token already Zone-resident isn't a legal target at all; this isn't one of the 5 named
   rule-12 exceptions, so ordinary Zone protection applies to it like any other card without a
   carve-out.
+- **Last Gasp's pass-through destroys the mover's own other tokens too — the one exception
+  to the general "yours are immune" pass-through rule** — confirmed by the user. Every other
+  pass-through effect in the game (Marauder movement, Hyperthrust) exempts the mover's own
+  tokens; Last Gasp's card text conspicuously omits that clause right where it calls out the
+  Zone-of-Protection exemption instead, and the user confirmed that omission is deliberate,
+  not an oversight. Double-check this specific card any time pass-through logic
+  (`TurnEngine.destroyTokensPassed`) changes — it's the one caller that needs
+  `exemptMoverOwnTokens = false`; every other caller should keep the default `true`.
 
 Keep answers focused and cite sources. Don't speculate about UI/UX, Android APIs, or
 anything outside "what does the rulebook say / does the code match it."

@@ -74,14 +74,33 @@ object TurnEngine {
 
     /**
      * Moves a Tier token [spaces] forward and resolves whatever it lands on. Ordinary Tier token
-     * movement does not destroy tokens it passes over (only Marauders and Hyperthrust do).
+     * movement does not destroy tokens it passes over (only Marauders and Hyperthrust do) —
+     * [destroysPassedTokens] defaults to false to preserve that for every existing caller.
+     * Last Gasp is the one card that gives a Tier token this power (Fate Harvest Card Rule #10);
+     * pass `destroysPassedTokens = true` (and, per that card's own wording, `exemptMoverOwnTokens
+     * = false`) only from [com.tiersofexistence.engine.cards.resolvers.LastGaspResolver].
      */
-    fun moveTierToken(state: GameState, color: PlayerColor, tier: TierLevel, fromPosition: Int, spaces: Int): MoveResult {
+    fun moveTierToken(
+        state: GameState,
+        color: PlayerColor,
+        tier: TierLevel,
+        fromPosition: Int,
+        spaces: Int,
+        destroysPassedTokens: Boolean = false,
+        exemptMoverOwnTokens: Boolean = true,
+    ): MoveResult {
         val board = state.boards.getValue(tier)
         val pool = state.players.getValue(color).tierPool(tier)
-        val landed = board.squareAt(fromPosition + spaces)
+        val toRaw = fromPosition + spaces
+        val destroyed = if (destroysPassedTokens) {
+            destroyTokensPassed(state, tier, color, board, fromPosition, toRaw, exemptMoverOwnTokens)
+        } else {
+            emptyList()
+        }
+        val landed = board.squareAt(toRaw)
         pool.moveInPlay(fromPosition, landed.index)
-        return resolveTierLanding(state, color, tier, board, landed)
+        val after = resolveTierLanding(state, color, tier, board, landed)
+        return MoveResult(after.finalPosition, destroyed + after.destroyedTokens, after.landedSquareType, after.effect)
     }
 
     /** Builds a Marauder on [tier]'s Birth Canal — the player's choice after landing on a Marauder
@@ -94,11 +113,21 @@ object TurnEngine {
      * Moves a Marauder [spaces] forward, destroying any other player's token or Marauder strictly
      * passed over along the way (not landed on), then resolves whatever it lands on. Per the
      * rulebook, only Marauder Transport/Sensor/Abyss squares affect a Marauder at all.
+     * [exemptMoverOwnTokens] defaults to true (the general Marauder-pass-through rule); Last
+     * Gasp passes false when its target is a Marauder, per that card's own wording — see
+     * [com.tiersofexistence.engine.cards.resolvers.LastGaspResolver].
      */
-    fun moveMarauder(state: GameState, color: PlayerColor, tier: TierLevel, fromPosition: Int, spaces: Int): MoveResult {
+    fun moveMarauder(
+        state: GameState,
+        color: PlayerColor,
+        tier: TierLevel,
+        fromPosition: Int,
+        spaces: Int,
+        exemptMoverOwnTokens: Boolean = true,
+    ): MoveResult {
         val board = state.boards.getValue(tier)
         val toRaw = fromPosition + spaces
-        val destroyed = destroyTokensPassed(state, tier, color, board, fromPosition, toRaw)
+        val destroyed = destroyTokensPassed(state, tier, color, board, fromPosition, toRaw, exemptMoverOwnTokens)
         val landed = board.squareAt(toRaw)
         state.players.getValue(color).marauders.move(tier, fromPosition, landed.index)
         return resolveMarauderLanding(state, color, tier, board, landed, destroyed)
@@ -241,14 +270,17 @@ object TurnEngine {
     }
 
     /**
-     * Destroys any other player's token or Marauder on a square strictly between [fromIndex] and
-     * [toIndex] (exclusive of both — landing on a token doesn't destroy it, only passing over one
-     * does), per the Marauders section ("Your Marauders destroy the tokens of other players by
-     * passing them... If a Marauder lands on a space occupied by another token, that token is not
-     * destroyed") and Hyperthrust's identically-worded square text. Never destroys the mover's own
-     * tokens. A Tier token on Reprieve is never destroyed this way, regardless of what's passing —
-     * "Any normal token on Reprieve cannot be destroyed" (confirmed by the user, applies uniformly
-     * to Marauder and Hyperthrust pass-through alike). A Marauder on Reprieve is NOT protected —
+     * Destroys tokens on a square strictly between [fromIndex] and [toIndex] (exclusive of both —
+     * landing on a token doesn't destroy it, only passing over one does), per the Marauders
+     * section ("Your Marauders destroy the tokens of other players by passing them... If a
+     * Marauder lands on a space occupied by another token, that token is not destroyed") and
+     * Hyperthrust's identically-worded square text. [exemptMoverOwnTokens] defaults to true,
+     * matching that general rule ("of other players" — never the mover's own); Last Gasp is the
+     * one card whose own wording omits that exemption entirely (confirmed by the user), so its
+     * resolver passes false. A Tier token on Reprieve is never destroyed this way, regardless of
+     * what's passing — "Any normal token on Reprieve cannot be destroyed" (confirmed by the user,
+     * applies uniformly to Marauder, Hyperthrust, and Last Gasp pass-through alike, since all
+     * three share this same category of effect). A Marauder on Reprieve is NOT protected —
      * Reprieve only shields ordinary Tier tokens.
      */
     private fun destroyTokensPassed(
@@ -258,11 +290,12 @@ object TurnEngine {
         board: TierBoard,
         fromIndex: Int,
         toIndex: Int,
+        exemptMoverOwnTokens: Boolean = true,
     ): List<TokenRef> {
         val destroyed = mutableListOf<TokenRef>()
         for (square in board.squaresPassedBetween(fromIndex, toIndex)) {
             for (ref in tokensAt(state, tier, square.index)) {
-                if (ref.color == moverColor) continue
+                if (exemptMoverOwnTokens && ref.color == moverColor) continue
                 if (square.type == SquareType.REPRIEVE && ref.kind == TokenKind.TIER_TOKEN) continue
                 destroyed += ref
                 when (ref.kind) {

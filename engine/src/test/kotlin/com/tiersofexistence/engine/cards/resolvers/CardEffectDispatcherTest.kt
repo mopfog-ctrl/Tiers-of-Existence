@@ -86,6 +86,6 @@ class CardEffectDispatcherTest {
     fun `an unregistered card throws rather than silently doing nothing`() {
         val state = GameState.newGame(listOf(RED))
 
-        assertFailsWith<IllegalStateException> { CardEffectDispatcher.dispatch(state, requestFor(RED, "Last Gasp")) }
+        assertFailsWith<IllegalStateException> { CardEffectDispatcher.dispatch(state, requestFor(RED, "Cleansing (Atmospheric)")) }
     }
 }
