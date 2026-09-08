@@ -189,6 +189,30 @@ class DestructionCardResolversTest {
     }
 
     @Test
+    fun `Corpuscle Rot still resolves the destroy even if a construct Tier is fully exhausted, rather than crashing`() {
+        // Corpuscle Rot's construct half calls TierTokenPool.startToken() on the 1st and 2nd
+        // Tiers unconditionally. Since startToken() gracefully returns null (not a crash) once a
+        // Tier's tokens are all already accounted for elsewhere (see TierTokenPoolTest's
+        // "startToken returns null" regression test and CLAUDE.md's Tier-token resource/capacity
+        // re-audit), Corpuscle Rot's own destroy half must still succeed even when one of its two
+        // construct Tiers has nothing left to start — a "special/limited card" atomicity concern
+        // that turned out to already be fixed by that more general startToken() correction.
+        val state = GameState.newGame(listOf(YELLOW, GREEN))
+        val id = state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()!!
+        val secondPool = state.players.getValue(YELLOW).tierPool(TierLevel.SECOND)
+        repeat(6) { secondPool.startToken() } // drains the Ion Battery into play + Hatchery
+        repeat(4) { secondPool.sendToStagingPile(secondPool.inPlayPositions.first()) } // and the Hatchery too
+        assertEquals(0, secondPool.ionBattery)
+        assertEquals(0, secondPool.hatchery)
+
+        val result = CorpuscleRotResolver.resolve(state, requestFor(YELLOW, "Corpuscle Rot"), CardTarget.Token(id))
+
+        assertIs<CardPlayResult.Resolved>(result) // the destroy half still applies, no crash
+        assertEquals(0, state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).inPlayCount)
+        assertEquals(2, secondPool.inPlayCount) // 2nd Tier construct silently no-op'd — nothing to start
+    }
+
+    @Test
     fun `Corpuscle Rot rejects a target that isn't on the 4th Tier`() {
         val state = GameState.newGame(listOf(YELLOW, GREEN))
         val id = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).idAt(0)!!

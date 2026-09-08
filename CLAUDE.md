@@ -641,6 +641,60 @@ scenario; scoping the fix to actual gameplay mutations (not initial setup) avoid
 contradicting either. See `TierTokenPoolTest`'s "1st Tier Ion Battery auto-replenishment"
 tests for the soft-lock regression coverage and the graceful-exhaustion case.
 
+## Persistent token identity: verified intact, no regression
+
+Re-checked the `TokenId`/`TokenLocator` architecture (see "Card engine" above) after the
+Marauder-model and Tier-token resource/capacity corrections above — neither touched
+`state/TokenId.kt` or `cards/play/TokenLocator.kt` at all. All original guarantees still hold:
+identity survives movement/Zone entry-exit/Staging transitions; position is resolved fresh at
+resolution time via `TokenLocator.locate`, never a stale recorded position; stacked tokens at
+the same position are distinguishable (unique `ordinal`); Tier tokens vs. Marauders are
+distinguishable (`TokenId.kind`); Zone location is modeled as pool state (`zoneOf`/`zonePositionOf`),
+never as part of identity itself; a destroyed/promoted/staged target resolves as a controlled
+`TokenLocation.NoLongerExists`, which every resolver rejects gracefully rather than crashing on;
+a later occupant of a freed position is never silently retargeted, since lookups are always by
+id, never by position. `PrecedenceCardEffectIntegrationTest`'s stale-target, reverse-order-conflict,
+and cross-player regression tests (the ones exercising this most directly) all still pass
+unchanged. No code changes were needed for this phase — verification only.
+
+## Regular-game compound-effect atomicity: audited, sound
+
+Audited every compound/multi-step Fate Harvest effect in the regular (non-special-case) card
+set for atomicity — no partial application of a mandatory compound effect, no discard/mutation
+followed by a mid-resolution crash. Two shapes exist:
+- **Per-target-validated compounds** (`ParallelPhasingResolver`'s own+opponent targets,
+  `GravitonRiftResolver`'s up-to-4 targets): both already fully validate every target's
+  existence and Zone-of-Protection legality via `TokenLocator`/`TargetValidator` *before*
+  `CardLifecycle.attemptPlay` ever discards/marks-played the card, and before any mutation
+  happens — confirmed correct on re-reading both resolvers' code against their own doc
+  comments' atomicity claims. No changes needed.
+- **Unconditional whole-board/whole-pool sweeps** (`FluidicWaveResolver`, `RadiationBurstResolver`,
+  `PlasmaBurstResolver`, `GalacticRoundaboutResolver`, `LastGaspResolver`): no target is chosen
+  that could turn out illegal partway through, so there's no per-target validation to preflight
+  in the first place — each mutates unconditionally once `CardLifecycle.attemptPlay` succeeds,
+  and the underlying `TierTokenPool`/`MarauderPool` bulk-clear methods used
+  (`destroyAllInPlayAndStagingPile`/`destroyAllAt`/`destroyAllInZone`/`emptyStagingPile`/
+  `destroyAllInPlay`) have no `require`/`error` that could trip mid-sweep. `GalacticRoundaboutResolver`
+  additionally snapshots every token id before moving any of them (already documented) so a
+  side-effect-created token is never swept up and a destroyed bystander is skipped, not crashed
+  on. `PlasmaBurstResolver` has one internal `requireNotNull(square.magnitude)` guarding a
+  malformed Zone-of-Protection board square — reviewed and left as-is: this is a static
+  board-data invariant (every confirmed Zone entry square carries its zone number), not a
+  player-reachable failure mode, so it doesn't need the same preflight treatment as a genuine
+  target-legality check.
+
+**The two cards the item-5 directive named as lower priority — Corpuscle Rot, Verdant Growth —
+turned out to already be fixed**, as a side effect of the Tier-token resource/capacity
+correction above, not because they needed their own separate atomicity work. Both
+(`CorpuscleRotResolver`, `BirthCanalConstructionCardResolver`) call `TierTokenPool.startToken()`
+unconditionally on one or more Tiers after their own destroy/validate half already succeeded;
+now that `startToken()` returns `null` instead of crashing when a Tier is genuinely exhausted,
+neither can partially-crash mid-resolution — the destroy (or first construct) half still
+applies, and an exhausted construct Tier simply no-ops, matching the rulebook's own "must wait"
+language rather than inventing new behavior. See `DestructionCardResolversTest`'s "Corpuscle Rot
+still resolves the destroy even if a construct Tier is fully exhausted" regression test, which
+exercises exactly this.
+
 ## `TurnOrder`/`GameState` construction NPE: root-caused and fixed
 
 Historically, `./gradlew :engine:test` intermittently failed (~50% of runs in one sandbox
