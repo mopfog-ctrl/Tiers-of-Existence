@@ -695,6 +695,47 @@ language rather than inventing new behavior. See `DestructionCardResolversTest`'
 still resolves the destroy even if a construct Tier is fully exhausted" regression test, which
 exercises exactly this.
 
+## Regular Fate Harvest deck: targeted crash/hang audit, no new defects found
+
+A dedicated pass over every resolver's own code (not just the compound-effect ones above),
+plus the shared infrastructure every resolver funnels through
+(`CardLifecycle.attemptPlay`/`TargetValidator`/`TokenLocator`/`InteractionChain`), specifically
+for: uncaught exceptions from reachable states, stale-target handling, illegal-target lifecycle
+consistency (never discarding/marking-played a card whose target turns out illegal),
+capacity/resource failures, partial compound effects, Zone-of-Protection changes mid-resolution,
+Precedence reverse-resolution interactions, and physical-component-inventory dependence.
+
+**Result: no new regular-game defects found** — every resolver (`MovementCardResolver`,
+`CirculateResolver`, `CleansingResolver`, `DelayedMotionResolver`,
+`PhaseLossResolver`/`PhaseControlResolver`, `CardEffectDispatcher`, plus the ones already
+covered above) validates its target(s) fully — existence via `TokenLocator`, Zone-of-Protection
+legality via `TargetValidator`, card-specific restrictions — *before* calling
+`CardLifecycle.attemptPlay`, so an illegal target is always `Rejected` without discarding the
+card or consuming the Phase's play limit; this pattern is uniform across the whole deck, not
+case-by-case luck. `CardEffectDispatcher`'s own `requireXTarget` helpers reject a
+wrong-shaped/missing target the same way, before any resolver runs at all. `InteractionChain`
+itself has no mutation-adjacent crash path — reverse-resolution against a target an
+earlier-resolving response already moved or destroyed is handled by the same
+`TokenLocator`-based re-lookup every resolver already does at resolution time (exercised by
+`PrecedenceCardEffectIntegrationTest`, re-confirmed passing under this audit).
+
+Two internal `require`/`requireNotNull` calls were specifically reviewed and left as-is, both
+guarding a caller/data invariant rather than a player-reachable state: `PlasmaBurstResolver`'s
+and `CirculateResolver`'s `requireNotNull(square.magnitude)` (a malformed Zone-of-Protection
+board square — never null on any of the four confirmed, digitized boards) and
+`PhaseLossResolver`'s `require(triggeringEvent is TriggeringEvent.DrawnFromSquare)` (Phase Loss
+is only ever dispatched via the Immediate-draw path — a caller/dispatcher-correctness
+invariant). Both run before any state mutation, so even a hypothetical violation would crash
+cleanly with no partial commit, not silently corrupt state.
+
+Physical-component-inventory dependence: fully addressed by the Marauder-model correction above
+— no remaining card resolver reads or assumes a component count as a resource limit.
+
+**Special/limited cards, reported separately, lower priority, per the user's own framing:**
+Corpuscle Rot and Verdant Growth's only known atomicity concern (the `startToken()` exhaustion
+crash) is already fixed as documented above — no other defect found specific to either card
+during this audit.
+
 ## `TurnOrder`/`GameState` construction NPE: root-caused and fixed
 
 Historically, `./gradlew :engine:test` intermittently failed (~50% of runs in one sandbox
