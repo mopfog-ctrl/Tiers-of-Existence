@@ -113,16 +113,30 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
      *
      * If there's no room in play, the new token queues in the Hatchery instead
      * (Gameboard Rules: "Only two Tier tokens are allowed in play... Extra tokens must wait
-     * on the Hatchery."). Returns the new token's [TokenId] when it actually enters play, so a
-     * caller that needs to reference it later (a UI, a test) can capture it without a separate
-     * lookup. A token that overflows straight to the Hatchery has no observable identity yet —
-     * no [com.tiersofexistence.engine.cards.play.CardTarget] can reference a Hatchery-resident
-     * token — so the id returned in that case is not retained; [refillInPlayIfRoom] mints
-     * a fresh one once it actually enters play later, which is harmless since nothing could have
-     * held a reference to the discarded one in the meantime.
+     * on the Hatchery."). Returns the new token's [TokenId] when it actually enters play or the
+     * Hatchery, so a caller that needs to reference it later (a UI, a test) can capture it
+     * without a separate lookup. A token that overflows straight to the Hatchery has no
+     * observable identity yet — no [com.tiersofexistence.engine.cards.play.CardTarget] can
+     * reference a Hatchery-resident token — so the id returned in that case is not retained;
+     * [refillInPlayIfRoom] mints a fresh one once it actually enters play later, which is
+     * harmless since nothing could have held a reference to the discarded one in the meantime.
+     *
+     * Returns null, rather than crashing, when every one of this Tier's [tier.tokensPerPlayer]
+     * physical tokens is already accounted for elsewhere (some combination of in play, Hatchery,
+     * and Staging Pile) — i.e. this Tier's own Ion Battery is empty and there's no Hatchery-
+     * waiting token to promote either. This is a rare but legitimate, rulebook-anticipated state,
+     * not an engine invariant violation: "In the unlikely event that a player runs out of tokens
+     * of a certain Tier, they must wait" (rulebook.txt:150-163) — a null return IS that "must
+     * wait," not a bug. Every caller (an upper-Tier promotion via Wormhole of Construction, or a
+     * construction card starting a fresh token) is expected to simply skip starting a token when
+     * this happens, rather than treating it as a crash — see e.g.
+     * [com.tiersofexistence.engine.cards.resolvers.BirthCanalConstructionCardResolver]'s doc for
+     * why one Tier being exhausted must not block a compound card's other Tiers.
      */
-    fun startToken(): TokenId {
+    fun startToken(): TokenId? {
         val hasRoom = inPlayCount < tier.maxInPlay
+        if (!hasRoom && ionBattery <= 0) return null
+        if (hasRoom && hatchery <= 0 && ionBattery <= 0) return null
         val id = TokenIdGenerator.next(owner, TokenKind.TIER_TOKEN, tier)
         when {
             hasRoom && hatchery > 0 -> {
@@ -133,11 +147,10 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
                 ionBattery -= 1
                 inPlay += InPlaySlot(id, 0)
             }
-            !hasRoom && ionBattery > 0 -> {
+            else -> {
                 ionBattery -= 1
                 hatchery += 1
             }
-            else -> error("No tokens available to start on $tier (Ion Battery and Hatchery both empty of movable tokens)")
         }
         return id
     }

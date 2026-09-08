@@ -580,13 +580,44 @@ that method's doc and matrix §4 Q15.
 Battery" was empty — that was never a real rule (see below), and removing the fictitious
 resource entirely means there's nothing left to be empty; the crash path no longer exists.
 
-**Known critical-failure risk, still deliberately not fixed yet** (raised in an earlier
-review, explicitly deferred by the user pending a later pass — not silently missed):
-`TierTokenPool.destroyFromStagingPile` crashes rather than rejecting gracefully if the chosen
-pile is empty. This one is a genuine Tier-token/Ion-Battery case (Tier tokens really do have a
-finite Ion Battery, unlike Marauders), so the fix belongs with a broader Tier-token
-resource/capacity audit, not the Marauder correction. See `.claude/agents/rules-reference.md`'s
-"resource-exhaustion" checklist item.
+**Fixed: Tier-token resource/capacity re-audit (the broader pass the item above deferred to).**
+Two genuine, player-reachable crash risks found and fixed, both distinct from the Marauder
+correction — these are real Tier-token Ion Battery/Staging-Pile cases, not a resource that
+shouldn't have existed at all:
+- `TierTokenPool.destroyFromStagingPile` still `require`s a non-empty pile (an internal
+  invariant, left in place) — but its one caller, `DestructionCardResolver.destroy`'s
+  `CardTarget.StagingPileToken` branch (Divine Assistance/Insidious Flux), used to call it with
+  no prior legality check at all, unlike every `CardTarget.Token` branch (already checked via
+  `TokenLocator`). A Staging Pile that emptied out between a target being chosen and the play
+  resolving (e.g. another effect draining it earlier in the same Precedence chain) would crash
+  the resolver instead of rejecting like every other stale target. Fixed in
+  `DestructionCardResolver.validateExistenceAndZone`: it now checks the target pile's count for
+  a `StagingPileToken` target before `resolve` ever reaches `destroy`, returning
+  `TargetValidationError.NoLegalTarget` exactly like a vanished `CardTarget.Token` does. See
+  `DestructionCardResolversTest`'s "emptied Staging Pile" regression test.
+- `TierTokenPool.startToken()` used to `error(...)` (crash) if a Tier's own Ion Battery AND
+  Hatchery were both empty of movable tokens — reachable in genuine, if rare, ordinary play:
+  every one of a Tier's `tokensPerPlayer` physical tokens can legitimately end up already
+  accounted for (in play, Hatchery, and Staging Pile) with none left to start on a promotion.
+  This is exactly the case the rulebook itself anticipates: "In the unlikely event that a player
+  runs out of tokens of a certain Tier, they must wait" (rulebook.txt:150-163) — the crash was
+  the engine failing to implement "must wait" at all. `startToken()` now returns `TokenId?`,
+  returning `null` (a graceful "must wait," not a fabricated token or a crash) in that state
+  instead of throwing; every caller (ordinary Wormhole-of-Construction promotion in
+  `TurnEngine`, and the construction-card resolvers) already discarded or now safely handles the
+  return value — `BirthCanalConstructionCardResolver` in particular already documented "one Tier
+  being out of tokens doesn't block a construct on another Tier in the same card," which this
+  fix makes actually true instead of a crash waiting to happen. See `TierTokenPoolTest`'s
+  "startToken returns null instead of crashing" regression test, which also confirms a freed
+  slot makes `startToken()` succeed again afterward — nothing is permanently exhausted, matching
+  the rulebook's "wait until... a token is destroyed" language.
+
+Direct Staging-Pile addition/promotion (`addToStagingPileDirectly`) and ordinary promotion into
+an upper Tier were both re-checked and found sound: the former only ever grows the pile (no
+`require` to trip), and the latter's only real risk was the `startToken()` exhaustion above,
+now fixed. No other ordinary-deck card resolver mutates `TierTokenPool` in a way that bypasses
+these two fixes — audited by grepping every resolver's calls to `startToken`/
+`destroyFromStagingPile`/`addToStagingPileDirectly`/`placeOnBirthCanal`.
 
 **Fixed**: the 1st-Tier Ion Battery auto-replenishment gap flagged above used to be listed as
 a critical-failure risk here — it isn't anymore. The rulebook's 1st-Tier-specific rule ("On

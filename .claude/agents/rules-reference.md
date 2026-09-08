@@ -95,9 +95,20 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   tokens are a genuinely different case and keep their real Ion Battery: when reviewing any
   card or engine path that places a new Tier token (construction cards, promotions, Wormhole
   of Construction), still check whether it can be reached with the Ion Battery at zero, and
-  flag it as a critical-failure bug if the underlying pool method throws
-  (`require(ionBattery > 0)` or similar) instead of the caller checking first and
-  no-op'ing/rejecting gracefully.
+  flag it as a critical-failure bug if the underlying pool method throws instead of the caller
+  checking first and no-op'ing/rejecting gracefully. **Already fixed, treat a regression here as
+  a bug**: `TierTokenPool.startToken()` used to `error(...)` when a Tier's Ion Battery AND
+  Hatchery were both empty — reachable in genuine play, and exactly the state the rulebook
+  itself describes ("In the unlikely event that a player runs out of tokens of a certain Tier,
+  they must wait," rulebook.txt:150-163). It now returns `TokenId?`, returning `null` as that
+  "must wait" instead of crashing; every caller must treat `null` as "no token started this
+  time," never assume non-null. Similarly, `TierTokenPool.destroyFromStagingPile` still
+  `require`s a non-empty pile (fine as an internal invariant), but its only caller
+  (`DestructionCardResolver`'s `CardTarget.StagingPileToken` branch) now checks the pile's count
+  first via `validateExistenceAndZone` and rejects with `NoLegalTarget` instead of reaching the
+  `require` at all — if a future change adds a new caller of `destroyFromStagingPile` (or a new
+  `CardTarget.StagingPileToken`-accepting resolver), check it validates the pile is non-empty
+  before calling, the same way.
 - **A compound card effect (multiple sub-targets/sub-steps in one play — Corpuscle Rot's
   destroy-then-construct, Graviton Rift's up-to-4 destroys, Verdant Growth's 3 constructs,
   Galactic Roundabout's whole-board move) must not partially apply.** If implemented as a plain

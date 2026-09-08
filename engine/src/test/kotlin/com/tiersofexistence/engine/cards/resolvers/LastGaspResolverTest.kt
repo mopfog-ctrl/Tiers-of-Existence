@@ -60,9 +60,9 @@ class LastGaspResolverTest {
         val state = gameWith(tenPlainSquares())
         val redPool = state.players.getValue(RED).tierPool(TierLevel.THIRD)
         val greenPool = state.players.getValue(GREEN).tierPool(TierLevel.THIRD)
-        val secondId = redPool.startToken()
+        val secondId = redPool.startToken()!!
         redPool.moveInPlay(0, 3) // RED's own second token, in the path
-        val moverId = redPool.startToken() // stays at 0, the mover
+        val moverId = redPool.startToken()!! // stays at 0, the mover
         greenPool.startToken()
         greenPool.moveInPlay(0, 5) // GREEN's token, in the path
 
@@ -80,7 +80,7 @@ class LastGaspResolverTest {
             listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), plain(3), Square(4, SquareType.ZONE_OF_PROTECTION, magnitude = 1), plain(5), plain(6), plain(7), plain(8)),
         )
         val state = gameWith(board)
-        val moverId = state.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()
+        val moverId = state.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()!!
         val greenPool = state.players.getValue(GREEN).tierPool(TierLevel.THIRD)
         greenPool.startToken()
         greenPool.moveInPlay(0, 4)
@@ -103,7 +103,7 @@ class LastGaspResolverTest {
         val greenPool = state.players.getValue(GREEN).tierPool(TierLevel.THIRD)
         redPool.startToken()
         redPool.moveInPlay(0, 3) // RED's own second token, on Reprieve
-        val moverId = redPool.startToken()
+        val moverId = redPool.startToken()!!
         greenPool.startToken()
         greenPool.moveInPlay(0, 5) // GREEN's token, on Reprieve
 
@@ -121,7 +121,7 @@ class LastGaspResolverTest {
             listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), Square(3, SquareType.REPRIEVE), plain(4), plain(5), plain(6), plain(7), plain(8)),
         )
         val state = gameWith(board)
-        val moverId = state.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()
+        val moverId = state.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()!!
         val greenMarauders = state.players.getValue(GREEN).marauders
         greenMarauders.placeOnBirthCanal(TierLevel.THIRD)
         greenMarauders.move(TierLevel.THIRD, 0, 3) // sitting on Reprieve
@@ -135,7 +135,7 @@ class LastGaspResolverTest {
     @Test
     fun `destroys an opponent's Marauder via a Tier-token mover, the special power rule 10 grants`() {
         val state = gameWith(tenPlainSquares())
-        val moverId = state.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()
+        val moverId = state.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()!!
         val greenMarauders = state.players.getValue(GREEN).marauders
         greenMarauders.placeOnBirthCanal(TierLevel.THIRD)
         greenMarauders.move(TierLevel.THIRD, 0, 4)
@@ -167,7 +167,7 @@ class LastGaspResolverTest {
     fun `if the landing square already destroys the mover (Abyss), the self-destruct step is a graceful no-op`() {
         val board = TierBoard(TierLevel.THIRD, listOf(Square(0, SquareType.BIRTH_CANAL)) + (1..7).map { plain(it) } + Square(8, SquareType.INFERNAL_ABYSS))
         val state = gameWith(board)
-        val moverId = state.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()
+        val moverId = state.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()!!
 
         val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
@@ -179,7 +179,7 @@ class LastGaspResolverTest {
         val board = TierBoard(TierLevel.THIRD, listOf(Square(0, SquareType.BIRTH_CANAL)) + (1..7).map { plain(it) } + Square(8, SquareType.NEBULA))
         val state = gameWith(board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.THIRD)
-        val moverId = pool.startToken()
+        val moverId = pool.startToken()!!
 
         val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
@@ -190,7 +190,7 @@ class LastGaspResolverTest {
     @Test
     fun `rejects a target that isn't the source player's own token`() {
         val state = gameWith(tenPlainSquares())
-        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.THIRD).startToken()
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.THIRD).startToken()!!
 
         val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(greenId)), CardTarget.Token(greenId))
 
@@ -210,7 +210,7 @@ class LastGaspResolverTest {
         )
         val state = gameWith(board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.THIRD)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 2)
         pool.enterZone(fromPosition = 2, zoneNumber = 1)
 
@@ -226,7 +226,7 @@ class LastGaspResolverTest {
     fun `a target that no longer exists is rejected gracefully, not a crash`() {
         val state = gameWith(tenPlainSquares())
         val pool = state.players.getValue(RED).tierPool(TierLevel.THIRD)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.destroyInPlay(0)
 
         val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
@@ -239,7 +239,7 @@ class LastGaspResolverTest {
     fun `dispatches through CardEffectDispatcher given a token target`() {
         val state = gameWith(tenPlainSquares())
         val pool = state.players.getValue(RED).tierPool(TierLevel.THIRD)
-        val moverId = pool.startToken()
+        val moverId = pool.startToken()!!
 
         val result = CardEffectDispatcher.dispatch(state, requestFor(RED, CardTarget.Token(moverId)))
 

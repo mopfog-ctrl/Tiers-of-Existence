@@ -39,12 +39,25 @@ object DestructionCardResolver {
 
     /**
      * Checks [target] can actually be destroyed right now — still exists (for identity-based
-     * targets, via [TokenLocator]) and isn't Zone-protected against this card — without mutating
-     * anything. Returns the rejection to return, or null if [target] is clear to destroy. Split
-     * out from [resolve] so [GravitonRiftResolver] can validate every one of its multiple targets
-     * up front before committing to (and partially applying) the whole play.
+     * targets, via [TokenLocator], or for a [CardTarget.StagingPileToken], by confirming that
+     * pile actually still has a token in it — it can have emptied since the target was chosen,
+     * e.g. another effect draining it first in the same Precedence chain) and isn't
+     * Zone-protected against this card — without mutating anything. Returns the rejection to
+     * return, or null if [target] is clear to destroy. Split out from [resolve] so
+     * [GravitonRiftResolver] can validate every one of its multiple targets up front before
+     * committing to (and partially applying) the whole play.
      */
     fun validateExistenceAndZone(state: GameState, request: CardPlayRequest, target: CardTarget): CardPlayResult.Rejected? {
+        if (target is CardTarget.StagingPileToken) {
+            val stagingPile = state.players.getValue(target.owner).tierPool(target.tier).stagingPile
+            if (stagingPile <= 0) {
+                return CardPlayResult.Rejected(
+                    request,
+                    TargetValidationError.NoLegalTarget("${target.owner}'s ${target.tier} Staging Pile is empty"),
+                )
+            }
+            return null
+        }
         if (target !is CardTarget.Token) return null
         val location = TokenLocator.locate(state, target.id)
         if (location is TokenLocation.NoLongerExists) {

@@ -60,8 +60,8 @@ class ParallelPhasingResolverTest {
     @Test
     fun `moves the player's own token and an opponent's token 4 spaces each`() {
         val state = gameWith(boardOf6())
-        val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
-        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
+        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
 
         val result = ParallelPhasingResolver.resolve(
             state,
@@ -80,7 +80,7 @@ class ParallelPhasingResolverTest {
     fun `moving a Marauder as one of the two targets works too, since the card affects any token type`() {
         val state = gameWith(boardOf6())
         val ownMarauderId = state.players.getValue(RED).marauders.placeOnBirthCanal(TierLevel.FIRST)
-        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
 
         val result = ParallelPhasingResolver.resolve(
             state,
@@ -98,8 +98,8 @@ class ParallelPhasingResolverTest {
     fun `rejects when the first target does not actually belong to the source player`() {
         val state = gameWith(boardOf6())
         val greenPool = state.players.getValue(GREEN).tierPool(TierLevel.FIRST)
-        val notOwnId = greenPool.startToken()
-        val otherId = greenPool.startToken()
+        val notOwnId = greenPool.startToken()!!
+        val otherId = greenPool.startToken()!!
 
         val result = ParallelPhasingResolver.resolve(
             state,
@@ -117,8 +117,8 @@ class ParallelPhasingResolverTest {
     fun `rejects when the second target belongs to the source player instead of another player`() {
         val state = gameWith(boardOf6())
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val ownId = pool.startToken()
-        val alsoOwnId = pool.startToken()
+        val ownId = pool.startToken()!!
+        val alsoOwnId = pool.startToken()!!
 
         val result = ParallelPhasingResolver.resolve(
             state,
@@ -134,9 +134,9 @@ class ParallelPhasingResolverTest {
     @Test
     fun `cannot move the opponent's token if it is inside a Zone of Protection, unlike the player's own token`() {
         val state = gameWith(boardOf6())
-        val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
         val opponentPool = state.players.getValue(GREEN).tierPool(TierLevel.FIRST)
-        val opponentId = opponentPool.startToken()
+        val opponentId = opponentPool.startToken()!!
         opponentPool.enterZone(fromPosition = 0, zoneNumber = 2)
 
         val result = ParallelPhasingResolver.resolve(
@@ -157,10 +157,10 @@ class ParallelPhasingResolverTest {
     fun `the player's own token in their own Zone of Protection is moved out via moveZoneToken`() {
         val state = gameWith(boardOf6WithZone(zoneNumber = 2))
         val ownPool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val ownId = ownPool.startToken()
+        val ownId = ownPool.startToken()!!
         ownPool.moveInPlay(0, 1)
         ownPool.enterZone(fromPosition = 1, zoneNumber = 2) // zone position 1, in a 3-slot Zone
-        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
 
         val result = ParallelPhasingResolver.resolve(
             state,
@@ -181,9 +181,9 @@ class ParallelPhasingResolverTest {
     fun `a target that no longer exists is rejected gracefully, not a crash`() {
         val state = gameWith(boardOf6())
         val ownPool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val ownId = ownPool.startToken()
+        val ownId = ownPool.startToken()!!
         ownPool.destroyInPlay(0) // gone before this resolver ever runs
-        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
 
         val result = ParallelPhasingResolver.resolve(
             state,
@@ -199,8 +199,8 @@ class ParallelPhasingResolverTest {
     @Test
     fun `dispatches through CardEffectDispatcher given exactly two token targets`() {
         val state = gameWith(boardOf6())
-        val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
-        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
+        val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
         val request = requestFor(RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId)))
 
         val result = CardEffectDispatcher.dispatch(state, request)
@@ -213,7 +213,7 @@ class ParallelPhasingResolverTest {
     @Test
     fun `CardEffectDispatcher rejects Parallel Phasing given the wrong number of targets`() {
         val state = gameWith(boardOf6())
-        val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
         val request = requestFor(RED, listOf(CardTarget.Token(ownId)))
 
         val result = CardEffectDispatcher.dispatch(state, request)

@@ -111,6 +111,26 @@ class DestructionCardResolversTest {
         assertIs<TargetValidationError.NoLegalTarget>((result as CardPlayResult.Rejected).reason)
     }
 
+    @Test
+    fun `a destroy card targeting an emptied Staging Pile is rejected gracefully, not a crash`() {
+        // Previously TierTokenPool.destroyFromStagingPile() `require`d a non-empty pile with no
+        // caller-side check, so a StagingPileToken target that emptied out between being chosen
+        // and resolving (e.g. another effect draining it first in the same Precedence chain)
+        // would crash the resolver instead of rejecting like every other stale target does.
+        val state = GameState.newGame(listOf(RED, GREEN))
+        val pool = state.players.getValue(GREEN).tierPool(TierLevel.FIRST)
+        assertEquals(0, pool.stagingPile) // never populated — nothing to destroy
+
+        val result = DestructionCardResolver.resolve(
+            state,
+            requestFor(RED, "Divine Assistance"),
+            CardTarget.StagingPileToken(GREEN, TierLevel.FIRST),
+        )
+
+        assertIs<CardPlayResult.Rejected>(result)
+        assertIs<TargetValidationError.NoLegalTarget>((result as CardPlayResult.Rejected).reason)
+    }
+
     // --- InfernalAbyssResolver ---
 
     @Test
@@ -157,7 +177,7 @@ class DestructionCardResolversTest {
     @Test
     fun `Corpuscle Rot destroys a 4th Tier token and starts new tokens on the 1st and 2nd Tiers`() {
         val state = GameState.newGame(listOf(YELLOW, GREEN))
-        val id = state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()
+        val id = state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()!!
         val before1st = state.players.getValue(YELLOW).tierPool(TierLevel.FIRST).inPlayCount
 
         val result = CorpuscleRotResolver.resolve(state, requestFor(YELLOW, "Corpuscle Rot"), CardTarget.Token(id))
@@ -179,7 +199,7 @@ class DestructionCardResolversTest {
     @Test
     fun `Corpuscle Rot played by a non-Yellow player is rejected before any board mutation`() {
         val state = GameState.newGame(listOf(RED, GREEN))
-        val id = state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()
+        val id = state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()!!
 
         val result = CorpuscleRotResolver.resolve(state, requestFor(RED, "Corpuscle Rot"), CardTarget.Token(id))
 

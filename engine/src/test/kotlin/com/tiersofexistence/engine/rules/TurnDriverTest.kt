@@ -80,8 +80,8 @@ class TurnDriverTest {
         val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), plain(3))
         val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED))
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val first = pool.startToken()
-        val second = pool.startToken() // 1st Tier allows 2 in play
+        val first = pool.startToken()!!
+        val second = pool.startToken()!! // 1st Tier allows 2 in play
         state.skipEmptyPhases()
         val driver = TurnDriver(ScriptedDecisions(tokenChoice = { it.single { id -> id == second } }), rollForPhase = { 2 })
 

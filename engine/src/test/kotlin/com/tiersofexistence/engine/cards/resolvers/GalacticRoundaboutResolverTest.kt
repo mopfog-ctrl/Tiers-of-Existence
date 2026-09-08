@@ -89,7 +89,7 @@ class GalacticRoundaboutResolverTest {
         )
         val state = gameWith(TierLevel.FIRST, board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9) // zone position 1
 
@@ -109,7 +109,7 @@ class GalacticRoundaboutResolverTest {
         )
         val state = gameWith(TierLevel.FIRST, board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9) // zone position 1, only slot in this Zone
 

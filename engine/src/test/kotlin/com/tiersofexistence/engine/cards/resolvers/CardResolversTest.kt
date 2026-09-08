@@ -51,7 +51,7 @@ class CardResolversTest {
     fun `Skip Hop and Jump moves the target token 3 spaces and resolves its landing`() {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), Square(3, SquareType.NEBULA)))
         val state = gameWith(TierLevel.FIRST, board)
-        val id = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        val id = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
 
         val result = MovementCardResolver.resolve(state, requestFor(RED, "Skip, Hop, and Jump (Dimensional)"), CardTarget.Token(id), spaces = 3)
 
@@ -65,7 +65,7 @@ class CardResolversTest {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1)))
         val state = gameWith(TierLevel.FIRST, board)
         val pool = state.players.getValue(GreenColor).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.enterZone(fromPosition = 0, zoneNumber = 2)
         val target = CardTarget.Token(id)
 
@@ -80,7 +80,7 @@ class CardResolversTest {
     fun `Evasive Action (Immediate) resolves the same way as a Held movement card`() {
         val board = TierBoard(TierLevel.FOURTH, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), Square(2, SquareType.YOU_WIN)))
         val state = gameWith(TierLevel.FOURTH, board)
-        val id = state.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
+        val id = state.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()!!
 
         val result = MovementCardResolver.resolve(state, requestFor(RED, "Evasive Action"), CardTarget.Token(id), spaces = 2)
 

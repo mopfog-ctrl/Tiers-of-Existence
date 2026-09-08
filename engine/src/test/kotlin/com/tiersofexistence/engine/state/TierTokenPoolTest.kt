@@ -110,6 +110,37 @@ class TierTokenPoolTest {
     }
 
     @Test
+    fun `startToken returns null instead of crashing once every token of this Tier is already accounted for`() {
+        // Rulebook: "In the unlikely event that a player runs out of tokens of a certain Tier,
+        // they must wait" — a null return IS that "must wait," not an engine invariant failure.
+        // 2nd Tier: tokensPerPlayer = 6, maxInPlay = 2, stagingPileThreshold = 3. Drive every one
+        // of the 6 physical tokens into play/Hatchery/Staging Pile (via the low-level pool API,
+        // bypassing TurnEngine's auto-promotion so the pile can be pinned below threshold) so the
+        // Ion Battery and Hatchery are both genuinely empty — an upper-Tier promotion trying to
+        // start a fresh 2nd Tier token in this state must not crash the whole game.
+        val pool = TierTokenPool(TierLevel.SECOND, RED)
+        repeat(6) { pool.startToken() } // drains the Ion Battery: 2 in play, 4 overflow to Hatchery
+        assertEquals(0, pool.ionBattery)
+        assertEquals(4, pool.hatchery)
+        repeat(4) { pool.sendToStagingPile(pool.inPlayPositions.first()) } // drains the Hatchery too
+        assertEquals(0, pool.ionBattery)
+        assertEquals(0, pool.hatchery)
+        assertEquals(4, pool.stagingPile)
+        assertEquals(2, pool.inPlayCount)
+        assertEquals(6, pool.totalOwned)
+
+        val result = pool.startToken()
+
+        assertNull(result)
+        assertEquals(6, pool.totalOwned) // nothing fabricated or lost
+
+        // Once a slot is freed (a token returns to the Ion Battery), starting a token works again.
+        pool.destroyInPlay(pool.inPlayPositions.first())
+        val revived = pool.startToken()
+        assertTrue(revived != null)
+    }
+
+    @Test
     fun `1st Tier staging pile promotes after 4 tokens`() {
         val pool = TierTokenPool(TierLevel.FIRST, RED)
         pool.startToken()
@@ -180,7 +211,7 @@ class TierTokenPoolTest {
     @Test
     fun `leaving a Zone returns the token to the main loop`() {
         val pool = TierTokenPool(TierLevel.FIRST, RED)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 10)
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
 
@@ -193,7 +224,7 @@ class TierTokenPoolTest {
     @Test
     fun `entering a Zone places the token at zone position 1`() {
         val pool = TierTokenPool(TierLevel.FIRST, RED)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 10)
 
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
@@ -204,7 +235,7 @@ class TierTokenPoolTest {
     @Test
     fun `advancing within a Zone updates position without leaving it`() {
         val pool = TierTokenPool(TierLevel.FIRST, RED)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 10)
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
 
@@ -218,7 +249,7 @@ class TierTokenPoolTest {
     @Test
     fun `a Zone-internal Nebula sends the resident straight to the Staging Pile`() {
         val pool = TierTokenPool(TierLevel.THIRD, RED) // avoid 1st-Tier auto-replenish noise
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 4)
 
@@ -232,7 +263,7 @@ class TierTokenPoolTest {
     @Test
     fun `a Zone-internal Wormhole promotes the resident, same as a main-loop one`() {
         val pool = TierTokenPool(TierLevel.THIRD, RED)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 4)
         val ionBefore = pool.ionBattery

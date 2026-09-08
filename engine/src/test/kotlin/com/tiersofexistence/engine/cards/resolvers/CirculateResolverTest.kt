@@ -54,7 +54,7 @@ class CirculateResolverTest {
         )
         val state = gameWith(board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
 
         val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
@@ -72,7 +72,7 @@ class CirculateResolverTest {
         )
         val state = gameWith(board)
         val greenPool = state.players.getValue(GREEN).tierPool(TierLevel.FIRST)
-        val greenId = greenPool.startToken()
+        val greenId = greenPool.startToken()!!
 
         val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(greenId)), CardTarget.Token(greenId))
 
@@ -94,7 +94,7 @@ class CirculateResolverTest {
         )
         val state = gameWith(board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 2)
 
         val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
@@ -116,7 +116,7 @@ class CirculateResolverTest {
         )
         val state = gameWith(board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 3) // nothing ahead of 3 except wrapping back to 0, then 1
 
         val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
@@ -133,7 +133,7 @@ class CirculateResolverTest {
         )
         val state = gameWith(board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 2)
         pool.enterZone(fromPosition = 2, zoneNumber = 1)
 
@@ -168,7 +168,7 @@ class CirculateResolverTest {
         )
         val state = gameWith(board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.destroyInPlay(0) // gone before this resolver ever runs
 
         val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
@@ -185,7 +185,7 @@ class CirculateResolverTest {
         )
         val state = gameWith(board)
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
 
         val result = CardEffectDispatcher.dispatch(state, requestFor(RED, CardTarget.Token(id)))
 

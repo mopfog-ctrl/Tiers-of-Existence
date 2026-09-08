@@ -420,7 +420,7 @@ class TurnEngineTest {
         val game = gameWith(TierLevel.FIRST, board)
         val red = game.players.getValue(RED)
         val pool = red.tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 
@@ -443,7 +443,7 @@ class TurnEngineTest {
         )
         val game = gameWith(TierLevel.FIRST, board)
         val pool = game.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 
@@ -463,7 +463,7 @@ class TurnEngineTest {
         )
         val game = gameWith(TierLevel.FIRST, board)
         val pool = game.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9) // zone position 1
 
@@ -495,7 +495,7 @@ class TurnEngineTest {
         )
         val game = gameWith(TierLevel.FIRST, board)
         val pool = game.players.getValue(RED).tierPool(TierLevel.FIRST)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9) // zone position 1
 
@@ -518,7 +518,7 @@ class TurnEngineTest {
         )
         val game = gameWith(TierLevel.THIRD, board)
         val pool = game.players.getValue(RED).tierPool(TierLevel.THIRD)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 
@@ -541,7 +541,7 @@ class TurnEngineTest {
         val game = gameWith(TierLevel.THIRD, board)
         val red = game.players.getValue(RED)
         val pool = red.tierPool(TierLevel.THIRD)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 
@@ -563,7 +563,7 @@ class TurnEngineTest {
         )
         val game = gameWith(TierLevel.THIRD, board)
         val pool = game.players.getValue(RED).tierPool(TierLevel.THIRD)
-        val id = pool.startToken()
+        val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9)
 

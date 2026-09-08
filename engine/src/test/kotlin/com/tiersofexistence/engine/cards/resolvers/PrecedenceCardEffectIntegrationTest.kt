@@ -52,7 +52,7 @@ class PrecedenceCardEffectIntegrationTest {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2)))
         val state = gameWith(TierLevel.FIRST, board)
         state.players.getValue(RED).marauders.placeOnBirthCanal(TierLevel.FIRST)
-        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
         state.players.getValue(GREEN).tierPool(TierLevel.FIRST).moveInPlay(0, 1) // sits in the Marauder's 2-space path (0 -> 2 passes 1)
 
         // RED has rolled to move their Marauder 2 spaces — that move is now pending.
@@ -105,8 +105,8 @@ class PrecedenceCardEffectIntegrationTest {
     fun `multiple Precedence responses on different tokens each resolve correctly in reverse order`() {
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), plain(3), plain(4)))
         val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
-        val redId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
-        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val redId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
         state.players.getValue(GREEN).tierPool(TierLevel.FIRST).moveInPlay(0, 2)
 
         val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN))
@@ -140,7 +140,7 @@ class PrecedenceCardEffectIntegrationTest {
         // — so both moves apply, cumulatively, against wherever the token actually is.
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), plain(3)))
         val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
-        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
 
         val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN))
         // RED's movement card can target any player's token (rule 11), including GREEN's.
@@ -169,7 +169,7 @@ class PrecedenceCardEffectIntegrationTest {
         // proving the ZoP check is re-evaluated live, not decided when the target was picked.
         val board = TierBoard(TierLevel.FIRST, listOf(Square(0, SquareType.BIRTH_CANAL), plain(1), Square(2, SquareType.ZONE_OF_PROTECTION, magnitude = 1)))
         val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
-        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
 
         val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN))
         val redsStep = CardPlayRequest(RED, cardNamed("Tactical Step"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
