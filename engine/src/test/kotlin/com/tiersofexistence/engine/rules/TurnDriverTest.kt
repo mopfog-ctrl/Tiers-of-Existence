@@ -18,9 +18,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * [TurnDriver] drives the mechanical roll → choose-a-token → move → resolve-the-landing part of
- * one turn, delegating every real choice to a [TurnDecisionProvider]. Fate Harvest card play is
- * deliberately out of scope for this pass — see [TurnDriver]'s class doc.
+ * [TurnDriver] drives one full turn — roll → choose-a-token → move → resolve-the-landing, plus
+ * Fate Harvest card play (Immediate/Held/Delayed Motion/Precedence) — delegating every real
+ * choice to a [TurnDecisionProvider]. See [TurnDriver]'s class doc for the card-play integration;
+ * [ScriptedDecisions] here only overrides the original 4 mechanical-choice methods, relying on
+ * the interface's own "decline everything" defaults for the 4 card-play ones, so most of these
+ * tests exercise the mechanical loop exactly as before this integration.
  */
 class TurnDriverTest {
 
@@ -252,20 +255,26 @@ class TurnDriverTest {
     }
 
     @Test
-    fun `a Fate Harvest draw is recorded, never silently lost, regardless of its timing`() {
+    fun `a Fate Harvest draw is always accounted for - in hand, or resolved and discarded - never lost`() {
+        // Which specific card gets drawn is genuinely random (the default shuffled deck), and
+        // its handling now differs by timing: a HELD card lands in hand; an IMMEDIATE card is
+        // resolved on the spot (ScriptedDecisions supplies no targets, so most Immediate cards
+        // reject for lack of a legal target and get explicitly discarded — see TurnDriver
+        // .resolveImmediateCard). Either way, the total card count tracked across the draw pile,
+        // discard pile, and every hand must stay exactly conserved — nothing vanishes.
         val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.FATE_HARVEST))
         val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED))
         state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
         state.skipEmptyPhases()
-        val handBefore = state.players.getValue(RED).hand.size
-        val pendingBefore = state.pendingImmediateCards.size
+        fun totalTracked() = state.deck.drawPileSize + state.deck.discardPileSize + state.players.values.sumOf { it.hand.size }
+        val totalBefore = totalTracked()
+        val drawPileBefore = state.deck.drawPileSize
         val driver = TurnDriver(ScriptedDecisions(), rollForPhase = { 1 })
 
         driver.driveOneTurn(state)
 
-        val handAfter = state.players.getValue(RED).hand.size
-        val pendingAfter = state.pendingImmediateCards.size
-        assertEquals(1, (handAfter - handBefore) + (pendingAfter - pendingBefore))
+        assertEquals(totalBefore, totalTracked()) // every card is still accounted for somewhere
+        assertEquals(drawPileBefore - 1, state.deck.drawPileSize) // exactly one card was actually drawn
     }
 
     @Test

@@ -199,16 +199,37 @@ reach that state (the 1st Tier's own auto-replenishment — `TierTokenPool.refil
 the game ends once someone wins), but a malformed `GameState` (e.g. hand-built with every
 pool emptied out) could. `skipEmptyPhases` now counts consecutive `advancePhase()` calls
 within one search and throws `GameStalledException` (a dedicated, descriptively-named
-`IllegalStateException` subtype in `state/GameState.kt`) once a full Phase cycle
-(`Phase.ROUND_ORDER.size` Phases) has been traversed with nothing found — never a draw, loss,
-elimination, or any other gameplay outcome, purely an engine-invariant diagnostic. See
-`GameStateTest`'s "skipEmptyPhases: canonical skipping, and the fail-safe stalled-state guard"
-section: one empty upper-Tier Phase, several consecutive empty Tier Phases, and reaching the
-correct next Phase with the correct player queued all still skip normally (no exception); a
-deliberately-constructed all-empty `GameState` (raw `PlayerState`s, no tokens started
-anywhere, bypassing `GameState.newGame`) throws `GameStalledException` instead of hanging; and
-a dedicated test demonstrates 1st-Tier auto-replenishment is exactly the mechanism that keeps
-ordinary play from ever reaching the stalled state in the first place.
+`IllegalStateException` subtype in `state/GameState.kt`) once `GameState
+.STALLED_STATE_PHASE_THRESHOLD` Phases have been traversed with nothing found — never a draw,
+loss, elimination, or any other gameplay outcome, purely an engine-invariant diagnostic.
+
+**Corrected: the threshold is many Phase cycles (500), not one.** The first version of this
+fail-safe used exactly one cycle (`Phase.ROUND_ORDER.size`, 5) — a real test caught this being
+too tight: `DeferredTurnModifier.SkipNextTierTurn` (Phase Loss, or the 1st Tier's "Lose next
+turn on this Tier" Time Wrinkle square) can legitimately defer a sparse single-player game's
+only eligible turn past one full cycle — it took a full cycle of the Round the skip consumes
+*plus* a full cycle of the next Round before that player's 1st Tier turn became eligible again
+(10 Phase-advances, found via `TurnDriverCardIntegrationTest`'s Fate Harvest integration
+randomly drawing Phase Loss — see "Fate Harvest integration" below), and per
+`DeferredTurnModifier`'s own doc, independent triggers stack, so more than one queued skip
+against the same (player, Tier) can defer eligibility even further. None of this is reachable
+in ordinary 2-6 player play (some other player almost always has *some* eligible turn within
+the same Round), but a legitimately sparse `GameState` can hit it without being corrupted at
+all — a truly malformed state (every pool emptied out) never finds anyone eligible no matter
+how far the search goes, while a legitimate stacked-skip gap always resolves within a handful
+of cycles, so a generous threshold (500 Phases, ~100 Rounds) tells the two apart without ever
+mistaking the latter for the former.
+
+See `GameStateTest`'s "skipEmptyPhases: canonical skipping, and the fail-safe stalled-state
+guard" section: one empty upper-Tier Phase, several consecutive empty Tier Phases, and
+reaching the correct next Phase with the correct player queued all still skip normally (no
+exception); a single sparse player's queued Phase-Loss-style skip resumes normally after the
+10-Phase gap described above, not as a stalled state (the regression test for the
+too-tight-threshold bug above); a deliberately-constructed all-empty `GameState` (raw
+`PlayerState`s, no tokens started anywhere, bypassing `GameState.newGame`) still throws
+`GameStalledException` instead of hanging; and a dedicated test demonstrates 1st-Tier
+auto-replenishment is exactly the mechanism that keeps ordinary play from ever reaching the
+stalled state in the first place.
 
 ## Turn-resolution engine: base mechanics
 
@@ -239,38 +260,122 @@ between the two). It does NOT protect Marauders — "Marauders can be [destroyed
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
 
-## Turn-driving loop: mechanical roll → move → offer, cards still deferred
+## Turn-driving loop: mechanical roll → move → offer, now with Fate Harvest card play integrated
 
-`rules/TurnDriver.kt` is the first actual orchestrator sitting on top of `TurnEngine`/
-`GameState` — until now, every doc reference to "whatever's driving turns" described a
-responsibility with no concrete owner. `TurnDriver.driveOneTurn(state)` drives exactly one
-player's turn to completion: reads `state.currentTurn`/`currentPhase`, rolls (via an
-injectable `rollForPhase: (Phase) -> Int`, defaulting to `Dice.rollForPhase` — genuinely
-random in real play, a fixed lambda in tests, since forcing an exact sequence out of
-`kotlin.random.Random`'s internals is awkward), asks that player's own `TurnDecisionProvider`
-which of their eligible tokens/Marauders to move, moves it via the identity-based movers
-(`TurnEngine.moveTierTokenById`/`moveMarauderById`/`moveZoneToken` — never the position-based
-`moveTierToken`/`moveMarauder`, since more than one of a player's own tokens can legally stack
-on the same square and a position-based move risks silently moving the wrong one), resolves
-whatever that landing produces, then ends the turn — chaining another turn on a "Go again"
-square, otherwise advancing via `GameState.endTurn`.
+`rules/TurnDriver.kt` is the actual orchestrator sitting on top of `TurnEngine`/`GameState` —
+until it existed, every doc reference to "whatever's driving turns" described a responsibility
+with no concrete owner. `TurnDriver.driveOneTurn(state)` drives exactly one player's turn to
+completion: reads `state.currentTurn`/`currentPhase`, rolls (via an injectable `rollForPhase:
+(Phase) -> Int`, defaulting to `Dice.rollForPhase` — genuinely random in real play, a fixed
+lambda in tests, since forcing an exact sequence out of `kotlin.random.Random`'s internals is
+awkward), asks that player's own `TurnDecisionProvider` which of their eligible tokens/
+Marauders to move, moves it via the identity-based movers (`TurnEngine.moveTierTokenById`/
+`moveMarauderById`/`moveZoneToken` — never the position-based `moveTierToken`/`moveMarauder`,
+since more than one of a player's own tokens can legally stack on the same square and a
+position-based move risks silently moving the wrong one), resolves whatever that landing
+produces, then ends the turn — chaining another turn on a "Go again" square, otherwise
+advancing via `GameState.endTurn`.
 
-**Deliberately scoped to the mechanical loop only, per the user's explicit choice — Fate
-Harvest card play is a separate, later pass.** A `CardTiming.HELD` card drawn from a Fate
-Harvest square is still added to the player's hand automatically (unchanged, pre-existing
-`TurnEngine` behavior); a `CardTiming.IMMEDIATE` card drawn is queued via the new
-`GameState.queuePendingImmediateCard`/`pendingImmediateCards` rather than actually applied —
-rule 14's "must be played the instant it's drawn" isn't honored yet, since resolving one needs
-per-card target selection through `CardEffectDispatcher`, out of scope here. The queue exists
-specifically so a drawn Immediate card is never silently dropped while this gap stands.
+### Fate Harvest integration: Immediate, Held, Delayed Motion, and Precedence, all through the real turn path
+
+Previously this section described card play as deliberately deferred (`GameState
+.queuePendingImmediateCard`/`pendingImmediateCards` recorded a drawn Immediate card without
+resolving it). That gap is now closed — `TurnDriver` no longer uses that queue at all; it
+resolves every card play through `CardEffectDispatcher`, the same dispatcher every
+resolver-level test already exercised, now reached from the actual turn loop instead of only
+from direct test calls.
+
+- **Immediate cards** (rule 14, mandatory the instant drawn): when a landing (main-loop or, now,
+  a previously-silently-dropped Zone-internal Fate Harvest draw — see below) produces
+  `SquareEffect.DrewCard` with a `CardTiming.IMMEDIATE` card, `TurnDriver.resolveImmediateCard`
+  asks the new `TurnDecisionProvider.chooseImmediateCardTargets` for its target(s) and resolves
+  it right then, through the same Precedence window every other play gets. If the play comes
+  back `Rejected` (no legal target exists — the rulebook and `docs/card-mechanics-matrix.md` are
+  both silent on what should happen to a mandatory card with nowhere to land), the card is
+  explicitly discarded rather than inventing a substitute effect or losing it — it was already
+  drawn from the deck and Immediate cards never enter a hand, so discarding is the only place
+  left for it that doesn't fabricate new behavior. A **pre-existing gap fixed as part of this
+  work**: a Zone-internal Fate Harvest draw's `SquareEffect.DrewCard` used to be silently
+  discarded by `TurnDriver.moveAndResolve` (only the `ExitedZone` half of `ZoneMoveResult` was
+  ever inspected) — `resolveZoneInternalEffect` now handles it the same way a main-loop draw is.
+- **Held cards**: `TurnDecisionProvider.chooseHeldCardBeforeRoll` offers one voluntary
+  `CardScope.YOUR_TURN` play before rolling; `chooseCardAfterRollBeforeMove` offers one more
+  after rolling but before the roll moves a token (Delayed Motion's own window — see below). Both
+  go through `TurnDriver.offerHeldCardPlay`, which removes the chosen card from hand, resolves it
+  through the Precedence-aware path, and returns it to hand if the play turns out illegal —
+  matching `CardLifecycle.playFromHand`'s own already-established "a rejected play never
+  consumes the card" contract (note `playFromHand` itself is still only used by its own isolated
+  bookkeeping test — it doesn't validate card-specific targets, so `TurnDriver` doesn't call it;
+  see that class's own doc). No new arbitrary windows beyond these two — every other Held-card
+  play opportunity a full game would need (e.g. from a UI's own "play a card" button at another
+  point in a turn) is left for a later pass, not invented here.
+- **Delayed Motion**: unchanged mechanically from its pre-integration design (`GameState
+  .beginPendingRoll`/`pendingRoll`/`clearPendingRoll`, `DelayedMotionResolver`) — what's new is
+  that `chooseCardAfterRollBeforeMove` is now the actual legal opportunity to play it, called
+  from `driveOneTurn` right after `beginPendingRoll` and before the token-choice/move. Not
+  hardcoded to Delayed Motion specifically — any card whose own printed timing genuinely fits
+  this exact window could be offered here too — but Delayed Motion is the only one in the deck
+  that does.
+- **Precedence** (rules 20-23): `TurnDriver.resolvePrecedenceWindow` opens a real
+  `InteractionChain` around every point this driver suspends something a Precedence card could
+  respond to — a pending card resolution (any Immediate/Held play, via `playWithPrecedenceWindow`)
+  or a pending token move (right after a token is chosen, before it actually moves — the "rule 23
+  worked example" checkpoint) — offers every seated player (`state.turnOrder.order`) one or more
+  response rounds via `offerResponseRounds` (re-offering the round whenever a new entry reopens
+  it, per `InteractionChain`'s own rules, until it auto-closes), then dispatches whatever
+  survives in reverse play order (rule 22) before the suspended action itself proceeds. See
+  `TurnDriverCardIntegrationTest`'s "rule 23 worked example through the real turn-driving path"
+  test — the same scenario `PrecedenceCardEffectIntegrationTest` already proved at the
+  resolver/chain level, now proven through `driveOneTurn` end to end.
+
+**New hand/discard bookkeeping `TurnDriver` needed, since `InteractionChain`/
+`CardEffectDispatcher` themselves never touch a hand or the deck's discard pile — deliberate,
+documented choices on genuinely rulebook-silent questions, not inventions dressed up as
+established rules:**
+- A card played into a Precedence chain (`offerResponseRounds`) is removed from the responder's
+  hand the moment they choose to respond, and is **never returned to hand regardless of how it
+  resolves** — a `Resolved` entry already discards itself via `CardLifecycle.attemptPlay`;
+  anything else (in practice only `Rejected`, since all 6 Precedence cards are `CardTiming.HELD`
+  and none currently produce `AwaitingDecision`) is explicitly discarded by `resolvePrecedenceWindow`
+  so the physical card doesn't vanish from the game's card accounting. Once revealed as a
+  response, it's spent — the same way a real card game doesn't let you take back a response
+  whose target another response sniped first.
+- If an Annulment cancels the top-level suspended play (`InteractionChain
+  .isSuspendedActionCancelled`, only meaningful for `PendingCardResolution`), that card is also
+  explicitly discarded, never returned to hand — it was legitimately played and would have
+  resolved; Annulment cancelled its *effect*, not the fact that it was played. This mirrors how a
+  cancelled *chain entry*'s own card already behaved before this integration (excluded from
+  `InteractionChain.resolutionOrder()`, so `CardEffectDispatcher.dispatchAll` never reaches it
+  either) — a pre-existing asymmetry in the underlying engine this integration didn't introduce,
+  just made consistent rather than leaving the top-level case undefined.
+- `FateHarvestDeck.forTesting(cards)` is a new, minimal test-only factory (a deck whose draw
+  pile is exactly the given cards, in order) — added because these integration tests need a
+  deterministic next draw, unlike the default shuffled 70-card deck every earlier test that drew
+  cards was content to leave random.
+
+**Known remaining gap, not addressed by this pass**: Cleansing's second half (the targeted
+opponent's own choice of which held card to discard, `CardPlayResult.AwaitingDecision`/
+`PendingDecision.OpponentDiscardChoice`) still has no orchestration wired into `TurnDriver` —
+`CleansingResolver.completeDiscard` exists and is tested at the resolver level, but nothing in
+the turn-driving path calls it yet. `TurnDecisionProvider` would need one more method for this
+(the opponent's own choice, not the player who chose to play Cleansing); deliberately left
+out of scope here rather than guessing at that interface shape without a clearer sense of how a
+real UI would present it.
 
 **`TurnDecisionProvider`** is the pluggable seam (the user's explicit choice over a
-default-policy-only loop) for every real choice a player makes in this mechanical loop: which
-eligible token/Marauder to move, and whether to take each of the three optional square offers
-(`MayEnterZone`/`MayBuildMarauder`/`MayTransport`). A UI or an AI implements this interface
-directly; `FirstCandidateDecisionProvider` (always the first candidate, always decline every
-offer) is the deterministic, dependency-free default for tests/simulations that only care
-about the mechanical loop running correctly, not about realistic play.
+default-policy-only loop) for every real choice a player makes in this loop: which eligible
+token/Marauder to move, whether to take each of the three optional square offers
+(`MayEnterZone`/`MayBuildMarauder`/`MayTransport`), and — since the Fate Harvest integration
+above — 4 more: `chooseHeldCardBeforeRoll`/`chooseCardAfterRollBeforeMove` (a `CardChoice?` or
+null to decline), `chooseImmediateCardTargets` (a mandatory play's target list), and
+`choosePrecedenceResponse` (respond to an open chain, or null to pass). All 4 default to
+declining/choosing nothing directly on the interface, so an implementation written before this
+integration existed (or one that simply doesn't want to play cards at all) keeps compiling and
+behaving exactly as before — a provider must opt IN to card play. A UI or an AI implements this
+interface directly; `FirstCandidateDecisionProvider` (always the first candidate, always
+decline every offer, never plays or responds with a card) is the deterministic, dependency-free
+default for tests/simulations that only care about the mechanical loop running correctly, not
+about realistic play.
 
 **`TurnDriver` resolves a decision provider per player, not one shared instance for the whole
 driver** — `decisionsFor: (PlayerColor) -> TurnDecisionProvider`, resolved fresh (and cached

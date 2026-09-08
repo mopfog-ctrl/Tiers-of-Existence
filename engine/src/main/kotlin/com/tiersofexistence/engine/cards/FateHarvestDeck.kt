@@ -32,5 +32,10 @@ class FateHarvestDeck private constructor(
     companion object {
         fun newShuffled(random: Random = Random): FateHarvestDeck =
             FateHarvestDeck(ArrayDeque(FateHarvestCatalog.buildDeck().shuffled(random)))
+
+        /** A deck whose draw pile is exactly [cards], in order (the first element draws first) —
+         * for deterministic tests that need a specific card to come up next, rather than the
+         * default shuffled 70-card deck. */
+        fun forTesting(cards: List<FateHarvestCard>): FateHarvestDeck = FateHarvestDeck(ArrayDeque(cards))
     }
 }

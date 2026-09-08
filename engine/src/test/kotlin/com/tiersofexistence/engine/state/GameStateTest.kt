@@ -279,6 +279,28 @@ class GameStateTest {
     }
 
     @Test
+    fun `a queued Phase Loss on a single sparse player's only Tier resumes normally, not as a stalled state`() {
+        // This is the exact scenario that caught the original 1-cycle threshold being too tight
+        // (found via TurnDriver's card integration tests randomly drawing Phase Loss): a single
+        // player whose only Tier turn is deferred-skipped needs to traverse a full empty Phase
+        // cycle (Marauder/4th/3rd/2nd of the Round the skip consumes) PLUS another full cycle
+        // (the same four Phases of the NEXT Round too) before their 1st Tier turn becomes
+        // eligible again — 10 Phase-advances total, more than one cycle (5) but nowhere near a
+        // real stall.
+        val game = GameState.newGame(listOf(RED)) // single player, sparsest possible active game
+        game.skipEmptyPhases()
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(RED, game.currentTurn)
+
+        game.queueSkipNextTierTurn(RED, TierLevel.FIRST) // simulates Phase Loss resolving mid-turn
+        game.endTurn(grantAnotherTurn = false) // must not throw GameStalledException
+
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(RED, game.currentTurn) // eligible again — the skip only deferred one occurrence
+        assertEquals(3, game.roundNumber) // Round 2's 1st Tier turn was the one skipped
+    }
+
+    @Test
     fun `a deliberately impossible all-empty state throws GameStalledException instead of looping forever`() {
         // No player has any Tier token or Marauder anywhere, and no winner is declared — every
         // Phase is permanently empty. Constructed directly (bypassing GameState.newGame, which

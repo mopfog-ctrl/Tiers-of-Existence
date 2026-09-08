@@ -2,7 +2,6 @@ package com.tiersofexistence.engine.state
 
 import com.tiersofexistence.engine.board.BoardLayouts
 import com.tiersofexistence.engine.board.TierBoard
-import com.tiersofexistence.engine.cards.FateHarvestCard
 import com.tiersofexistence.engine.cards.FateHarvestDeck
 import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
@@ -66,16 +65,6 @@ class GameState(
      * currently pending; see [beginPendingRoll]/[clearPendingRoll]. */
     var pendingRoll: PendingRoll? = null
         private set
-
-    private val _pendingImmediateCards: MutableList<FateHarvestCard> = mutableListOf()
-
-    /** Immediate Fate Harvest cards drawn during play whose effect hasn't been resolved yet —
-     * a deliberately simple holding queue for a driver (`TurnDriver`) that isn't playing cards
-     * yet at all. An ordinary drawn Immediate card is normally mandatory to play the instant
-     * it's drawn (rule 14) and never sits here for long in a fully-wired driver; this queue
-     * exists so a driver that defers card resolution never silently loses one, rather than
-     * pretending the draw never happened. See [queuePendingImmediateCard]. */
-    val pendingImmediateCards: List<FateHarvestCard> get() = _pendingImmediateCards
 
     init {
         turnQueue = buildTurnQueue()
@@ -178,23 +167,42 @@ class GameState(
      * once someone wins), but a deliberately/accidentally malformed [GameState] (e.g. hand-built
      * in a test with every pool emptied out) could reach it. This is a defensive engine-invariant
      * check, not a new gameplay rule — it never produces a draw/loss/elimination outcome, only
-     * [GameStalledException] once a full Phase cycle ([Phase.ROUND_ORDER]'s length) has been
-     * traversed without finding a single eligible turn.
+     * [GameStalledException] once [STALLED_STATE_PHASE_THRESHOLD] Phases have been traversed
+     * without finding a single eligible turn.
+     *
+     * **[STALLED_STATE_PHASE_THRESHOLD] is deliberately many full Phase cycles, not one.** An
+     * earlier version of this fail-safe used exactly one cycle ([Phase.ROUND_ORDER]'s length,
+     * 5) — this was too tight, and a real test caught it: [DeferredTurnModifier.SkipNextTierTurn]
+     * (Phase Loss, or the 1st Tier's own "Lose next turn on this Tier" Time Wrinkle square) can
+     * legitimately defer a player's next eligible turn on a Tier past one full cycle, in a very
+     * sparse game (few players/Tiers active) — and per that class's own doc, independent
+     * triggers stack, so more than one queued skip against the same (player, Tier) can defer
+     * eligibility by more than one cycle, consumed one at a time. None of this is remotely
+     * reachable in ordinary 2-6 player play (some other player almost always has *some* eligible
+     * turn within the same Round), but a legitimately sparse/edge-case [GameState] can hit it
+     * without being corrupted at all. A generous multi-cycle threshold tells the two apart: a
+     * truly malformed state (e.g. every pool emptied out) never finds anyone eligible no matter
+     * how far this searches, while a legitimate stacked-skip gap always resolves within a small,
+     * bounded number of cycles — see `GameStateTest`'s "a queued Phase Loss on a single sparse
+     * player's only Tier resumes normally, not as a stalled state" regression test for the
+     * concrete case that caught this.
      */
     fun skipEmptyPhases() {
         var phasesTraversedThisSearch = 0
         while (turnQueue.isEmpty() && winner == null) {
             advancePhase()
             phasesTraversedThisSearch += 1
-            if (phasesTraversedThisSearch > Phase.ROUND_ORDER.size) {
+            if (phasesTraversedThisSearch > STALLED_STATE_PHASE_THRESHOLD) {
                 throw GameStalledException(
-                    "GameState.skipEmptyPhases traversed a full Phase cycle " +
-                        "(${Phase.ROUND_ORDER.size} Phases: ${Phase.ROUND_ORDER}) starting from Round " +
-                        "$roundNumber without finding any player with an eligible turn in any Phase, and " +
-                        "no winner is declared. This is not a legal gameplay outcome (ordinary play always " +
-                        "keeps at least the 1st Tier Phase eligible for any player with 1st Tier tokens " +
-                        "remaining, per TierTokenPool's auto-replenishment) — it indicates a malformed or " +
-                        "corrupted GameState (e.g. every player's token pools emptied out with no winner " +
+                    "GameState.skipEmptyPhases traversed $STALLED_STATE_PHASE_THRESHOLD Phases " +
+                        "(${STALLED_STATE_PHASE_THRESHOLD / Phase.ROUND_ORDER.size} full cycles of " +
+                        "${Phase.ROUND_ORDER}) starting from Round $roundNumber without finding any player " +
+                        "with an eligible turn in any Phase, and no winner is declared. This is not a legal " +
+                        "gameplay outcome (ordinary play always keeps at least the 1st Tier Phase eligible " +
+                        "for any player with 1st Tier tokens remaining, per TierTokenPool's auto-" +
+                        "replenishment, and this threshold already generously allows for legitimate " +
+                        "DeferredTurnModifier-stacked skip gaps in a sparse game) — it indicates a malformed " +
+                        "or corrupted GameState (e.g. every player's token pools emptied out with no winner " +
                         "declared), not a stalemate the game itself should ever reach.",
                 )
             }
@@ -271,12 +279,12 @@ class GameState(
         pendingRoll = null
     }
 
-    /** Records [card] (an Immediate-timing draw) as not-yet-resolved — see [pendingImmediateCards]. */
-    fun queuePendingImmediateCard(card: FateHarvestCard) {
-        _pendingImmediateCards += card
-    }
-
     companion object {
+        /** How many consecutive empty Phases [skipEmptyPhases] tolerates before concluding the
+         * state is stalled, not just sparse — see that method's own doc for why this is many
+         * cycles of [Phase.ROUND_ORDER], not one. */
+        private const val STALLED_STATE_PHASE_THRESHOLD = 500
+
         /** Sets up a new game: each player gets one starting 1st Tier token, per the rulebook. */
         fun newGame(colors: List<PlayerColor>, turnOrder: TurnOrder = TurnOrder(colors)): GameState {
             val players = colors.associateWith { PlayerState(it) }
