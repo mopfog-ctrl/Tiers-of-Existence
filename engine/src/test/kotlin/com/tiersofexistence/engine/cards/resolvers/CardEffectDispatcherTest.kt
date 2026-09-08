@@ -1,5 +1,8 @@
 package com.tiersofexistence.engine.cards.resolvers
 
+import com.tiersofexistence.engine.cards.CardRarity
+import com.tiersofexistence.engine.cards.CardTiming
+import com.tiersofexistence.engine.cards.FateHarvestCard
 import com.tiersofexistence.engine.cards.FateHarvestCatalog
 import com.tiersofexistence.engine.cards.play.CardPlayRequest
 import com.tiersofexistence.engine.cards.play.CardPlayResult
@@ -84,8 +87,20 @@ class CardEffectDispatcherTest {
 
     @Test
     fun `an unregistered card throws rather than silently doing nothing`() {
+        // All 32 real catalog cards are dispatched now (31 by name plus Annulment handled
+        // structurally by InteractionChain) — a genuinely unregistered card no longer exists in
+        // the catalog, so this uses a synthetic one instead of cardNamed(...).
+        val fakeCard = FateHarvestCard(
+            name = "Not A Real Card",
+            rarity = CardRarity.SINGLE,
+            timing = CardTiming.HELD,
+            scope = null,
+            effect = "n/a",
+            flavorText = "n/a",
+        )
         val state = GameState.newGame(listOf(RED))
+        val request = CardPlayRequest(RED, fakeCard, emptyList(), TriggeringEvent.PlayedFromHand)
 
-        assertFailsWith<IllegalStateException> { CardEffectDispatcher.dispatch(state, requestFor(RED, "Delayed Motion")) }
+        assertFailsWith<IllegalStateException> { CardEffectDispatcher.dispatch(state, request) }
     }
 }

@@ -194,5 +194,22 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   `AwaitingDecision` naming a decision nobody could ever answer, and never a played-but-fizzled
   `Resolved` either.
 
+- **Delayed Motion is self-only — it can only be played on the source player's own pending
+  roll, never another player's** — confirmed by the user (matrix §4 Q13; the card has no
+  Precedence flag and no restated Your-Turn scope, so this wasn't obvious from the printed
+  text alone). `DelayedMotionResolver.resolve` enforces this directly against `GameState
+  .pendingRoll`'s own `player`, not by trusting the caller to only invoke it during the right
+  player's turn. This is also the one card that modifies a roll rather than a token —
+  `GameState.pendingRoll`/`beginPendingRoll`/`clearPendingRoll` (backed by `rules
+  /PendingRoll.kt`) is the genuine engine checkpoint this needed between "roll happened" and
+  "token moved," and `TurnEngine.moveTierToken`/`moveMarauder` are deliberately untouched by
+  it — neither reads `GameState.pendingRoll` itself, so double-check any future roll-modifying
+  card still reads `pendingRoll.total` back out through the caller rather than trying to make
+  movement itself roll-aware.
+
+All 32 Fate Harvest cards are implemented as of this entry — this checklist stays useful for
+double-checking confirmed rulings any time the relevant code changes, not for tracking what's
+still missing.
+
 Keep answers focused and cite sources. Don't speculate about UI/UX, Android APIs, or
 anything outside "what does the rulebook say / does the code match it."

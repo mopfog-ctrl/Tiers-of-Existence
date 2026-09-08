@@ -1008,13 +1008,18 @@ the same primitive is reused across cards that need it instead of reinvented per
   modified roll is what actually gets used for movement (easy to get wrong if the roll and
   the move end up decoupled in the implementation).
 - **Rulebook citation:** rulebook.txt:737-745.
-- **Ambiguities:** Can this be played on *any* player's roll, or only your own upcoming
-  move (i.e., can a card that only makes sense "before you move the token" be played by
-  someone other than the mover, the way Precedence cards routinely respond to other players'
-  actions)? Rule 20's "supersedes token movements" language is about Precedence cards
-  specifically, and this card has no Precedence flag — so by default it should only be
-  playable during *your own* pending roll→move step, but "your turn" isn't explicitly
-  restated for this card's scope the way it is for plainer Your-Turn cards. Flagged, §4 Q13.
+- **Ambiguities:** Resolved — see §4 Q13.
+- **Implemented.** Confirmed by the user: self-only, exactly the high-confidence default this
+  entry originally guessed — despite no Precedence flag and no restated Your-Turn scope, this
+  can only be played on the source player's own pending roll. `DelayedMotionResolver.resolve`
+  enforces this directly against the tracked roll's own owner rather than trusting the caller.
+  The genuine engine gap this entry flagged is now filled: `GameState.pendingRoll`/
+  `beginPendingRoll`/`clearPendingRoll`, backed by a small `PendingRoll(player, total)` class
+  in `rules/` — exactly the roll → PendingRoll(dieValue) → [cards may modify it] →
+  move(PendingRoll.total) shape sketched below, with `TurnEngine.moveTierToken`/`moveMarauder`
+  themselves left completely untouched (neither reads `GameState.pendingRoll`; whoever's
+  driving the turn reads `pendingRoll.total` back out and passes it into their own `spaces`
+  argument, same as before this card existed).
 
 #### 28. Emitting Nebula
 - **Rarity/copies:** Triple ×3
@@ -1468,8 +1473,8 @@ movement, movement altered mid-interaction-chain, and the roundabout-style near-
     opponent is not a legal target at all — "Cleansing cannot be played against a player who
     has no cards in their hand" — so this rejects rather than resolving as a no-op. See §2's
     Cleansing entry.
-13. Delayed Motion: can it be played on any player's pending roll, or only the roller's own
-    (no explicit Your-Turn restatement for this card, unlike most other turn-scoped cards)?
+13. ~~Delayed Motion: can it be played on any player's pending roll, or only the roller's
+    own...~~ — **Resolved**, confirmed by the user: self-only. See §2's Delayed Motion entry.
 14. ~~**Last Gasp**: does "any tokens you pass are destroyed" include the mover's *own* other
     tokens caught in the 8-space path...~~ — **Resolved**, confirmed by the user: yes, it
     includes the player's own tokens passed as well — the general Marauder-style owner

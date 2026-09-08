@@ -144,7 +144,7 @@ between the two). It does NOT protect Marauders — "Marauders can be [destroyed
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
 
-## Card engine: shared infrastructure plus 29 of 32 cards implemented
+## Card engine: shared infrastructure plus all 32 cards implemented
 
 `docs/card-mechanics-matrix.md` is the implementation spec — an audit of all 32 unique Fate
 Harvest cards' actual mechanical requirements (targets, Zone-of-Protection/Reprieve
@@ -212,7 +212,7 @@ that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) a
 `GameState`, instead of every caller needing to know which resolver object handles which
 card.
 
-**Cards implemented** (31 of 32), via shared resolvers rather than one class per card
+**Cards implemented** (32 of 32 — all of them), via shared resolvers rather than one class per card
 (`cards/resolvers/`):
 - `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
   limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
@@ -325,15 +325,26 @@ card.
   hand" — so `resolve` rejects that target before `CardLifecycle.attemptPlay` ever runs;
   Cleansing itself is never discarded and never counts against the Phase's card-play limit for
   an illegal target, matching every other card's "an illegal target doesn't consume the play."
+- `DelayedMotionResolver` (Delayed Motion only) — the one card that modifies a roll rather than
+  a token, needing a genuine engine checkpoint between "roll happened" and "token moved" that
+  nothing else in `TurnEngine` provides (every other movement-affecting card acts on an
+  already-placed token instead). New: `GameState.pendingRoll`/`beginPendingRoll`/
+  `clearPendingRoll`, backed by a small `PendingRoll(player, total)` class in `rules/` —
+  whoever's driving a Tier/Marauder-Phase turn calls `beginPendingRoll(player, rolledValue)`
+  right after `Dice.rollForPhase`, gives the player a chance to play this card, then reads
+  `pendingRoll.total` back out to actually call `TurnEngine.moveTierToken`/`moveMarauder` (both
+  fully unchanged — neither reads `GameState.pendingRoll` itself, so movement's
+  already-established `spaces: Int` API needed zero changes). Confirmed by the user, resolving
+  matrix §4 Q13: self-only — despite having no Precedence flag and no restated Your-Turn scope,
+  this can only be played on the source player's own pending roll, enforced directly against
+  `PendingRoll.player` rather than trusting the caller to only invoke it during the right
+  player's turn.
 - Annulment (Antimatter) has no resolver of its own — it's handled structurally by
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.
 
-That's 30 cards dispatched by name plus Annulment = 31 of 32 actually playable end to end.
-
-**Not yet implemented** (1 of 32): **Delayed Motion** — needs a post-roll/pre-move checkpoint
-in `TurnEngine` that doesn't exist yet (no other card modifies a roll rather than a token); see
-`docs/card-mechanics-matrix.md` §27.
+That's all 31 named cards dispatched by name plus Annulment = all 32 Fate Harvest cards
+actually playable end to end.
 
 **Warp is implemented**, not deferred — see below; it was the one item in this section that
 used to say "ambiguous," and isn't anymore.

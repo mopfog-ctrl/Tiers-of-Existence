@@ -76,6 +76,9 @@ object CardEffectDispatcher {
             // --- Hand/card-state ---
             "Cleansing (Atmospheric)" -> requirePlayerChoice(request, target0) { CleansingResolver.resolve(state, request, it) }
 
+            // --- Roll modification ---
+            "Delayed Motion" -> DelayedMotionResolver.resolve(state, request)
+
             else -> error("No resolver registered yet for ${request.card.name}")
         }
     }

@@ -176,4 +176,47 @@ class GameStateTest {
         game.endTurn()
         assertEquals(PlayerColor.GREEN, game.currentTurn) // no third repeat
     }
+
+    // --- Pending roll (Delayed Motion's checkpoint) ---
+
+    @Test
+    fun `beginPendingRoll tracks the raw value until cleared`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED))
+
+        val roll = game.beginPendingRoll(PlayerColor.RED, 5)
+
+        assertEquals(5, roll.total)
+        assertEquals(roll, game.pendingRoll)
+    }
+
+    @Test
+    fun `addBonus on the tracked roll is visible via GameState-pendingRoll`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED))
+        game.beginPendingRoll(PlayerColor.RED, 5)
+
+        game.pendingRoll!!.addBonus(2)
+
+        assertEquals(7, game.pendingRoll!!.total)
+    }
+
+    @Test
+    fun `clearPendingRoll removes it`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED))
+        game.beginPendingRoll(PlayerColor.RED, 5)
+
+        game.clearPendingRoll()
+
+        assertEquals(null, game.pendingRoll)
+    }
+
+    @Test
+    fun `beginning a new pending roll overwrites the previous one`() {
+        val game = GameState.newGame(listOf(PlayerColor.RED, PlayerColor.GREEN))
+        game.beginPendingRoll(PlayerColor.RED, 5)
+
+        val second = game.beginPendingRoll(PlayerColor.GREEN, 3)
+
+        assertEquals(second, game.pendingRoll)
+        assertEquals(PlayerColor.GREEN, game.pendingRoll!!.player)
+    }
 }

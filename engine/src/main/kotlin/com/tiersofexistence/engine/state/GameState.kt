@@ -7,6 +7,7 @@ import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
 import com.tiersofexistence.engine.rules.DeferredTurnModifier
 import com.tiersofexistence.engine.rules.Phase
+import com.tiersofexistence.engine.rules.PendingRoll
 import com.tiersofexistence.engine.rules.TurnOrder
 
 /**
@@ -47,6 +48,12 @@ class GameState(
 
     /** Queued [DeferredTurnModifier]s not yet consumed — see [queueSkipNextTierTurn]/[queueExtraTierTurn]. */
     private val deferredModifiers: MutableList<DeferredTurnModifier> = mutableListOf()
+
+    /** The in-progress turn's roll, once rolled but before it's been used to move a token — the
+     * checkpoint Delayed Motion needs (see [PendingRoll]'s class doc). Null whenever no roll is
+     * currently pending; see [beginPendingRoll]/[clearPendingRoll]. */
+    var pendingRoll: PendingRoll? = null
+        private set
 
     init {
         turnQueue = buildTurnQueue()
@@ -189,6 +196,27 @@ class GameState(
         if (colors.isEmpty()) return
         _winners.clear()
         _winners += colors
+    }
+
+    /**
+     * Begins tracking a pending roll for [player] with the raw [value] just rolled (e.g. via
+     * [com.tiersofexistence.engine.rules.Dice.rollForPhase]) — the checkpoint Delayed Motion
+     * needs to be able to add its "+2" to before the roll is used to move a token. Overwrites
+     * any previous pending roll; callers are expected to have already consumed it (moved the
+     * token it was for, or called [clearPendingRoll]) before starting a new one, same as every
+     * other piece of turn-scoped transient state whoever's driving turns is responsible for.
+     */
+    fun beginPendingRoll(player: PlayerColor, value: Int): PendingRoll {
+        val roll = PendingRoll(player, value)
+        pendingRoll = roll
+        return roll
+    }
+
+    /** Clears the pending roll once it's been read and used to move a token (or is otherwise no
+     * longer needed) — the caller's responsibility; [TurnEngine.moveTierToken][com.tiersofexistence.engine.rules.TurnEngine.moveTierToken]
+     * itself never reads or clears this. */
+    fun clearPendingRoll() {
+        pendingRoll = null
     }
 
     companion object {
