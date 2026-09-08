@@ -320,11 +320,11 @@ card.
   game is expected to prompt the named opponent and then call `CleansingResolver
   .completeDiscard(state, decidingPlayer, cardToDiscard)` once they've answered, same as it's
   already expected to call `TurnEngine.enterZoneOfProtection` once a player answers *that*
-  offer. Confirmed by the user, resolving matrix §4 Q12: if the targeted opponent's hand is
-  empty, that's a no-op (nothing to force) — `resolve` returns `Resolved` directly in that
-  case instead of a pending decision nobody could ever answer; Cleansing itself is still
-  discarded and still counts against the Phase's card-play limit either way, since the target
-  itself was legal.
+  offer. Confirmed by the user, resolving matrix §4 Q12: a player with an empty hand is not a
+  legal target at all — "Cleansing cannot be played against a player who has no cards in their
+  hand" — so `resolve` rejects that target before `CardLifecycle.attemptPlay` ever runs;
+  Cleansing itself is never discarded and never counts against the Phase's card-play limit for
+  an illegal target, matching every other card's "an illegal target doesn't consume the play."
 - Annulment (Antimatter) has no resolver of its own — it's handled structurally by
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.

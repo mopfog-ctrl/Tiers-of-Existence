@@ -29,12 +29,15 @@ import com.tiersofexistence.engine.state.GameState
  * same as it's already expected to call `TurnEngine.enterZoneOfProtection` once a player answers
  * that offer.
  *
- * **Confirmed by the user, resolving `docs/card-mechanics-matrix.md` §4 Q12**: if the targeted
- * opponent's hand is empty, this is a no-op — there's nothing to force — so [resolve] returns
- * [CardPlayResult.Resolved] directly in that case instead of a pending decision nobody could ever
- * answer. Cleansing itself is still legally played either way (the target was a legal opponent,
- * it's just that their hand happened to be empty), so it's still discarded and still counts
- * against the Phase's card-play limit even when it fizzles.
+ * **Confirmed by the user, resolving `docs/card-mechanics-matrix.md` §4 Q12**: a player with an
+ * empty hand is not a legal target at all — "Cleansing cannot be played against a player who has
+ * no cards in their hand." This is a target-legality check, evaluated before
+ * [CardLifecycle.attemptPlay] runs (same as the self-target/not-in-game checks below), so a play
+ * against an empty-handed opponent is [CardPlayResult.Rejected] rather than a played-but-fizzled
+ * [CardPlayResult.Resolved] — Cleansing itself is never discarded and never counts against the
+ * Phase's card-play limit for an illegal target, matching [CardLifecycle]'s own class doc ("a
+ * card whose target turns out illegal should never consume the per-Phase play limit or get
+ * discarded").
  */
 object CleansingResolver {
     fun resolve(state: GameState, request: CardPlayRequest, target: CardTarget.PlayerChoice): CardPlayResult {
@@ -50,11 +53,15 @@ object CleansingResolver {
                 TargetValidationError.NoLegalTarget("${target.color} is not a player in this game"),
             )
         }
+        if (state.players.getValue(target.color).hand.isEmpty()) {
+            return CardPlayResult.Rejected(
+                request,
+                TargetValidationError.NoLegalTarget("${target.color} has no cards in hand to discard"),
+            )
+        }
 
         val playResult = CardLifecycle.attemptPlay(state, request)
         if (playResult !is CardPlayResult.Resolved) return playResult
-
-        if (state.players.getValue(target.color).hand.isEmpty()) return playResult
 
         return CardPlayResult.AwaitingDecision(request, PendingDecision.OpponentDiscardChoice(target.color))
     }

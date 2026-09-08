@@ -49,14 +49,16 @@ class CleansingResolverTest {
     }
 
     @Test
-    fun `targeting an opponent with an empty hand is a no-op, resolved directly`() {
+    fun `targeting an opponent with an empty hand is rejected, not played`() {
         val state = GameState.newGame(listOf(RED, GREEN)) // GREEN's hand starts empty
 
         val result = CleansingResolver.resolve(state, requestFor(RED, listOf(CardTarget.PlayerChoice(GREEN))), CardTarget.PlayerChoice(GREEN))
 
-        assertIs<CardPlayResult.Resolved>(result)
-        // Still legally played — Cleansing itself is discarded even though its effect fizzled.
-        assertEquals(1, state.deck.discardPileSize)
+        assertIs<CardPlayResult.Rejected>(result)
+        assertIs<TargetValidationError.NoLegalTarget>(result.reason)
+        // An illegal target never consumes Cleansing itself or the per-Phase play limit.
+        assertEquals(0, state.deck.discardPileSize)
+        assertTrue(state.players.getValue(RED).hasPlayedCardThisPhase.not())
     }
 
     @Test

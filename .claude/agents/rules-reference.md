@@ -173,22 +173,26 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   silently start destroying tokens this card's own ruling says survive, or silently drop a
   tied player's win.
 
-- **Cleansing's targeted opponent choosing which of their own cards to discard, and an empty
-  target hand being a no-op** — confirmed by the user (matrix §4 Q12; the rulebook itself only
-  addresses who chooses, not what happens if there's nothing to choose from). This is the one
-  card whose resolution can't finish synchronously: `CleansingResolver.resolve` returns
-  `CardPlayResult.AwaitingDecision(request, PendingDecision.OpponentDiscardChoice(opponent))`
-  once Cleansing itself is legally played, and a separate `CleansingResolver.completeDiscard`
-  call (made by whatever's driving the game, once the named opponent has actually chosen)
-  finishes it — the same "offer, don't auto-apply" pattern already used for
-  `SquareEffect.MayEnterZone`/`MayBuildMarauder`/`MayTransport`, not a generalized pending-
-  decision engine shared with `InteractionChain` (the matrix's own "Required engine state"
-  note suggested that unification; it wasn't built, and doesn't need to be — the simpler
-  existing pattern already covers it). Double-check this any time Cleansing's implementation
-  changes: an empty target hand must resolve `Resolved` directly, never `AwaitingDecision`
-  naming a decision nobody could ever answer, and Cleansing itself must still be discarded
-  and still count against the Phase's card-play limit either way, since the *target* was legal
-  even when its effect fizzled.
+- **Cleansing's targeted opponent chooses which of their own cards to discard, and a
+  no-cards-in-hand opponent is not a legal target at all** — confirmed by the user (matrix
+  §4 Q12; the rulebook itself only addresses who chooses, not what happens if there's nothing
+  to choose from — the flagged ambiguity's high-confidence "no-op" guess turned out wrong, so
+  don't assume it from first principles if this ever comes up again). `CleansingResolver
+  .resolve` rejects an empty-handed target (`TargetValidationError.NoLegalTarget`) *before*
+  `CardLifecycle.attemptPlay` runs — Cleansing itself is never discarded and never counts
+  against the Phase's card-play limit for that illegal target, same as any other card's
+  illegal-target case. For a legal (non-empty-handed) target, this is the one card whose
+  resolution can't finish synchronously: `resolve` returns `CardPlayResult.AwaitingDecision
+  (request, PendingDecision.OpponentDiscardChoice(opponent))` once Cleansing itself is legally
+  played, and a separate `CleansingResolver.completeDiscard` call (made by whatever's driving
+  the game, once the named opponent has actually chosen) finishes it — the same "offer, don't
+  auto-apply" pattern already used for `SquareEffect.MayEnterZone`/`MayBuildMarauder`/
+  `MayTransport`, not a generalized pending-decision engine shared with `InteractionChain`
+  (the matrix's own "Required engine state" note suggested that unification; it wasn't built,
+  and doesn't need to be — the simpler existing pattern already covers it). Double-check this
+  any time Cleansing's implementation changes: an empty-handed target must be `Rejected`, never
+  `AwaitingDecision` naming a decision nobody could ever answer, and never a played-but-fizzled
+  `Resolved` either.
 
 Keep answers focused and cite sources. Don't speculate about UI/UX, Android APIs, or
 anything outside "what does the rulebook say / does the code match it."
