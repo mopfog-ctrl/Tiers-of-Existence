@@ -236,7 +236,7 @@ card.
 
 That's 23 cards dispatched by name plus Annulment = 24 of 32 actually playable end to end.
 
-**Not yet implemented** (9 of 32), each blocked on a specific open rules question rather than
+**Not yet implemented** (8 of 32), each blocked on a specific open rules question rather than
 missing effort — see the cited matrix question before attempting:
 - **Plasma Burst** — how "3 neighboring squares" are selected (§4 Q8).
 - **Last Gasp** — whether its pass-through destroys the mover's own other tokens too, since
