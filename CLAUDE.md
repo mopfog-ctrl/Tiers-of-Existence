@@ -893,3 +893,15 @@ the fix passed 40/40 across two follow-up batches; the full suite (both normal a
 continues to pass and stays in the suite as a permanent regression guard, though note it alone
 never reproduced the bug in either investigation session — the multi-class `--tests` filter
 was the necessary trigger, not raw iteration count within a single already-loaded JVM.
+
+**Re-verified in a later stress-testing pass** (after the Tier-token resource/capacity and Fate
+Harvest/`TurnDriver` integration work above), specifically re-running the historical trigger
+shape rather than assuming the earlier verification still holds: two different non-contiguous
+multi-class `--tests` filter combinations (5 classes and 4 classes, spanning `state`/`rules`/
+`cards.resolvers`), 15 runs each, 30/30 passed; 20 single-class filtered runs (10×
+`GameStateTest`, 10× `GameStateInitializationStressTest`), 20/20 passed; the full suite alone,
+50/50 passed across earlier stability checks in this same pass. No reappearance — the `by lazy`
+fix continues to hold under every reproduction shape that ever found the original bug. (This
+same stress-testing pass is also what caught the `skipEmptyPhases` threshold bug described
+above — a genuinely different issue, unrelated to this NPE, surfaced by the same repeated-run
+discipline.)
