@@ -141,7 +141,7 @@ between the two). It does NOT protect Marauders — "Marauders can be [destroyed
 sitting on a Reprieve square. `TurnEngine.destroyTokensPassed` implements this per-token-kind
 rather than per-square.
 
-## Card engine: shared infrastructure plus 27 of 32 cards implemented
+## Card engine: shared infrastructure plus 28 of 32 cards implemented
 
 `docs/card-mechanics-matrix.md` is the implementation spec — an audit of all 32 unique Fate
 Harvest cards' actual mechanical requirements (targets, Zone-of-Protection/Reprieve
@@ -209,7 +209,7 @@ that lets a resolved `InteractionChain`'s entries (or a plain drawn/held play) a
 `GameState`, instead of every caller needing to know which resolver object handles which
 card.
 
-**Cards implemented** (27 of 32), via shared resolvers rather than one class per card
+**Cards implemented** (28 of 32), via shared resolvers rather than one class per card
 (`cards/resolvers/`):
 - `MovementCardResolver` (any-token, fixed distance, opponent's Zone-resident token off
   limits): Tactical Motion, Tactical Step, Evasive Action, Skip/Hop/and Jump, Sidestep.
@@ -257,13 +257,20 @@ card.
   Tier's normal promotion, even if a pile happened to be at or above threshold. New pool
   primitive: `TierTokenPool.emptyStagingPile` (bulk-return to the Ion Battery, no promotion
   check — distinct from `destroyFromStagingPile`'s single-token removal).
+- `CirculateResolver` (Circulate only) — teleports a Tier token directly into the next Zone
+  of Protection walking clockwise from its current position (`TierBoard.nextZoneEntry`, a
+  new board query, wrapping the loop if needed) — no intermediate landing effects, no
+  pass-through. Confirmed with the user, resolving §4 Q16: any player's Tier token currently
+  in play is a legal target, not just the caster's own, but never one already inside a Zone
+  of Protection — Circulate isn't a named rule-12 exception, so that's simply not a legal
+  target at all, with no carve-out even for the player's own token.
 - Annulment (Antimatter) has no resolver of its own — it's handled structurally by
   `InteractionChain` itself (see above) and never reaches `CardEffectDispatcher`, since a
   resolved chain's entries already have Annulment spliced out.
 
-That's 26 cards dispatched by name plus Annulment = 27 of 32 actually playable end to end.
+That's 27 cards dispatched by name plus Annulment = 28 of 32 actually playable end to end.
 
-**Not yet implemented** (5 of 32), each blocked on a specific open rules question rather than
+**Not yet implemented** (4 of 32), each blocked on a specific open rules question rather than
 missing effort — see the cited matrix question before attempting:
 - **Last Gasp** — whether its pass-through destroys the mover's own other tokens too, since
   its wording omits the usual owner-exemption clause (§4 Q14). Of the 6 Precedence-flagged
@@ -276,12 +283,6 @@ missing effort — see the cited matrix question before attempting:
   one who played the card must choose" (sketched as `PendingDecision` but not wired up).
 - **Delayed Motion** — needs a post-roll/pre-move checkpoint in `TurnEngine` that doesn't
   exist yet (no other card modifies a roll rather than a token).
-- **Circulate** — confirmed with the user, resolving §4 Q16: it can target any player's Tier
-  token, not just the caster's own, but never one already in a Zone of Protection (which also
-  settles the "already in a Zone" half of Q16 — that state is simply not a legal target at
-  all, rather than a question of which Zone "the next" one means). Still blocked purely on
-  missing infrastructure now, not a rules question: a "find the next Zone of Protection from
-  here" board query doesn't exist yet.
 
 **Warp is implemented**, not deferred — see below; it was the one item in this section that
 used to say "ambiguous," and isn't anymore.

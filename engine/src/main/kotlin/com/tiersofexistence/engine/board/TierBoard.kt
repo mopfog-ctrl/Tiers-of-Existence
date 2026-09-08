@@ -70,4 +70,19 @@ data class TierBoard(
         }
         return passed
     }
+
+    /**
+     * The next [SquareType.ZONE_OF_PROTECTION] entry square walking clockwise from
+     * [fromPosition] (exclusive of [fromPosition] itself — "next" always means strictly ahead),
+     * wrapping the loop if needed. Used by Circulate. Null if this Tier's board has no Zone of
+     * Protection entry square at all (none of the confirmed board layouts hit this, but the
+     * query stays honest rather than assuming).
+     */
+    fun nextZoneEntry(fromPosition: Int): Square? {
+        for (offset in 1..size) {
+            val candidate = squareAt(fromPosition + offset)
+            if (candidate.type == SquareType.ZONE_OF_PROTECTION) return candidate
+        }
+        return null
+    }
 }

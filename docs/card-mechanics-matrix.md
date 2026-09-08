@@ -1175,9 +1175,10 @@ the same primitive is reused across cards that need it instead of reinvented per
   ZoneResidence to record the resulting protected state.
 - **Known interactions:** None named.
 - **Rulebook citation:** rulebook.txt:779-784.
-- **Ambiguities:** Both resolved — see Legal targets above and §4 Q16. Still blocked purely
-  on missing infrastructure: the `nextZoneEntry(tier, fromPosition)` board query doesn't
-  exist yet.
+- **Ambiguities:** Both resolved — see Legal targets above and §4 Q16.
+- **Implemented.** `TierBoard.nextZoneEntry(fromPosition)` is the board query this needed —
+  walks clockwise from the token's current position (exclusive), wrapping the loop, returning
+  the first `ZONE_OF_PROTECTION` square found. See `CirculateResolver`.
 
 #### 32. Sidestep (Extinction Avoidance)
 - **Rarity/copies:** Quadruple ×4

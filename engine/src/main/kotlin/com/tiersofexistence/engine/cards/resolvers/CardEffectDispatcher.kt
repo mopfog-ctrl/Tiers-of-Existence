@@ -55,6 +55,7 @@ object CardEffectDispatcher {
             "Tactical Motion" -> requireTokenTarget(request, target0) { MovementCardResolver.resolve(state, request, it, spaces = 2) }
             "Tactical Step" -> requireTokenTarget(request, target0) { MovementCardResolver.resolve(state, request, it, spaces = 1) }
             "Parallel Phasing" -> requireTwoTokenTargets(request) { own, opponent -> ParallelPhasingResolver.resolve(state, request, own, opponent) }
+            "Circulate (Elemental)" -> requireTokenTarget(request, target0) { CirculateResolver.resolve(state, request, it) }
 
             // --- Destruction ---
             "Divine Assistance" -> requireAnyTarget(request, target0) { DestructionCardResolver.resolve(state, request, it) }
