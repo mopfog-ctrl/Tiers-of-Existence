@@ -146,6 +146,35 @@ class TurnDriverTest {
     }
 
     @Test
+    fun `each player is driven by their own TurnDecisionProvider, not one shared across the whole driver`() {
+        // Two AI players with genuinely different behavior — RED always enters a Zone offered
+        // to it, GREEN never does — is exactly the "several AI players, different behavior
+        // types" shape the per-player constructor exists for.
+        val board = boardWithZone(
+            TierLevel.FIRST,
+            listOf(Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.ZONE_OF_PROTECTION, magnitude = 9)),
+            ProtectionZone(9, squares = List(3) { SquareType.PLAIN }),
+        )
+        val state = gameWith(TierLevel.FIRST, board)
+        state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        state.skipEmptyPhases()
+        val driver = TurnDriver(
+            mapOf(RED to ScriptedDecisions(enterZone = true), GREEN to ScriptedDecisions(enterZone = false)),
+            rollForPhase = { 1 },
+        )
+
+        driver.driveOneTurn(state) // RED's turn
+        driver.driveOneTurn(state) // GREEN's turn
+
+        val redPool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
+        val greenPool = state.players.getValue(GREEN).tierPool(TierLevel.FIRST)
+        assertEquals(listOf(9), redPool.zoneResidents) // RED's provider accepted
+        assertTrue(greenPool.zoneResidents.isEmpty()) // GREEN's provider declined
+        assertEquals(listOf(1), greenPool.inPlayPositions)
+    }
+
+    @Test
     fun `accepting the Marauder Construction offer builds a Marauder`() {
         val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), Square(1, SquareType.MARAUDER_CONSTRUCTION_FACILITY))
         val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED))

@@ -12,6 +12,24 @@ formed being (4th Tier) — worth keeping in mind for token art/UI, not an engin
 - **Platform**: native Android (Kotlin + Jetpack Compose).
 - **Multiplayer**: not yet decided — local pass-and-play vs. online. Nothing in the code
   currently assumes either; `state/GameState` is UI- and transport-agnostic.
+- **First Google Play release is single-player**: one human plus up to 5 selectable AI
+  opponents (2-6 total, matching the rulebook's own player count), each AI a separately
+  selectable behavior type. Confirmed by the user; this is why `TurnDriver`'s
+  `TurnDecisionProvider` is per-player-pluggable rather than one shared policy — see "Turn-
+  driving loop" below. No concrete AI behaviors exist yet (deliberately not built ahead of a
+  real spec); a human seat is a session/setup concern the engine deliberately doesn't model at
+  all (see that section for why).
+- **Stats will be tracked eventually** — cards played (including by some future per-card-class
+  breakdown), wins/losses/ties, etc. — but nothing about that exists yet, and deliberately so:
+  the engine already exposes what a future stats layer would read (`CardPlayResult.Resolved`
+  per play, `GameState.winners` at game end), so no engine change was needed preemptively;
+  building a card-classification taxonomy now would mean guessing at categories with no spec.
+- **The Compose UI (once built) needs to let a player view — and if a card allows it, play
+  on — any of the other 3 Tier boards during their own Tier turn**, not just the Tier whose
+  Phase is currently active (which is auto-displayed). Noted here since no UI exists yet to
+  actually implement this against; nothing in `engine` blocks it already — every `TierBoard`/
+  per-player per-Tier pool is freely readable regardless of whose turn it is or which Tier's
+  Phase is active.
 - Game rules and card text below are transcribed directly from the rulebook. Anything not
   explicit in the text (see "Known gap" below) is marked as such in code comments — don't
   invent behavior for those without checking with the user first.
@@ -154,8 +172,8 @@ responsibility with no concrete owner. `TurnDriver.driveOneTurn(state)` drives e
 player's turn to completion: reads `state.currentTurn`/`currentPhase`, rolls (via an
 injectable `rollForPhase: (Phase) -> Int`, defaulting to `Dice.rollForPhase` — genuinely
 random in real play, a fixed lambda in tests, since forcing an exact sequence out of
-`kotlin.random.Random`'s internals is awkward), asks a `TurnDecisionProvider` which of the
-player's eligible tokens/Marauders to move, moves it via the identity-based movers
+`kotlin.random.Random`'s internals is awkward), asks that player's own `TurnDecisionProvider`
+which of their eligible tokens/Marauders to move, moves it via the identity-based movers
 (`TurnEngine.moveTierTokenById`/`moveMarauderById`/`moveZoneToken` — never the position-based
 `moveTierToken`/`moveMarauder`, since more than one of a player's own tokens can legally stack
 on the same square and a position-based move risks silently moving the wrong one), resolves
@@ -178,6 +196,22 @@ eligible token/Marauder to move, and whether to take each of the three optional 
 directly; `FirstCandidateDecisionProvider` (always the first candidate, always decline every
 offer) is the deterministic, dependency-free default for tests/simulations that only care
 about the mechanical loop running correctly, not about realistic play.
+
+**`TurnDriver` resolves a decision provider per player, not one shared instance for the whole
+driver** — `decisionsFor: (PlayerColor) -> TurnDecisionProvider`, resolved fresh (and cached
+for the rest of that one turn) inside `driveOneTurn` each time. This is specifically for the
+stated first-release shape: one human player plus up to 5 selectable AI opponents, each a
+different AI behavior type — a single shared policy can't represent that. Two secondary
+constructors cover the common cases without callers needing to build the lambda themselves: a
+single `TurnDecisionProvider` for every player (the original, pre-multi-AI shape — every
+existing test still uses this one, unchanged), and a `Map<PlayerColor, TurnDecisionProvider>`
+keyed by seat (throws if asked to drive a player with no entry). A human seat is deliberately
+NOT modeled anywhere in `TurnDriver`/`GameState` — who's human vs. which AI behavior a seat
+uses is session/setup configuration, not a game rule, so it doesn't belong on the
+UI-and-transport-agnostic `GameState`/`PlayerState`; whatever orchestrates a mixed human/AI
+game is expected to simply never call `driveOneTurn` for a human player's turn (driving that
+seat some other way, e.g. direct UI input into `TurnEngine`), rather than `TurnDriver` needing
+to know a seat is human at all.
 
 **New `TurnEngine` capability this needed**: all 3 confirmed Time Wrinkle variants are now
 real, modeled effects rather than free-text `Square.note` a caller would have to parse itself
