@@ -108,8 +108,10 @@ AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
   = 10+20+24+16 = 70, matching the Parts List. See `FateHarvestCatalogTest`.
 - Staging Pile thresholds (1st: 4, 2nd: 3, 3rd: 2) and max-in-play (2 for Tiers 1-3, 1 for
   Tier 4), with Hatchery overflow — see `TierTokenPoolTest`.
-- One Marauder per Tier per player (4 total per player, one per Tier), Marauder Transport
-  only moves to an adjacent Tier — see `MarauderPoolTest`.
+- One Marauder per Tier per player, bypassable by Fate Harvest cards (rule #9) — no separate
+  global cap beyond that, since Marauders have no Ion Battery/finite spawn reserve at all (see
+  "Marauder model" below); Marauder Transport only moves to an adjacent Tier — see
+  `MarauderPoolTest`.
 - 4th Tier's You Win square must be landed on *exactly*; a roll that would move a token
   past it doesn't win — that token just continues around the loop again, same as any other
   square. Enforced in `TurnEngine.moveTierToken` (see `TurnEngineTest`).
@@ -134,6 +136,51 @@ AndroidX/Compose artifacts — `mavenCentral()` works fine). Practically:
   no Tier tokens has no Tier Phase turns, while Marauder Phase eligibility is a fully
   separate, Tier-independent check (a Marauder can have a turn on a Tier with zero Tier
   tokens present).
+
+## Marauder model: no Ion Battery, no finite spawn reserve
+
+**Corrected.** An earlier engine version modeled `MarauderPool` with an `ionBattery: Int`
+initialized to 4 (the Parts List's "4x Marauder tokens per color"), decremented on every
+spawn and incremented on every destroy — treating physical component count as an engine
+resource pool, mirroring Tier tokens' genuine Ion Battery. **This was wrong, confirmed by the
+user**, who also flagged the one place the rulebook's own text points the other way
+(rulebook.txt:163, "...they must wait until one of their Tier tokens in play has been
+destroyed in order to have a token to draw from the Ion Battery... The same applies to
+Marauder tokens") — read narrowly this sentence could imply a Marauder reserve too, but the
+user's explicit ruling overrides that literal reading: Marauders have their own separate
+`battery`/resource pile which is *not* the Ion Battery, and in practice don't need one at
+all — the only real limits are the ordinary per-Tier cap and its Fate Harvest bypass; the
+practical ceiling on how many Marauders a player can ever have in play is just however many
+cards in the deck can spawn one, not any engine-tracked count. Removed:
+- `MarauderPool.ionBattery` itself, and every increment/decrement of it (spawn, `destroy`,
+  `destroyById`, `destroyAllInPlay`, `destroyAllAt`).
+- `TierLevel.MARAUDER_TOKENS_PER_PLAYER` (the constant that used to seed it) — no longer
+  referenced anywhere, since nothing tracks a Marauder reserve to seed.
+- The `require(ionBattery > 0)` check inside `placeOnBirthCanal` — a legal Marauder spawn
+  (ordinary, capped at 1 per Tier; or Fate-Harvest-bypassed, uncapped) can now never fail for
+  a resource reason, only for the per-Tier cap when `bypassCap` isn't set.
+
+**Preserved, unchanged:** the ordinary "one Marauder per Tier per player" cap
+(`placeOnBirthCanal`'s default `bypassCap = false`) and its Fate Harvest bypass (rule #9,
+`bypassCap = true` — Dwarf Star, Materialize Army, Essence Assimilator, Materialize Help all
+already used this correctly and needed no changes); every Marauder still gets a stable
+`TokenId` exactly as before (`MarauderPool` never generated ids from the removed reserve,
+only from `TokenIdGenerator`); `moveToNeighboringTier`/`destroy`/`destroyById`/
+`destroyAllInPlay`/`destroyAllAt`/`move`/`moveById` all keep their exact same mutation
+behavior on `inPlay`, just without the now-removed reserve bookkeeping alongside it.
+
+**Side effect: a previously-flagged critical-failure risk is now structurally impossible.**
+The 4 Marauder-construction resolvers (`MarauderConstructionCardResolver`, used by Dwarf
+Star/Materialize Army/Essence Assimilator/Materialize Help) used to be able to crash if a
+player's Marauder "Ion Battery" was empty — a normal-looking mid-game state under the old
+(wrong) model. With no reserve left to be empty, that crash path no longer exists at all, not
+just handled gracefully.
+
+See `MarauderPoolTest` for the regression coverage: ordinary legal spawning, the per-Tier cap
+still applying where it should, the Fate Harvest bypass still working, more than 4 logical
+Marauders existing at once when legal effects produce that (proving there's no hidden global
+cap), destroying a Marauder not replenishing anything, and repeated spawn/destroy cycles
+(deliberately far more than 4) never depending on any component inventory.
 
 ## Turn-resolution engine: base mechanics
 
@@ -500,13 +547,18 @@ player's turn hasn't happened yet this Round; Phase Control's other case ("if yo
 already ended this Round, play it immediately") is deliberately not a true interrupt — see
 that method's doc and matrix §4 Q15.
 
-**Known critical-failure risks, deliberately not fixed yet** (raised in an earlier review,
-explicitly deferred by the user pending a later pass — not silently missed): the 4
-Marauder-construction resolvers can crash if a player's Marauder Ion Battery is empty (a
-normal state — 4 Marauders total, 1 per Tier × 4 Tiers); `TierTokenPool.destroyFromStagingPile`
-crashes rather than rejecting gracefully if the chosen pile is empty. See
-`.claude/agents/rules-reference.md`'s "resource-exhaustion" checklist item, added specifically
-so a future review catches these before they're forgotten.
+**Fixed as a side effect of the Marauder model correction (see "Marauder model" below):** the
+4 Marauder-construction resolvers used to be able to crash if a player's Marauder "Ion
+Battery" was empty — that was never a real rule (see below), and removing the fictitious
+resource entirely means there's nothing left to be empty; the crash path no longer exists.
+
+**Known critical-failure risk, still deliberately not fixed yet** (raised in an earlier
+review, explicitly deferred by the user pending a later pass — not silently missed):
+`TierTokenPool.destroyFromStagingPile` crashes rather than rejecting gracefully if the chosen
+pile is empty. This one is a genuine Tier-token/Ion-Battery case (Tier tokens really do have a
+finite Ion Battery, unlike Marauders), so the fix belongs with a broader Tier-token
+resource/capacity audit, not the Marauder correction. See `.claude/agents/rules-reference.md`'s
+"resource-exhaustion" checklist item.
 
 **Fixed**: the 1st-Tier Ion Battery auto-replenishment gap flagged above used to be listed as
 a critical-failure risk here — it isn't anymore. The rulebook's 1st-Tier-specific rule ("On

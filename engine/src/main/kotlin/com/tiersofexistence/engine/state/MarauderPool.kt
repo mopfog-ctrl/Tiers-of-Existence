@@ -8,17 +8,25 @@ import com.tiersofexistence.engine.model.TokenKind
 private data class MarauderSlot(val id: TokenId, val position: Int)
 
 /**
- * One player's Marauder tokens, shared across all four Tiers (Parts List: "4x Marauder
- * tokens per color"). Unlike Tier tokens, the rulebook never mentions a Hatchery for
- * Marauders — the per-Tier cap is enforced at the point a Marauder is placed instead.
- * [owner] is needed to mint each Marauder's stable [TokenId], the same identity model
- * [TierTokenPool] uses — a Marauder can never be a Zone resident, so unlike Tier tokens it
- * only ever needs one position list, never a second Zone-residence one.
+ * One player's Marauder tokens, shared across all four Tiers. Unlike Tier tokens, Marauders
+ * have no Ion Battery/draw-pile resource — the rulebook only ever describes an Ion Battery for
+ * Tier tokens (rulebook.txt:150-163: "The Ion Battery is your draw pile... Matter is neither
+ * destroyed nor created... The same applies to Marauder tokens" is itself about *Tier* tokens'
+ * wait-for-a-slot behavior, never a Marauder-specific reserve). The Parts List's "4x Marauder
+ * tokens per color" is a physical-component count for the physical game, not an engine resource
+ * pool (confirmed by the user) — a Marauder simply comes into existence when a legal
+ * rule/board-event/card effect spawns one, and simply ceases to exist when destroyed; nothing
+ * is drawn from or returned to anywhere. The only limits on how many a player can have are the
+ * per-Tier cap ([placeOnBirthCanal]'s [bypassCap]) and, transitively, however many cards in the
+ * deck can spawn one — never a global reserve this pool tracks.
+ *
+ * The rulebook never mentions a Hatchery for Marauders either — the per-Tier cap is enforced at
+ * the point a Marauder is placed instead. [owner] is needed to mint each Marauder's stable
+ * [TokenId], the same identity model [TierTokenPool] uses — a Marauder can never be a Zone
+ * resident, so unlike Tier tokens it only ever needs one position list, never a second
+ * Zone-residence one.
  */
 class MarauderPool(val owner: PlayerColor) {
-    var ionBattery: Int = TierLevel.MARAUDER_TOKENS_PER_PLAYER
-        private set
-
     private val inPlay: MutableMap<TierLevel, MutableList<MarauderSlot>> =
         TierLevel.entries.associateWith { mutableListOf<MarauderSlot>() }.toMutableMap()
 
@@ -38,28 +46,28 @@ class MarauderPool(val owner: PlayerColor) {
     fun positionOf(id: TokenId): Int? = inPlay.getValue(id.tier).firstOrNull { it.id == id }?.position
 
     /**
-     * Places a Marauder on [tier]'s Birth Canal. By default this enforces "only one Marauder
+     * Spawns a new Marauder on [tier]'s Birth Canal. By default this enforces "only one Marauder
      * token is allowed per Tier per player" (Gameboard Rules); pass [bypassCap] = true when
      * a Fate Harvest card is explicitly adding an extra one (rule #9: "this limit does not
      * apply to Marauders added by Fate Harvest cards"). Returns the new Marauder's [TokenId].
+     * No resource is consumed — see the class doc; a legal spawn can never fail merely because
+     * some number of Marauders already exist, only because the per-Tier cap blocks it.
      */
     fun placeOnBirthCanal(tier: TierLevel, bypassCap: Boolean = false): TokenId {
         require(bypassCap || inPlayCount(tier) < TierLevel.MARAUDER_MAX_IN_PLAY_PER_TIER_BASE) {
             "$tier already has a Marauder in play for this player"
         }
-        require(ionBattery > 0) { "No Marauders left in Ion Battery" }
-        ionBattery -= 1
         val id = TokenIdGenerator.next(owner, TokenKind.MARAUDER, tier)
         inPlay.getValue(tier) += MarauderSlot(id, 0)
         return id
     }
 
-    /** Marauder destroyed (by an Abyss, Infernal Abyss, or a card) — returns it to the Ion Battery. */
+    /** Marauder destroyed (by an Abyss, Infernal Abyss, or a card) — simply ceases to exist; see
+     * the class doc for why nothing is returned anywhere. */
     fun destroy(tier: TierLevel, position: Int) {
         val slot = inPlay.getValue(tier).firstOrNull { it.position == position }
         require(slot != null) { "No Marauder at position $position on $tier" }
         inPlay.getValue(tier).remove(slot)
-        ionBattery += 1
     }
 
     /** Destroys the Marauder identified by [id]. Callers are expected to have already confirmed
@@ -69,7 +77,6 @@ class MarauderPool(val owner: PlayerColor) {
         val slot = inPlay.getValue(id.tier).firstOrNull { it.id == id }
         require(slot != null) { "Marauder $id no longer exists" }
         inPlay.getValue(id.tier).remove(slot)
-        ionBattery += 1
     }
 
     /** Destroys every Marauder currently in play on [tier] — used by whole-Tier-wipe effects
@@ -77,19 +84,14 @@ class MarauderPool(val owner: PlayerColor) {
      * only), so unlike [TierTokenPool.destroyAllInPlayAndStagingPile] there's no exclusion to
      * apply here. */
     fun destroyAllInPlay(tier: TierLevel) {
-        val slots = inPlay.getValue(tier)
-        ionBattery += slots.size
-        slots.clear()
+        inPlay.getValue(tier).clear()
     }
 
     /** Destroys every Marauder currently at [position] on [tier] in one sweep — stacking is
      * legal, same as [TierTokenPool.destroyAllAt]. Used by whole-square-sweep effects like
      * Plasma Burst. A no-op if nothing is there. */
     fun destroyAllAt(tier: TierLevel, position: Int) {
-        val slots = inPlay.getValue(tier).filter { it.position == position }
-        if (slots.isEmpty()) return
-        inPlay.getValue(tier).removeAll(slots)
-        ionBattery += slots.size
+        inPlay.getValue(tier).removeAll { it.position == position }
     }
 
     /** A Marauder Transport moves the Marauder to a neighboring Tier's Birth Canal. Its

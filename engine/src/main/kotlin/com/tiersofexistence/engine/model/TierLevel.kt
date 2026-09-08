@@ -30,14 +30,13 @@ enum class TierLevel(
     fun previous(): TierLevel? = entries.firstOrNull { it.number == number - 1 }
 
     companion object {
-        /**
-         * Total Marauder tokens each player owns across all Tiers combined (Parts List:
-         * "4x Marauder tokens per color"). This matches "only one Marauder token allowed
-         * per Tier per player" (Gameboard Rules) times 4 Tiers.
-         */
-        const val MARAUDER_TOKENS_PER_PLAYER = 4
-
-        /** Base max Marauders in play per player per Tier; Fate Harvest cards can exceed this (rule #9). */
+        /** Base max Marauders in play per player per Tier; Fate Harvest cards can exceed this (rule #9).
+         * Marauders have no separate per-player supply/reserve to cap total count — the Parts List's
+         * "4x Marauder tokens per color" is a physical-component count, not an engine resource pool
+         * (confirmed by the user; the rulebook never describes a Marauder Ion Battery/draw pile the
+         * way it explicitly does for Tier tokens — see rulebook.txt:150-163). A player's Marauder
+         * count in play is bounded only by this per-Tier cap (times 4 Tiers) plus however many
+         * Fate Harvest cards let them exceed it. */
         const val MARAUDER_MAX_IN_PLAY_PER_TIER_BASE = 1
     }
 }

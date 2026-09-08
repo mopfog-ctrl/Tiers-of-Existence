@@ -78,18 +78,26 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   Tier 1, and the consequence isn't cosmetic: without it, a player whose only 1st Tier token is
   destroyed (by an ordinary Marauder pass, no card needed) with an empty Hatchery never gets a
   1st Tier turn again for the rest of the game.
-- **Resource-exhaustion must never crash or hang the game.** Rulebook framing for an exhausted
-  pool is always "you must wait" (Ion Batteries and Tokens, rulebook.txt:158-163: "In the
-  unlikely event that a player runs out of tokens of a certain Tier, they must wait... The same
-  applies to Marauder tokens") — a fizzled/no-op effect, never a crash. When reviewing any card
-  or engine path that places a new Tier token or Marauder (construction cards, promotions,
-  Wormhole of Construction), check whether it can be reached with the relevant Ion Battery at
-  zero — Marauders are the tightest case (4 total per player, only 1 base slot per Tier × 4
-  Tiers, so "one Marauder already in play on every Tier" is a normal mid-game state, not a
-  contrived one) — and if the underlying pool method throws (`require(ionBattery > 0)` or
-  similar) rather than the caller checking first and no-op'ing/rejecting gracefully, that's a
-  critical-failure bug regardless of how the rulebook's own card text is silent on the exhausted
-  case.
+- **Resource-exhaustion must never crash or hang the game — but Marauders are NOT a
+  finite-resource case; don't reintroduce that assumption.** An earlier engine version wrongly
+  modeled Marauders as drawn from a 4-per-player "Ion Battery," mirroring Tier tokens'
+  genuine one (rulebook.txt:150-163: "The Ion Battery is your draw pile... In the unlikely
+  event that a player runs out of tokens of a certain Tier, they must wait... The same applies
+  to Marauder tokens" — that last sentence is the one place the rulebook's own text points
+  toward a Marauder reserve). **Confirmed by the user, overriding that literal reading**: the
+  Parts List's "4x Marauder tokens per color" is a physical-component count, not an engine
+  resource pool; a Marauder simply spawns when a legal rule/board-event/card effect spawns one
+  and ceases to exist when destroyed, with no battery/reserve tracked anywhere. The only real
+  limits are the per-Tier cap (`MarauderPool.placeOnBirthCanal`'s `bypassCap`, base 1 per
+  Tier) and its Fate Harvest bypass (rule #9) — never a global per-player count. If a future
+  change reintroduces anything like `require(marauderReserve > 0)` or similar, that's a
+  regression back to the corrected-away assumption, not a resource-exhaustion fix. Tier
+  tokens are a genuinely different case and keep their real Ion Battery: when reviewing any
+  card or engine path that places a new Tier token (construction cards, promotions, Wormhole
+  of Construction), still check whether it can be reached with the Ion Battery at zero, and
+  flag it as a critical-failure bug if the underlying pool method throws
+  (`require(ionBattery > 0)` or similar) instead of the caller checking first and
+  no-op'ing/rejecting gracefully.
 - **A compound card effect (multiple sub-targets/sub-steps in one play — Corpuscle Rot's
   destroy-then-construct, Graviton Rift's up-to-4 destroys, Verdant Growth's 3 constructs,
   Galactic Roundabout's whole-board move) must not partially apply.** If implemented as a plain
