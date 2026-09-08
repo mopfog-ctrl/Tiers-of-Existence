@@ -104,6 +104,26 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   resolution re-locates the actual token/pile/zone at resolution time, or replays a
   possibly-stale snapshot taken when the card was played — the latter is a crash risk, not just
   an imprecision.
+- **Entering a Zone of Protection is the player's own choice, not automatic on landing** —
+  confirmed by the user, correcting an assumption the original implementation got wrong (it used
+  to call `TierTokenPool.enterZone` unconditionally the instant a token landed on the entry
+  square). The rulebook itself doesn't spell this timing out explicitly, so don't assume it from
+  the text alone; go by the confirmed ruling and the current code (`TurnEngine`'s
+  `SquareEffect.MayEnterZone` + opt-in `enterZoneOfProtection`, mirroring the pre-existing
+  `MayBuildMarauder`/`MayTransport` "offer, don't auto-apply" pattern — see CLAUDE.md's "Entering
+  a Zone is the player's own choice" section). If the choice isn't taken before the turn ends,
+  the token is just an ordinary, unprotected in-play token on that square from then on — it
+  doesn't get a second chance later, and it's fully exposed to anything that would otherwise
+  affect an in-play token (pass-through destroy, Plasma Burst's per-square sweep, etc.).
+- **Plasma Burst and Fluidic Wave both needed a user ruling beyond the printed card text** —
+  worth re-checking against the confirmed answers, not just the rulebook, if either card's
+  implementation ever changes: Plasma Burst's "3 neighboring squares" are 3 consecutive
+  main-loop positions freely chosen by the player, and it reaches into a Zone of Protection
+  specifically by having one of the 3 chosen squares be that Zone's own entry square (not by
+  spanning into the Zone's interior directly) — see `PlasmaBurstResolver`. Fluidic Wave's "removes
+  all tokens from the 1st Tier" stops at the card's own printed wording (in-play + Staging Pile
+  only) — a player's Ion Battery reserves are explicitly untouched, confirmed by the user rather
+  than left to guesswork — see `FluidicWaveResolver`.
 
 Keep answers focused and cite sources. Don't speculate about UI/UX, Android APIs, or
 anything outside "what does the rulebook say / does the code match it."
