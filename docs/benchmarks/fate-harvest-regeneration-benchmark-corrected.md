@@ -64,6 +64,43 @@ Pearson correlation between a card type's *final* multiplicity (bounded by its o
 | Dwarf Star | 0.206 |
 | Planetary Nebula | 0.262 |
 
+**Full per-card-type correlation table (all 32 types with a measured final multiplicity, sorted descending by r)** - the top/bottom-5 tables above are excerpts of this one; this full table, not just the excerpts, is what `StagnationPressureConfig.CORRECTED_BASELINE_STAGNATION_WEIGHTS`'s own positive-correlation subset is actually derived from:
+
+| Card | r |
+|---|---|
+| Graviton Rift | 0.368 |
+| Lucky Nebula | 0.365 |
+| Elemental Rebirth | 0.365 |
+| Evasive Action | 0.365 |
+| Infernal Abyss | 0.365 |
+| Essence Assimilator | 0.365 |
+| Phase Loss | 0.365 |
+| Parallel Phasing | 0.365 |
+| Materialize Help | 0.365 |
+| Luckier Nebula | 0.365 |
+| Galactic Roundabout | 0.365 |
+| Divine Assistance | 0.365 |
+| Phase Control | 0.365 |
+| Last Gasp | 0.365 |
+| Annulment (Antimatter) | 0.364 |
+| Tactical Step | 0.364 |
+| Tactical Motion | 0.362 |
+| Circulate (Elemental) | 0.360 |
+| Emitting Nebula | 0.355 |
+| Sidestep (Extinction Avoidance) | 0.353 |
+| Insidious Flux | 0.348 |
+| Delayed Motion | 0.347 |
+| Skip, Hop, and Jump (Dimensional) | 0.347 |
+| Radiation Burst | 0.343 |
+| Materialize Army | 0.342 |
+| Fluidic Wave | 0.339 |
+| Cleansing (Atmospheric) | 0.339 |
+| Planetary Nebula | 0.262 |
+| Dwarf Star | 0.206 |
+| Plasma Burst | 0.204 |
+| Verdant Growth | 0.194 |
+| Corpuscle Rot | 0.189 |
+
 ## Analysis
 
 1. **Direction vs. Baseline A**: per-player-count absolute mean-turns difference - 2P: 35.7, 3P: -57.3, 4P: 41.1, 5P: 19.2, 6P: 5.2.

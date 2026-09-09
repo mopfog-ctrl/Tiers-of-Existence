@@ -398,23 +398,38 @@ data class FateHarvestRegenerationConfig(
  * `null`) is the corrected model's own unmodified behavior; this class only ever runs when a
  * caller opts in via [FateHarvestRegenerationConfig.ANTI_STAGNATION] or an equivalent custom config.
  *
- * **Evidence source, corrected — but [CORRECTED_BASELINE_STAGNATION_WEIGHTS] is currently a
- * PLACEHOLDER, not yet re-derived.** [cardWeights]' default is meant to come from a dedicated,
- * genuinely clean corrected-model baseline benchmark run with [FateHarvestRegenerationConfig
- * .DEFAULT] (no stagnation pressure) under this file's own whole-game rarity ceiling. The first
- * attempt at that run (`docs/benchmarks/dynamic-reincarnation-benchmark-corrected-diagnostic.md`)
- * found 73 whole-game-rarity-ceiling violations caused by a since-fixed accounting gap (see
- * `GameState.resolvingCards`'s own class doc) — that run is explicitly NOT valid weighting
- * evidence (the user's own ruling: "That run found 73 violations of the model it was intended to
- * measure... Only the clean corrected run may supply evidence-derived Phase 1C weights") and is
- * preserved only as diagnostic record of the defect, not reused here. The numbers below are
- * carried over unchanged from that same contaminated run purely as a structural placeholder (so
- * this file keeps compiling and every existing test keeps passing) and MUST be replaced with
- * real values from a genuinely clean rerun (0 rarity-ceiling violations) before
- * [FateHarvestRegenerationConfig.ANTI_STAGNATION] is used for anything beyond compiling/testing
- * the mechanism itself. They are also explicitly NOT derived from the original, uncapped Phase 1B
- * run (`docs/benchmarks/dynamic-reincarnation-benchmark.md`, preserved unmodified as historical
- * record) — see this class's own doc.
+ * **Evidence source, re-derived from the clean corrected-model baseline (`PlayerCountFateHarvest
+ * RegenerationCorrectedBenchmarkTest`, `BASE_SEED = 2_100_000_000L`, 5,000 games, 0 whole-game-
+ * rarity-ceiling violations — `docs/benchmarks/fate-harvest-regeneration-benchmark-corrected.md`'s
+ * own full 32-card Table K5).** [CORRECTED_BASELINE_STAGNATION_WEIGHTS] below is no longer a
+ * placeholder — this is the clean run's own real correlation data, per the user's explicit "only
+ * the clean corrected run may supply evidence-derived Phase 1C weights" and "derive weights only
+ * from clean evidence." Neither the contaminated first attempt (73 violations,
+ * `docs/benchmarks/dynamic-reincarnation-benchmark-corrected-diagnostic.md`, preserved as
+ * diagnostic record only) nor the original uncapped Phase 1B run (`docs/benchmarks/dynamic-
+ * reincarnation-benchmark.md`, preserved as historical record) contributed anything to these
+ * values.
+ *
+ * **A genuine, previously-unknown finding this clean data surfaced: all 32 card types show a
+ * positive pooled correlation with game length (r = 0.189 to 0.368), none negative.** The
+ * pre-existing design below (documented before this clean data existed) called for excluding any
+ * card the evidence associates with *shorter* games — that carve-out is still implemented exactly
+ * as specified ([cardWeights] would simply omit such a card, or clamp a non-positive weight to 0.0
+ * in [FateHarvestRegenerationRules.stagnationPressureFor]), it just never fires on this data,
+ * because no such card exists in it. This is very likely a base-rate confound rather than a causal
+ * effect specific to any one card: a longer game mechanically produces more regenerations (Table
+ * K4), and more regenerations give literally every card type more opportunities to drift toward a
+ * higher final multiplicity, so *everything* ends up weakly-to-moderately positively correlated
+ * with length regardless of what that card actually does. The correlations are not uniform,
+ * though — they cluster into two visibly distinct bands: 27 cards tightly clustered at r ≈
+ * 0.339-0.368, and 5 markedly weaker outliers (Planetary Nebula 0.262, Dwarf Star 0.206, Plasma
+ * Burst 0.204, Verdant Growth 0.194, Corpuscle Rot 0.189) — 4 of those 5 are `SINGLE`-rarity,
+ * color-restricted cards (only one copy in the whole deck, playable by only one color, sometimes
+ * entirely absent when that color isn't seated — see "Color-specific cards and player-count deck
+ * size" in CLAUDE.md), a plausible availability confound of its own rather than a genuinely weaker
+ * stagnation effect. None of this is resolved or adjusted for here — the weights below use the raw
+ * measured r values directly, exactly as this class's own pre-existing design specifies, with the
+ * confound noted rather than silently corrected for.
  *
  * **What "evidence-weighted" means here, concretely** — the two things the user's own spec asked
  * to be evidence-driven rather than uniform:
@@ -422,12 +437,15 @@ data class FateHarvestRegenerationConfig(
  *   *positive* Pearson correlations from the corrected baseline's own pooled card-type-final-
  *   multiplicity-vs-game-length analysis, used directly as a 0.0-1.0 suppression weight (a
  *   stronger positive correlation gets proportionately stronger pressure once escalation is
- *   non-zero). Every card the corrected baseline associates with *shorter* games and every card
- *   with no measured correlation at all defaults to weight 0.0 and is never touched by this
- *   mechanism, regardless of how common it becomes — the user's own explicit "do not reduce cards
- *   merely because they become common if their prevalence contributes to resolution" ruling,
- *   applied literally: this file only ever suppresses, never boosts, and only ever suppresses a
- *   *positively*-weighted type.
+ *   non-zero) — on this data, that happens to be all 32 cards, but the weighting is still
+ *   evidence-scaled rather than a flat/uniform reduction: pressure varies roughly 2x between the
+ *   weakest (Corpuscle Rot, 0.189) and strongest (Graviton Rift, 0.368) card, tracking the measured
+ *   effect rather than applying one indiscriminate number to everything. Any card the corrected
+ *   baseline were to associate with *shorter* games, or with no measured correlation at all, would
+ *   default to weight 0.0 and never be touched by this mechanism, regardless of how common it
+ *   becomes — the user's own explicit "do not reduce cards merely because they become common if
+ *   their prevalence contributes to resolution" ruling, applied literally: this file only ever
+ *   suppresses, never boosts, and only ever suppresses a *positively*-weighted type.
  * - **Which multiplicity-state transition gets suppressed.** The corrected baseline only measures
  *   a card's *final* multiplicity (a count, itself now bounded by that card's own canonical
  *   rarity) against game length, not a separate per-transition-type breakdown — so "the
@@ -475,21 +493,48 @@ data class StagnationPressureConfig(
 ) {
     companion object {
         /**
-         * **PLACEHOLDER — not yet derived from a clean corrected-model run.** See
-         * [StagnationPressureConfig]'s own class doc: these are the same Pearson correlations the
-         * contaminated diagnostic run produced (`docs/benchmarks/dynamic-reincarnation-benchmark
-         * -corrected-diagnostic.md`), kept only so this file compiles and existing tests exercising
-         * the anti-stagnation *mechanism* (not its specific weight values) keep passing. Must be
-         * replaced with real values from a genuinely clean corrected-model rerun (0 rarity-ceiling
-         * violations) before being used as actual weighting evidence — not an immutable engine
-         * constant either way.
+         * **Derived from the clean corrected-model baseline** (`PlayerCountFateHarvestRegeneration
+         * CorrectedBenchmarkTest`, `BASE_SEED = 2_100_000_000L`, 5,000 games, 0 whole-game-rarity-
+         * ceiling violations) — the full 32-card pooled Pearson correlation table in
+         * `docs/benchmarks/fate-harvest-regeneration-benchmark-corrected.md`'s own Table K5, used
+         * verbatim (every card in that table has a positive r, per this class's own doc — the
+         * "positive correlations only" filter is real but doesn't exclude anything on this specific
+         * data). Not an immutable engine constant — a future config surface can supply a different
+         * map without touching [FateHarvestRegenerationRules]'s own logic at all.
          */
         val CORRECTED_BASELINE_STAGNATION_WEIGHTS: Map<String, Double> = mapOf(
-            "Radiation Burst" to 0.408,
-            "Graviton Rift" to 0.267,
-            "Fluidic Wave" to 0.254,
-            "Materialize Army" to 0.172,
-            "Parallel Phasing" to 0.158,
+            "Graviton Rift" to 0.368,
+            "Lucky Nebula" to 0.365,
+            "Elemental Rebirth" to 0.365,
+            "Evasive Action" to 0.365,
+            "Infernal Abyss" to 0.365,
+            "Essence Assimilator" to 0.365,
+            "Phase Loss" to 0.365,
+            "Parallel Phasing" to 0.365,
+            "Materialize Help" to 0.365,
+            "Luckier Nebula" to 0.365,
+            "Galactic Roundabout" to 0.365,
+            "Divine Assistance" to 0.365,
+            "Phase Control" to 0.365,
+            "Last Gasp" to 0.365,
+            "Annulment (Antimatter)" to 0.364,
+            "Tactical Step" to 0.364,
+            "Tactical Motion" to 0.362,
+            "Circulate (Elemental)" to 0.360,
+            "Emitting Nebula" to 0.355,
+            "Sidestep (Extinction Avoidance)" to 0.353,
+            "Insidious Flux" to 0.348,
+            "Delayed Motion" to 0.347,
+            "Skip, Hop, and Jump (Dimensional)" to 0.347,
+            "Radiation Burst" to 0.343,
+            "Materialize Army" to 0.342,
+            "Fluidic Wave" to 0.339,
+            "Cleansing (Atmospheric)" to 0.339,
+            "Planetary Nebula" to 0.262,
+            "Dwarf Star" to 0.206,
+            "Plasma Burst" to 0.204,
+            "Verdant Growth" to 0.194,
+            "Corpuscle Rot" to 0.189,
         )
 
         /** Phase 1C's own validated default — [CORRECTED_BASELINE_STAGNATION_WEIGHTS] plus the

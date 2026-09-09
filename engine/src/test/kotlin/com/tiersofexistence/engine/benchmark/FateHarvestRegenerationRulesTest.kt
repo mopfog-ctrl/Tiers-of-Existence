@@ -221,7 +221,7 @@ class FateHarvestRegenerationRulesTest {
     @Test
     fun `ANTI_STAGNATION at generation 0 behaves identically to Phase 1B's plain evolution - the first reshuffle is unaffected`() {
         val config = FateHarvestRegenerationConfig.ANTI_STAGNATION
-        val name = "Radiation Burst" // the single most heavily weighted card in TABLE_G5_STAGNATION_WEIGHTS
+        val name = "Radiation Burst" // any positively-weighted card in CORRECTED_BASELINE_STAGNATION_WEIGHTS works here
         repeat(500) { seed ->
             val plain = FateHarvestRegenerationRules.transition(2, Random(seed.toLong()), FateHarvestRegenerationConfig.DEFAULT)
             val pressured = FateHarvestRegenerationRules.transition(2, Random(seed.toLong()), config, cardName = name, generationIndex = 0)
@@ -231,12 +231,19 @@ class FateHarvestRegenerationRulesTest {
 
     @Test
     fun `ANTI_STAGNATION never suppresses a card absent from cardWeights, at any generation`() {
-        val config = FateHarvestRegenerationConfig.ANTI_STAGNATION
-        val name = "Last Gasp" // Table G5: r = -0.370, associated with SHORTER games - must never be suppressed
+        // The real, evidence-derived CORRECTED_BASELINE_STAGNATION_WEIGHTS happens to weight every
+        // single catalog card (all 32 showed a positive correlation on the clean corrected-model
+        // run - see that map's own class doc), so there's no real card left to test "absent from
+        // cardWeights" against using the actual ANTI_STAGNATION preset. This test exercises the
+        // underlying mechanism directly instead, with a synthetic config that only weights one
+        // card - proving a name genuinely absent from cardWeights is still never suppressed,
+        // independent of which specific cards the real evidence happens to include.
+        val config = FateHarvestRegenerationConfig(stagnationPressure = StagnationPressureConfig(cardWeights = mapOf("Weighted Card" to 0.9)))
+        val name = "Unweighted Card" // absent from cardWeights entirely - must never be suppressed
         repeat(500) { seed ->
             val plain = FateHarvestRegenerationRules.transition(2, Random(seed.toLong()), FateHarvestRegenerationConfig.DEFAULT)
             val pressured = FateHarvestRegenerationRules.transition(2, Random(seed.toLong()), config, cardName = name, generationIndex = 20)
-            assertEquals(plain, pressured, "a card with no positive Table G5 weight must be untouched even at a high generation index (seed=$seed)")
+            assertEquals(plain, pressured, "a card absent from cardWeights must be untouched even at a high generation index (seed=$seed)")
         }
     }
 

@@ -19,17 +19,24 @@ import java.io.File
 import kotlin.random.Random
 
 /**
- * **PHASE 1C — experimental, NOT canonical.** Characterizes the effect of the "evidence-weighted
- * anti-stagnation" reshuffle rule ([FateHarvestRegenerationConfig.ANTI_STAGNATION] —
- * [FateHarvestRegenerationRules] driven with [StagnationPressureConfig]) against BOTH Baseline A
- * (commit `d530a21`, `docs/benchmarks/player-count-benchmark.md`, fixed-composition
- * `PlainShuffle`) AND Phase 1B's own plain-evolution dynamic reincarnation (commit reported in
- * `docs/benchmarks/dynamic-reincarnation-benchmark.md`, hardcoded below as `BASELINE_B`) —
- * specifically to see whether progressively suppressing the card types Table G5 associated with
- * prolonged games counteracts Phase 1B's own tail-inflation (p95 blowout) finding while
- * preserving natural early-game deck evolution. Whether any of this should ever become canonical
- * is a separate, later decision this file does not make or recommend either way; it only
- * measures.
+ * **PHASE 1C — experimental, NOT canonical.** Characterizes the effect of the evidence-weighted
+ * anti-stagnation reshuffle rule ([FateHarvestRegenerationConfig.ANTI_STAGNATION] —
+ * [FateHarvestRegenerationRules] driven with [StagnationPressureConfig], whose
+ * [StagnationPressureConfig.CORRECTED_BASELINE_STAGNATION_WEIGHTS] are now real, derived from the
+ * clean corrected-model run below) against **the clean corrected-model baseline as the control**
+ * (`PlayerCountFateHarvestRegenerationCorrectedBenchmarkTest`, `docs/benchmarks/fate-harvest-
+ * regeneration-benchmark-corrected.md`, 5,000 games, 0 violations — hardcoded below as
+ * `CORRECTED_BASELINE`, per the user's own explicit instruction to treat that run as the control),
+ * with unmodified Baseline A (commit `d530a21`, `docs/benchmarks/player-count-benchmark.md`,
+ * fixed-composition `PlainShuffle`, no regeneration mechanic at all) shown alongside for
+ * additional context only. This measures whether progressively suppressing the card types the
+ * corrected baseline's own Table K5 positively correlates with longer games shifts game length
+ * relative to that same corrected model with the suppression turned off. Neither this file nor the
+ * weight derivation it depends on alters the regeneration semantics or rarity ceilings
+ * [FateHarvestRegenerationRules]/[FateHarvestRegenerationConfig] already implement — only
+ * [StagnationPressureConfig]'s own suppression weights are new. Whether any of this should ever
+ * become canonical is a separate, later decision this file does not make or recommend either way;
+ * it only measures.
  *
  * **Generation-index threading**: unlike Phase 1B's [PlayerCountFateHarvestRegenerationBenchmarkTest]
  * (which calls [FateHarvestRegenerationRules.regenerate] with its own default `generationIndex = 0`
@@ -38,8 +45,9 @@ import kotlin.random.Random
  * [StagnationPressureConfig.escalation] depends on to apply progressively stronger pressure at
  * later reshuffles while leaving a game's first reshuffle to evolve purely naturally.
  *
- * **Scale**: 1,000 games per player-count cohort (5,000 total), matching Phase 1B's own scale —
- * a screening characterization, not a canonical baseline needing Baseline A's 8,750-game rigor.
+ * **Scale**: 1,000 games per player-count cohort (5,000 total), matching the corrected baseline's
+ * own Phase 1B-derived scale — a screening characterization, not a canonical baseline needing
+ * Baseline A's 8,750-game rigor.
  *
  * Gated behind its own `toe.benchmark.antistagnation` system property (forwarded via
  * `engine/build.gradle.kts`'s `tasks.test` block) — skipped by default. Run via:
@@ -54,7 +62,8 @@ class PlayerCountAntiStagnationBenchmarkTest {
         private const val WARMUP_GAMES = 30
         private val PLAYER_COUNTS = listOf(2, 3, 4, 5, 6)
 
-        // Independent of Baseline A's seed ranges (5.0e8+, 9.0e8+) and Phase 1B's (1.3e9+).
+        // Independent of Baseline A's seed ranges (5.0e8+, 9.0e8+), Phase 1B's (1.3e9+), and the
+        // corrected-model control's own (2.1e9+).
         private const val BASE_SEED = 1_700_000_000L
         private const val PLAYER_COUNT_SEED_STRIDE = 10_000_000L
 
@@ -92,15 +101,21 @@ class PlayerCountAntiStagnationBenchmarkTest {
             BaselineRow(6, 2419.2, 49.18, 1821.0, 5241.0, 6737.0, 0.027),
         )
 
-        /** Phase 1B's own validated figures (plain, ungoverned dynamic reincarnation — no
-         * anti-stagnation pressure), `docs/benchmarks/dynamic-reincarnation-benchmark.md`'s Table
-         * G1/G3, hardcoded here rather than re-running Phase 1B (unchanged and already validated). */
-        private val BASELINE_B = listOf(
-            BaselineRow(2, 652.2, 18.92, 478.0, 1236.0, 1575.0, 0.000),
-            BaselineRow(3, 988.9, 30.45, 688.0, 2007.0, 2956.0, 0.003),
-            BaselineRow(4, 1572.3, 50.61, 1009.0, 3560.0, 4924.0, 0.020),
-            BaselineRow(5, 2083.8, 66.81, 1213.0, 5738.0, 8000.0, 0.057),
-            BaselineRow(6, 2614.0, 77.23, 1557.0, 8000.0, 8000.0, 0.104),
+        /** **The control for this benchmark**, per the user's own explicit instruction — the clean
+         * corrected-model baseline's own validated figures (rarity-ceiling-respecting regeneration,
+         * `FateHarvestRegenerationConfig.DEFAULT`, no anti-stagnation pressure at all):
+         * `PlayerCountFateHarvestRegenerationCorrectedBenchmarkTest`, `BASE_SEED = 2_100_000_000L`,
+         * 5,000 games, 0 invariant violations, `docs/benchmarks/fate-harvest-regeneration-
+         * benchmark-corrected.md`'s own Tables K1/K3, hardcoded here rather than re-running that
+         * benchmark (unchanged and already validated). Superseded name `BASELINE_B` (the original,
+         * uncapped Phase 1B model's own figures) no longer applies — this benchmark now compares
+         * against the corrected model specifically, not the superseded uncapped one. */
+        private val CORRECTED_BASELINE = listOf(
+            BaselineRow(2, 669.0, 15.25, 535.0, 1265.0, 1601.0, 0.000),
+            BaselineRow(3, 869.7, 19.67, 705.0, 1674.0, 2164.0, 0.000),
+            BaselineRow(4, 1327.3, 31.51, 1067.0, 2635.0, 3416.0, 0.000),
+            BaselineRow(5, 1776.9, 42.69, 1421.0, 3578.0, 4544.0, 0.004),
+            BaselineRow(6, 2424.4, 61.14, 1796.0, 5373.0, 6888.0, 0.031),
         )
     }
 
@@ -280,7 +295,7 @@ class PlayerCountAntiStagnationBenchmarkTest {
     }
 
     @Test
-    fun `experimental anti-stagnation reincarnation benchmark, compared against Baseline A and Phase 1B`() {
+    fun `experimental anti-stagnation benchmark, compared against the clean corrected baseline (control) and Baseline A`() {
         assumeTrue(
             System.getProperty("toe.benchmark.antistagnation") == "true",
             "Skipped by default (experimental, heavy) - run with -Dtoe.benchmark.antistagnation=true to execute.",
@@ -292,7 +307,7 @@ class PlayerCountAntiStagnationBenchmarkTest {
         val allViolations = cohorts.flatMap { it.violations }
 
         val report = buildReport(cohorts, allViolations)
-        val reportFile = File("../docs/benchmarks/anti-stagnation-benchmark.md")
+        val reportFile = File("../docs/benchmarks/anti-stagnation-benchmark-corrected.md")
         reportFile.parentFile.mkdirs()
         reportFile.writeText(report)
         println(report)
@@ -306,28 +321,39 @@ class PlayerCountAntiStagnationBenchmarkTest {
 
     private fun buildReport(cohorts: List<CohortResult>, violations: List<InvariantViolation>): String {
         val sb = StringBuilder()
-        sb.appendLine("# T.O.E. Experimental Anti-Stagnation Fate Harvest Reincarnation Benchmark (Phase 1C)")
+        sb.appendLine("# T.O.E. Experimental Anti-Stagnation Fate Harvest Regeneration Benchmark (Phase 1C, vs. corrected baseline)")
         sb.appendLine()
         sb.appendLine("**Experimental, not canonical.** Compares the evidence-weighted anti-stagnation reshuffle rule " +
-            "(`FateHarvestRegenerationConfig.ANTI_STAGNATION`) against both Baseline A (commit `d530a21`, " +
-            "`docs/benchmarks/player-count-benchmark.md`) and Phase 1B's own plain dynamic reincarnation " +
-            "(`docs/benchmarks/dynamic-reincarnation-benchmark.md`). No balance or canon decision is made or " +
-            "recommended by this report - it measures effects only, per the task's own explicit scope.")
+            "(`FateHarvestRegenerationConfig.ANTI_STAGNATION`) against **the clean corrected-model baseline as the " +
+            "control** (`PlayerCountFateHarvestRegenerationCorrectedBenchmarkTest`, `docs/benchmarks/fate-harvest-" +
+            "regeneration-benchmark-corrected.md`, 5,000 games, 0 violations, hardcoded below as `CORRECTED_BASELINE`), " +
+            "with unmodified Baseline A (commit `d530a21`, `docs/benchmarks/player-count-benchmark.md`) shown alongside " +
+            "for additional context only. Neither `FateHarvestRegenerationRules`'s transition/refill/cull mechanics nor " +
+            "the whole-game rarity ceiling are altered here - only `StagnationPressureConfig`'s evidence-derived " +
+            "suppression weights (see `FateHarvestRegenerationRules.kt`'s own class doc for their derivation from the " +
+            "corrected baseline's full Table K5) are new. No balance or canon decision is made or recommended by this " +
+            "report - it measures effects only, per the task's own explicit scope.")
         sb.appendLine()
         sb.appendLine("Scale: $GAMES_PER_COHORT games/cohort x 5 player counts = ${GAMES_PER_COHORT * 5} total games, single stage, " +
-            "seed = $BASE_SEED + playerCount * $PLAYER_COUNT_SEED_STRIDE + gameIndex (independent of Baseline A's and Phase 1B's own seed ranges).")
+            "seed = $BASE_SEED + playerCount * $PLAYER_COUNT_SEED_STRIDE + gameIndex (independent of Baseline A's and the corrected baseline's own seed ranges).")
         sb.appendLine()
         sb.appendLine("## Mechanism")
         sb.appendLine()
         sb.appendLine(
-            "- **Same underlying transition/refill/cull rules as Phase 1B** " +
-                "(`FateHarvestRegenerationRules`), with `FateHarvestRegenerationConfig.stagnationPressure` set to " +
-                "`StagnationPressureConfig.DEFAULT`.\n" +
-                "- **Evidence-weighted suppression**: only card types Table G5 positively correlates with longer " +
-                "games (Radiation Burst r=0.408, Graviton Rift r=0.267, Fluidic Wave r=0.254, Materialize Army " +
-                "r=0.172, Parallel Phasing r=0.158) are ever suppressed, proportionally to their own correlation " +
-                "strength - every negatively-correlated card (associated with shorter games) and every card with " +
-                "no measured effect is left completely untouched, never suppressed merely for becoming common.\n" +
+            "- **Same underlying transition/refill/cull rules and whole-game rarity ceiling as the corrected-model " +
+                "control** (`FateHarvestRegenerationRules`, `FateHarvestRegenerationConfig.DEFAULT`), with " +
+                "`FateHarvestRegenerationConfig.stagnationPressure` additionally set to `StagnationPressureConfig.DEFAULT` " +
+                "- the only difference from the control.\n" +
+                "- **Evidence-weighted suppression, derived from the corrected baseline's own full Table K5** (all 32 " +
+                "card types, not an excerpt): every card type in the deck showed a positive pooled correlation with " +
+                "game length on this clean data (r = 0.189 to 0.368, none negative - see " +
+                "`StagnationPressureConfig`'s own class doc for that finding and the likely base-rate confound behind " +
+                "it), so `StagnationPressureConfig.CORRECTED_BASELINE_STAGNATION_WEIGHTS` suppresses every card type, " +
+                "each proportionally to its own measured correlation strength - the strongest (Graviton Rift, 0.368) " +
+                "gets roughly double the pressure of the weakest (Corpuscle Rot, 0.189). Had any card shown a negative " +
+                "correlation (associated with shorter games) or no measured correlation at all, it would default to " +
+                "weight 0.0 and never be suppressed regardless of how common it becomes - that carve-out is still " +
+                "implemented, it simply never fires on this data.\n" +
                 "- **Multiplicity-state targeting**: suppression acts specifically on a weighted card's own " +
                 "upward-count transitions (becoming more abundant) - shifting that probability mass toward its " +
                 "downward transitions - and, in the 4+-copy bucket (which has no upward outcome to begin with), " +
@@ -339,37 +365,37 @@ class PlayerCountAntiStagnationBenchmarkTest {
         )
         sb.appendLine()
 
-        sb.appendLine("## Table H1 - Anti-Stagnation (C) vs. Baseline A vs. Phase 1B (B) - game length")
+        sb.appendLine("## Table H1 - Anti-Stagnation (C) vs. corrected-baseline control (Control) vs. Baseline A - game length")
         sb.appendLine()
-        sb.appendLine("| Player count | C mean turns | B mean turns | A mean turns | C vs A % | C vs B % | C median | B median | A median | C p95 | B p95 | A p95 | C cap rate | B cap rate | A cap rate |")
+        sb.appendLine("| Player count | C mean turns | Control mean turns | A mean turns | C vs Control % | C vs A % | C median | Control median | A median | C p95 | Control p95 | A p95 | C cap rate | Control cap rate | A cap rate |")
         sb.appendLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         cohorts.forEach { c ->
             val a = BASELINE_A.first { it.playerCount == c.playerCount }
-            val b = BASELINE_B.first { it.playerCount == c.playerCount }
+            val control = CORRECTED_BASELINE.first { it.playerCount == c.playerCount }
+            val vsControl = (c.meanTurns - control.meanTurns) / control.meanTurns * 100
             val vsA = (c.meanTurns - a.meanTurns) / a.meanTurns * 100
-            val vsB = (c.meanTurns - b.meanTurns) / b.meanTurns * 100
             sb.appendLine(
-                "| ${c.playerCount} | ${fmt(c.meanTurns)} | ${fmt(b.meanTurns)} | ${fmt(a.meanTurns)} | ${fmt(vsA, 2)}% | ${fmt(vsB, 2)}% | " +
-                    "${fmt(c.medianTurns, 0)} | ${fmt(b.medianTurns, 0)} | ${fmt(a.medianTurns, 0)} | " +
-                    "${fmt(c.p95Turns, 0)} | ${fmt(b.p95)} | ${fmt(a.p95)} | " +
-                    "${fmt(c.capRate * 100, 2)}% | ${fmt(b.capRate * 100, 2)}% | ${fmt(a.capRate * 100, 2)}% |",
+                "| ${c.playerCount} | ${fmt(c.meanTurns)} | ${fmt(control.meanTurns)} | ${fmt(a.meanTurns)} | ${fmt(vsControl, 2)}% | ${fmt(vsA, 2)}% | " +
+                    "${fmt(c.medianTurns, 0)} | ${fmt(control.medianTurns, 0)} | ${fmt(a.medianTurns, 0)} | " +
+                    "${fmt(c.p95Turns, 0)} | ${fmt(control.p95)} | ${fmt(a.p95)} | " +
+                    "${fmt(c.capRate * 100, 2)}% | ${fmt(control.capRate * 100, 2)}% | ${fmt(a.capRate * 100, 2)}% |",
             )
         }
         sb.appendLine()
 
-        sb.appendLine("## Table H2 - SEM and statistical distinguishability of C from A and from B")
+        sb.appendLine("## Table H2 - SEM and statistical distinguishability of C from the corrected-baseline control and from Baseline A")
         sb.appendLine()
-        sb.appendLine("| Player count | C mean turns | C SEM | z (C vs A) | Distinguishable from A? | z (C vs B) | Distinguishable from B? |")
+        sb.appendLine("| Player count | C mean turns | C SEM | z (C vs Control) | Distinguishable from Control? | z (C vs A) | Distinguishable from A? |")
         sb.appendLine("|---|---|---|---|---|---|---|")
         cohorts.forEach { c ->
             val a = BASELINE_A.first { it.playerCount == c.playerCount }
-            val b = BASELINE_B.first { it.playerCount == c.playerCount }
+            val control = CORRECTED_BASELINE.first { it.playerCount == c.playerCount }
+            val zControl = (c.meanTurns - control.meanTurns) / kotlin.math.sqrt(c.semTurns * c.semTurns + control.semTurns * control.semTurns)
             val zA = (c.meanTurns - a.meanTurns) / kotlin.math.sqrt(c.semTurns * c.semTurns + a.semTurns * a.semTurns)
-            val zB = (c.meanTurns - b.meanTurns) / kotlin.math.sqrt(c.semTurns * c.semTurns + b.semTurns * b.semTurns)
             sb.appendLine(
-                "| ${c.playerCount} | ${fmt(c.meanTurns)} | ${fmt(c.semTurns, 2)} | ${fmt(zA, 2)} | " +
-                    "${if (kotlin.math.abs(zA) > 1.96) "**Yes**" else "No"} | ${fmt(zB, 2)} | " +
-                    "${if (kotlin.math.abs(zB) > 1.96) "**Yes**" else "No"} |",
+                "| ${c.playerCount} | ${fmt(c.meanTurns)} | ${fmt(c.semTurns, 2)} | ${fmt(zControl, 2)} | " +
+                    "${if (kotlin.math.abs(zControl) > 1.96) "**Yes**" else "No"} | ${fmt(zA, 2)} | " +
+                    "${if (kotlin.math.abs(zA) > 1.96) "**Yes**" else "No"} |",
             )
         }
         sb.appendLine()
@@ -386,38 +412,38 @@ class PlayerCountAntiStagnationBenchmarkTest {
         sb.appendLine("## Analysis")
         sb.appendLine()
         val byPc = cohorts.sortedBy { it.playerCount }
-        val diffsVsB = byPc.map { c -> c.playerCount to (c.meanTurns - BASELINE_B.first { it.playerCount == c.playerCount }.meanTurns) }
-        val allShorterThanB = diffsVsB.all { it.second < 0 }
-        val allLongerThanB = diffsVsB.all { it.second > 0 }
-        val directionVsB = when {
-            allShorterThanB -> "consistently SHORTENS games relative to Phase 1B's plain evolution (every player count's mean turns is lower under Anti-Stagnation than Phase 1B)"
-            allLongerThanB -> "consistently LENGTHENS games relative to Phase 1B's plain evolution (every player count's mean turns is higher under Anti-Stagnation than Phase 1B)"
-            else -> "has a MIXED / player-count-dependent effect relative to Phase 1B's plain evolution (not uniformly shorter or longer across all 5 cohorts)"
+        val diffsVsControl = byPc.map { c -> c.playerCount to (c.meanTurns - CORRECTED_BASELINE.first { it.playerCount == c.playerCount }.meanTurns) }
+        val allShorterThanControl = diffsVsControl.all { it.second < 0 }
+        val allLongerThanControl = diffsVsControl.all { it.second > 0 }
+        val directionVsControl = when {
+            allShorterThanControl -> "consistently SHORTENS games relative to the corrected-baseline control (every player count's mean turns is lower under Anti-Stagnation than the control)"
+            allLongerThanControl -> "consistently LENGTHENS games relative to the corrected-baseline control (every player count's mean turns is higher under Anti-Stagnation than the control)"
+            else -> "has a MIXED / player-count-dependent effect relative to the corrected-baseline control (not uniformly shorter or longer across all 5 cohorts)"
         }
-        sb.appendLine("1. **Effect on Phase 1B's own tail-inflation**: Anti-Stagnation $directionVsB. Per-player-count " +
-            "absolute mean-turns difference vs. Phase 1B: " + diffsVsB.joinToString(", ") { (pc, d) -> "${pc}P: ${fmt(d)}" } + ".")
-        val p95DiffsVsB = byPc.map { c -> c.p95Turns - BASELINE_B.first { it.playerCount == c.playerCount }.p95 }
-        sb.appendLine("2. **Tail effect specifically (p95)**: p95 difference vs. Phase 1B by player count - " +
-            byPc.zip(p95DiffsVsB).joinToString(", ") { (c, d) -> "${c.playerCount}P: ${fmt(d)}" } +
-            ". A negative shift here indicates the mechanism is successfully compressing Phase 1B's own runaway-long-game tail; " +
+        sb.appendLine("1. **Effect vs. the corrected-baseline control**: Anti-Stagnation $directionVsControl. Per-player-count " +
+            "absolute mean-turns difference vs. the control: " + diffsVsControl.joinToString(", ") { (pc, d) -> "${pc}P: ${fmt(d)}" } + ".")
+        val p95DiffsVsControl = byPc.map { c -> c.p95Turns - CORRECTED_BASELINE.first { it.playerCount == c.playerCount }.p95 }
+        sb.appendLine("2. **Tail effect specifically (p95)**: p95 difference vs. the corrected-baseline control by player count - " +
+            byPc.zip(p95DiffsVsControl).joinToString(", ") { (c, d) -> "${c.playerCount}P: ${fmt(d)}" } +
+            ". A negative shift here indicates the mechanism is successfully compressing the control's own long-game tail; " +
             "the mechanism's whole design intent is to act preferentially on this tail (deeper games mean more regenerations, " +
             "which means more escalated pressure), so this is the single most direct test of whether it worked as designed.")
         val diffsVsA = byPc.map { c -> c.playerCount to (c.meanTurns - BASELINE_A.first { it.playerCount == c.playerCount }.meanTurns) }
         sb.appendLine("3. **Comparison against unmodified Baseline A**: per-player-count absolute mean-turns difference vs. " +
             "Baseline A - " + diffsVsA.joinToString(", ") { (pc, d) -> "${pc}P: ${fmt(d)}" } + " (Baseline A never uses any " +
-            "reincarnation mechanic at all, so this shows the net effect of dynamic reincarnation-plus-suppression together, " +
-            "not the suppression's effect in isolation - see point 1/2 above for that).")
-        val capDiffsVsB = byPc.map { c -> (c.capRate - BASELINE_B.first { it.playerCount == c.playerCount }.capRate) * 100 }
-        sb.appendLine("4. **Cap-rate effect vs. Phase 1B**: percentage-point difference in cap rate (hit the " +
-            "$MAX_TURNS_PER_GAME-turn cap without a winner) - " + byPc.zip(capDiffsVsB).joinToString(", ") { (c, d) -> "${c.playerCount}P: ${fmt(d, 2)}pp" } +
-            ". A negative value at a given player count means fewer games under Anti-Stagnation hit the cap than under Phase 1B's plain evolution.")
-        sb.appendLine("5. **Statistical distinguishability**: see Table H2 - z-scores against both Baseline A and Phase 1B, " +
+            "regeneration mechanic at all, so this shows the net effect of rarity-ceiling regeneration-plus-suppression " +
+            "together, not the suppression's effect in isolation - see point 1/2 above for that).")
+        val capDiffsVsControl = byPc.map { c -> (c.capRate - CORRECTED_BASELINE.first { it.playerCount == c.playerCount }.capRate) * 100 }
+        sb.appendLine("4. **Cap-rate effect vs. the corrected-baseline control**: percentage-point difference in cap rate (hit the " +
+            "$MAX_TURNS_PER_GAME-turn cap without a winner) - " + byPc.zip(capDiffsVsControl).joinToString(", ") { (c, d) -> "${c.playerCount}P: ${fmt(d, 2)}pp" } +
+            ". A negative value at a given player count means fewer games under Anti-Stagnation hit the cap than under the control.")
+        sb.appendLine("5. **Statistical distinguishability**: see Table H2 - z-scores against both the corrected-baseline control and Baseline A, " +
             "rather than treating any nonzero observed difference as necessarily real.")
         sb.appendLine("6. **Generation depth**: mean regenerations/game by player count - " +
             byPc.joinToString(", ") { "${it.playerCount}P: ${fmt(it.meanGenerationCount)}" } + " (see Table H3) - compare against " +
-            "Phase 1B's own Table G4 figures to see whether suppression changed how often regeneration itself happens, not just its outcome.")
+            "the corrected baseline's own Table K4 figures to see whether suppression changed how often regeneration itself happens, not just its outcome.")
         sb.appendLine("7. **Correctness**: " +
-            (if (violations.isEmpty()) "0 invariant violations across ${cohorts.sumOf { it.games.size }} experimental games (total-conservation, token-conservation, Phase-validity, and winner-square checks all held throughout; the fixed-composition per-card-name invariant was deliberately NOT applied to this experimental mode, matching Phase 1B's own design)."
+            (if (violations.isEmpty()) "0 invariant violations across ${cohorts.sumOf { it.games.size }} experimental games (total-conservation, token-conservation, Phase-validity, and winner-square checks all held throughout; the fixed-composition per-card-name invariant was deliberately NOT applied to this experimental mode, since per-type multiplicity evolving is the whole point of both the corrected model and this suppression variant of it)."
             else "**${violations.size} violation(s) found** - see raw detail. Any correctness failure supersedes the statistical analysis above; these must be root-caused before treating any duration finding as reliable."))
         sb.appendLine()
         sb.appendLine("No balance change, canon decision, or recommendation is made based on the above - this is a measurement " +
