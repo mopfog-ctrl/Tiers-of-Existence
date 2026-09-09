@@ -19,11 +19,20 @@ class TurnManipulationCardResolversTest {
 
     private fun cardNamed(name: String) = FateHarvestCatalog.all.single { it.name == name }
 
-    private fun drawnRequest(player: PlayerColor, cardName: String, tier: TierLevel, squarePosition: Int = 6) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed(cardName),
-        triggeringEvent = TriggeringEvent.DrawnFromSquare(tier, squarePosition),
-    )
+    // Simulates a real Fate Harvest draw's own two-step lifecycle (TurnEngine.beginResolvingCard,
+    // then whatever later discards it - here, the resolver's own CardLifecycle.attemptPlay call)
+    // rather than only building the CardPlayRequest, since GameState.resolvingCards now enforces
+    // that every DrawnFromSquare-triggered card was actually begun-resolving first - see
+    // GameState.resolvingCards' own class doc.
+    private fun drawnRequest(state: GameState, player: PlayerColor, cardName: String, tier: TierLevel, squarePosition: Int = 6): CardPlayRequest {
+        val card = cardNamed(cardName)
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            triggeringEvent = TriggeringEvent.DrawnFromSquare(tier, squarePosition),
+        )
+    }
 
     // --- Phase Loss ---
 
@@ -33,7 +42,7 @@ class TurnManipulationCardResolversTest {
         state.skipEmptyPhases() // Round 1, 1st Tier Phase, RED up first
         assertEquals(RED, state.currentTurn)
 
-        val result = PhaseLossResolver.resolve(state, drawnRequest(RED, "Phase Loss", TierLevel.FIRST))
+        val result = PhaseLossResolver.resolve(state, drawnRequest(state, RED, "Phase Loss", TierLevel.FIRST))
         assertIs<CardPlayResult.Resolved>(result)
 
         state.endTurn() // RED's CURRENT turn still happens (per confirmed canon: never retroactive)
@@ -59,7 +68,7 @@ class TurnManipulationCardResolversTest {
         state.skipEmptyPhases()
         assertEquals(RED, state.currentTurn)
 
-        val result = PhaseControlResolver.resolve(state, drawnRequest(RED, "Phase Control", TierLevel.FIRST), TierLevel.FIRST)
+        val result = PhaseControlResolver.resolve(state, drawnRequest(state, RED, "Phase Control", TierLevel.FIRST), TierLevel.FIRST)
         assertIs<CardPlayResult.Resolved>(result)
 
         assertEquals(RED, state.currentTurn) // RED's normal turn first
@@ -75,7 +84,7 @@ class TurnManipulationCardResolversTest {
         state.players.getValue(RED).tierPool(TierLevel.SECOND).startToken()
         assertEquals(Phase.Marauder, state.currentPhase) // drawn conceptually before any Tier Phase this Round
 
-        val result = PhaseControlResolver.resolve(state, drawnRequest(RED, "Phase Control", TierLevel.FIRST), TierLevel.SECOND)
+        val result = PhaseControlResolver.resolve(state, drawnRequest(state, RED, "Phase Control", TierLevel.FIRST), TierLevel.SECOND)
         assertIs<CardPlayResult.Resolved>(result)
 
         state.skipEmptyPhases()

@@ -4,9 +4,9 @@ import com.tiersofexistence.engine.cards.FateHarvestCard
 import kotlin.random.Random
 
 /**
- * The experimental "dynamic Fate Harvest reincarnation" reshuffle rule (Phase 1B) — **not
+ * The experimental Fate Harvest regeneration reshuffle rule (Phase 1B) — **not
  * canonical**, benchmarked only to characterize its effect before any decision to adopt it (see
- * `PlayerCountDynamicReincarnationBenchmarkTest`). Plugs into `FateHarvestDeck.ReshuffleStrategy`
+ * `PlayerCountFateHarvestRegenerationBenchmarkTest`). Plugs into `FateHarvestDeck.ReshuffleStrategy`
  * — Baseline A (`FateHarvestDeck.ReshuffleStrategy.PlainShuffle`, the only strategy any canonical
  * game ever uses) is completely untouched by this file's existence.
  *
@@ -48,20 +48,20 @@ import kotlin.random.Random
  *    through every regeneration, letting only *composition* evolve — `FateHarvestDeck.draw()`
  *    itself now enforces this as a hard invariant (`ReshuffleStrategy` must return the same size
  *    it was given), so a bug here fails loudly rather than silently drifting the total. This is a
- *    *semantic invariant*, never exposed via [ReincarnationConfig] — see that class's own doc for
+ *    *semantic invariant*, never exposed via [FateHarvestRegenerationConfig] — see that class's own doc for
  *    why it's structurally different from the config's genuinely swappable numeric knobs.
  * 3. **What "whole-game rarity ceiling" means at a regeneration event.** A card type's own
  *    canonical rarity minus however many copies of it currently sit *outside* the discard pile
  *    (in hands — never the draw pile, which [regenerate] is only ever called once empty, per
  *    `FateHarvestDeck.draw`) is the most that type may occupy *within* the regenerated pile. This
- *    is a *semantic invariant*, not a configurable number — see [ReincarnationConfig]'s own doc.
+ *    is a *semantic invariant*, not a configurable number — see [FateHarvestRegenerationConfig]'s own doc.
  *
  * **Parameterization** (standing policy from Phase 1B on — see CLAUDE.md's own "Standing
  * requirement" section): every probability and selection strategy below is a field on
- * [ReincarnationConfig] — not inlined into this object's own control flow. [transition]/
+ * [FateHarvestRegenerationConfig] — not inlined into this object's own control flow. [transition]/
  * [regenerate] both accept a config and are otherwise unaware of what specific numbers it holds.
  */
-object DynamicReincarnationRules {
+object FateHarvestRegenerationRules {
 
     /**
      * Samples this experimental deck's transition outcome for one card type currently at
@@ -88,7 +88,7 @@ object DynamicReincarnationRules {
     fun transition(
         currentCount: Int,
         random: Random,
-        config: ReincarnationConfig = ReincarnationConfig.DEFAULT,
+        config: FateHarvestRegenerationConfig = FateHarvestRegenerationConfig.DEFAULT,
         cardName: String? = null,
         generationIndex: Int = 0,
         ceiling: Int = Int.MAX_VALUE,
@@ -135,11 +135,11 @@ object DynamicReincarnationRules {
      * resolution" ruling) and [StagnationPressureConfig.escalation] evaluated at
      * [generationIndex] (0 at the very first reshuffle of a game, so that reshuffle evolves
      * purely naturally — escalating only across the *successive* reshuffles the user's spec asks
-     * for). Returns 0.0 whenever [ReincarnationConfig.stagnationPressure] is unset (the default,
+     * for). Returns 0.0 whenever [FateHarvestRegenerationConfig.stagnationPressure] is unset (the default,
      * disabled state) or [cardName] is null — the only two ways [transition]'s pre-existing,
      * already-validated behavior stays perfectly reproducible for any caller that doesn't opt in.
      */
-    private fun stagnationPressureFor(config: ReincarnationConfig, cardName: String?, generationIndex: Int): Double {
+    private fun stagnationPressureFor(config: FateHarvestRegenerationConfig, cardName: String?, generationIndex: Int): Double {
         val stagnation = config.stagnationPressure ?: return 0.0
         if (cardName == null) return 0.0
         val weight = stagnation.cardWeights[cardName] ?: return 0.0
@@ -208,13 +208,13 @@ object DynamicReincarnationRules {
      *    reproducible from a seed like everything else in this codebase — capped at that type's
      *    own remaining whole-game capacity (see [effectiveCeilingWithinDiscardPile] below).
      * 2. The provisional pool is built from the post-transition counts.
-     * 3. If over target size: [ReincarnationConfig.cullSelector] removes the excess — by default,
+     * 3. If over target size: [FateHarvestRegenerationConfig.cullSelector] removes the excess — by default,
      *    uniformly at random *without replacement* across individual provisional cards (not card
      *    types), so a type with more provisional copies gets proportionately more removal
      *    exposure, never artificially protected.
      * 4. If under target size: refill fills the remaining slots one at a time. For each slot,
      *    only card types with remaining capacity beneath their own whole-game rarity ceiling are
-     *    eligible; [ReincarnationConfig.refillSelector] picks among exactly that eligible subset
+     *    eligible; [FateHarvestRegenerationConfig.refillSelector] picks among exactly that eligible subset
      *    (by default, an independent uniform random pick *with replacement*, never favoring a
      *    canonically-common card over a canonically-rare one, and a type currently at 0 copies is
      *    exactly as eligible as any other *below its own ceiling*); the picked type's remaining
@@ -243,17 +243,17 @@ object DynamicReincarnationRules {
      * [generationIndex] is how many regenerations have already happened this game *before* this
      * one (0 for the very first reshuffle) — the caller's own responsibility to track and
      * increment across a game's whole lifetime, passed straight through to every [transition]
-     * call this regeneration makes so [ReincarnationConfig.stagnationPressure] (when configured)
+     * call this regeneration makes so [FateHarvestRegenerationConfig.stagnationPressure] (when configured)
      * can apply progressively stronger anti-stagnation pressure at later reshuffles while leaving
      * a game's earliest reshuffle(s) to evolve naturally. Meaningless (and harmless — no-op) for
-     * a [config] that leaves [ReincarnationConfig.stagnationPressure] unset, which is why it
+     * a [config] that leaves [FateHarvestRegenerationConfig.stagnationPressure] unset, which is why it
      * defaults to 0 rather than being required.
      */
     fun regenerate(
         discardPile: List<FateHarvestCard>,
         eligibleTypes: List<FateHarvestCard>,
         random: Random,
-        config: ReincarnationConfig = ReincarnationConfig.DEFAULT,
+        config: FateHarvestRegenerationConfig = FateHarvestRegenerationConfig.DEFAULT,
         generationIndex: Int = 0,
         liveCountsOutsideDiscardPile: Map<String, Int> = emptyMap(),
     ): RegenerationResult {
@@ -317,14 +317,14 @@ object DynamicReincarnationRules {
 data class WeightedOutcome(val targetCount: Int, val probability: Double)
 
 /**
- * Explicit, swappable configuration for [DynamicReincarnationRules] — the specific numbers and
+ * Explicit, swappable configuration for [FateHarvestRegenerationRules] — the specific numbers and
  * selection strategies below are this experimental mode's *default* parameter set (exactly what
- * the 5,000-game `PlayerCountDynamicReincarnationBenchmarkTest` run validated), not immutable
+ * the 5,000-game `PlayerCountFateHarvestRegenerationBenchmarkTest` run validated), not immutable
  * engine constants. See CLAUDE.md's own "Standing requirement" section for why this exists and
  * the semantic-invariant/configurable-value distinction it's built around.
  *
  * **Deliberately NOT exposed here** (semantic invariants, not configurable values — see
- * [DynamicReincarnationRules]'s own class doc point 2 for the full reasoning on the first one):
+ * [FateHarvestRegenerationRules]'s own class doc point 2 for the full reasoning on the first one):
  * - The regenerated pile's target size, always exactly the discard pile's own size — enforced by
  *   `FateHarvestDeck.draw()` itself, not a parameter of this algorithm at all.
  * - That culling never removes the same physical card twice, and refill can always repeat a type
@@ -333,10 +333,10 @@ data class WeightedOutcome(val targetCount: Int, val probability: Double)
  *   differently, but the *shape* of "remove some, add some" is fixed).
  * - Which card types are even eligible to appear at all (color-legal for the seated players) —
  *   controlled entirely by the caller's own `eligibleTypes` argument to
- *   [DynamicReincarnationRules.regenerate], already a parameter there, not duplicated into this
+ *   [FateHarvestRegenerationRules.regenerate], already a parameter there, not duplicated into this
  *   config.
  */
-data class ReincarnationConfig(
+data class FateHarvestRegenerationConfig(
     /** Outcomes for a type currently at exactly 1 copy. Default: 1->2: 33%, 1->0: 33%, remain at
      * 1: 34% (the user's own corrected rule — the originally-stated version had a duplicated
      * outcome). */
@@ -377,36 +377,44 @@ data class ReincarnationConfig(
         /** This experimental mode's validated default parameter set — what every existing test
          * and the 5,000-game benchmark run actually used. Not an immutable engine constant: a
          * future server-authoritative configuration surface may construct a different
-         * [ReincarnationConfig] entirely without touching [DynamicReincarnationRules]'s own logic. */
-        val DEFAULT = ReincarnationConfig()
+         * [FateHarvestRegenerationConfig] entirely without touching [FateHarvestRegenerationRules]'s own logic. */
+        val DEFAULT = FateHarvestRegenerationConfig()
 
         /** Phase 1C's own named variant: the corrected rarity-ceiling transition/refill/cull rules
          * above, plus [StagnationPressureConfig.DEFAULT]'s evidence-derived, escalating suppression
          * of the card types the *corrected-model baseline* (see [StagnationPressureConfig]'s own
          * doc) associates with prolonged games. Never [DEFAULT] itself — a separate, explicitly-
          * opted-into preset. */
-        val ANTI_STAGNATION = ReincarnationConfig(stagnationPressure = StagnationPressureConfig.DEFAULT)
+        val ANTI_STAGNATION = FateHarvestRegenerationConfig(stagnationPressure = StagnationPressureConfig.DEFAULT)
     }
 }
 
 /**
  * **Phase 1C — experimental, not canonical.** Evidence-weighted, escalating anti-stagnation
- * pressure applied on top of the corrected, rarity-ceiling-respecting dynamic-reincarnation rule
+ * pressure applied on top of the corrected, rarity-ceiling-respecting Fate Harvest regeneration rule
  * above: as a game's Fate Harvest discard pile is reshuffled again and again, the card types the
  * evidence associates with *longer* games become progressively less likely to grow more abundant
- * at each successive reshuffle — disabled entirely ([ReincarnationConfig.stagnationPressure] left
+ * at each successive reshuffle — disabled entirely ([FateHarvestRegenerationConfig.stagnationPressure] left
  * `null`) is the corrected model's own unmodified behavior; this class only ever runs when a
- * caller opts in via [ReincarnationConfig.ANTI_STAGNATION] or an equivalent custom config.
+ * caller opts in via [FateHarvestRegenerationConfig.ANTI_STAGNATION] or an equivalent custom config.
  *
- * **Evidence source, corrected**: [cardWeights]' default, [CORRECTED_BASELINE_STAGNATION_WEIGHTS],
- * is derived from a dedicated corrected-model baseline benchmark
- * (`docs/benchmarks/dynamic-reincarnation-benchmark-corrected.md`) run with
- * [ReincarnationConfig.DEFAULT] (no stagnation pressure) under this file's own whole-game rarity
- * ceiling — **not** from the earlier, uncapped Phase 1B run
- * (`docs/benchmarks/dynamic-reincarnation-benchmark.md`), which the user explicitly ruled remains
- * valid evidence only about that superseded, uncapped model and must not be reused as evidence for
- * this corrected one. That older report is preserved unmodified as historical record; this class's
- * own weights come exclusively from the corrected-model run.
+ * **Evidence source, corrected — but [CORRECTED_BASELINE_STAGNATION_WEIGHTS] is currently a
+ * PLACEHOLDER, not yet re-derived.** [cardWeights]' default is meant to come from a dedicated,
+ * genuinely clean corrected-model baseline benchmark run with [FateHarvestRegenerationConfig
+ * .DEFAULT] (no stagnation pressure) under this file's own whole-game rarity ceiling. The first
+ * attempt at that run (`docs/benchmarks/dynamic-reincarnation-benchmark-corrected-diagnostic.md`)
+ * found 73 whole-game-rarity-ceiling violations caused by a since-fixed accounting gap (see
+ * `GameState.resolvingCards`'s own class doc) — that run is explicitly NOT valid weighting
+ * evidence (the user's own ruling: "That run found 73 violations of the model it was intended to
+ * measure... Only the clean corrected run may supply evidence-derived Phase 1C weights") and is
+ * preserved only as diagnostic record of the defect, not reused here. The numbers below are
+ * carried over unchanged from that same contaminated run purely as a structural placeholder (so
+ * this file keeps compiling and every existing test keeps passing) and MUST be replaced with
+ * real values from a genuinely clean rerun (0 rarity-ceiling violations) before
+ * [FateHarvestRegenerationConfig.ANTI_STAGNATION] is used for anything beyond compiling/testing
+ * the mechanism itself. They are also explicitly NOT derived from the original, uncapped Phase 1B
+ * run (`docs/benchmarks/dynamic-reincarnation-benchmark.md`, preserved unmodified as historical
+ * record) — see this class's own doc.
  *
  * **What "evidence-weighted" means here, concretely** — the two things the user's own spec asked
  * to be evidence-driven rather than uniform:
@@ -425,7 +433,7 @@ data class ReincarnationConfig(
  *   rarity) against game length, not a separate per-transition-type breakdown — so "the
  *   multiplicity state associated with prolonging play," for a positively-weighted card, is read
  *   as *becoming more abundant, up to its own ceiling* (the correlation is with a higher final
- *   count, after all). Concretely: [DynamicReincarnationRules.applyStagnationPressure] shaves
+ *   count, after all). Concretely: [FateHarvestRegenerationRules.applyStagnationPressure] shaves
  *   probability off that card's own "up" transition outcomes specifically (never its "down" or
  *   "stay" outcomes, which are left completely alone or even boosted by the redirected mass) —
  *   and, in the 4-copy bucket (which, under the rarity-ceiling model, has no "up" outcome at all —
@@ -440,19 +448,19 @@ data class ReincarnationConfig(
  * The default, a plain linear ramp capped at 1.0, means the first reshuffle of every game applies
  * zero pressure (pure natural evolution, exactly as asked), and pressure keeps climbing at every
  * reshuffle after that until it saturates. This is a swappable *function* (matching
- * [ReincarnationConfig.refillSelector]/[ReincarnationConfig.cullSelector]'s own existing pattern
+ * [FateHarvestRegenerationConfig.refillSelector]/[FateHarvestRegenerationConfig.cullSelector]'s own existing pattern
  * of exposing selection *strategies*, not just numbers) so a future config can substitute a
  * different curve shape (a delayed ramp, a step function, a sigmoid) without touching
- * [DynamicReincarnationRules]'s own logic at all — the two numbers baked into the default closure
+ * [FateHarvestRegenerationRules]'s own logic at all — the two numbers baked into the default closure
  * (a 0.15-per-generation ramp rate, coerced to `[0.0, 1.0]`) are this session's own chosen
  * default, not a semantic invariant of what "escalation" means.
  *
  * **Determinism**: neither [cardWeights] nor [escalation] consumes [Random] at all — every
  * pressure computation is pure arithmetic derived from state the caller already tracks
- * (generation index) and a static evidence table, so [DynamicReincarnationRules.transition]'s own
+ * (generation index) and a static evidence table, so [FateHarvestRegenerationRules.transition]'s own
  * "always exactly one [Random.nextDouble] call, regardless of config" guarantee holds completely
  * unchanged with this mechanism enabled — "same seed -> same game" still holds for
- * [ReincarnationConfig.ANTI_STAGNATION] exactly as it does for [ReincarnationConfig.DEFAULT].
+ * [FateHarvestRegenerationConfig.ANTI_STAGNATION] exactly as it does for [FateHarvestRegenerationConfig.DEFAULT].
  */
 data class StagnationPressureConfig(
     /** Card name -> suppression weight in `[0.0, 1.0]`. A name absent from this map (via
@@ -467,15 +475,14 @@ data class StagnationPressureConfig(
 ) {
     companion object {
         /**
-         * Positive Pearson correlations from the corrected-model baseline run
-         * (`docs/benchmarks/dynamic-reincarnation-benchmark-corrected.md`'s own card-type-final-
-         * multiplicity-vs-game-length table), kept only where r > 0 (associated with LONGER/
-         * prolonged games) — every other card, including every negatively-correlated one, is
-         * simply absent (defaults to weight 0.0 via [Map.get]). This session's own derived default
-         * from that corrected run's empirical data, not an immutable engine constant — a future
-         * re-analysis could supply a different [cardWeights] map without touching any other part
-         * of this mechanism. Explicitly NOT derived from the earlier, superseded Phase 1B/uncapped
-         * run — see this class's own doc.
+         * **PLACEHOLDER — not yet derived from a clean corrected-model run.** See
+         * [StagnationPressureConfig]'s own class doc: these are the same Pearson correlations the
+         * contaminated diagnostic run produced (`docs/benchmarks/dynamic-reincarnation-benchmark
+         * -corrected-diagnostic.md`), kept only so this file compiles and existing tests exercising
+         * the anti-stagnation *mechanism* (not its specific weight values) keep passing. Must be
+         * replaced with real values from a genuinely clean corrected-model rerun (0 rarity-ceiling
+         * violations) before being used as actual weighting evidence — not an immutable engine
+         * constant either way.
          */
         val CORRECTED_BASELINE_STAGNATION_WEIGHTS: Map<String, Double> = mapOf(
             "Radiation Burst" to 0.408,
@@ -486,7 +493,7 @@ data class StagnationPressureConfig(
         )
 
         /** Phase 1C's own validated default — [CORRECTED_BASELINE_STAGNATION_WEIGHTS] plus the
-         * default linear [escalation] ramp. What [ReincarnationConfig.ANTI_STAGNATION] actually
+         * default linear [escalation] ramp. What [FateHarvestRegenerationConfig.ANTI_STAGNATION] actually
          * uses. */
         val DEFAULT = StagnationPressureConfig()
     }

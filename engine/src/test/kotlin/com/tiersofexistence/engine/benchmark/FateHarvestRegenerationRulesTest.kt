@@ -6,7 +6,7 @@ import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class DynamicReincarnationRulesTest {
+class FateHarvestRegenerationRulesTest {
 
     @Test
     fun `transition only ever produces values in 0-4, and empirical frequencies roughly match the specified probabilities`() {
@@ -14,7 +14,7 @@ class DynamicReincarnationRulesTest {
         val samples = 200_000
         for (currentCount in 1..4) {
             val outcomes = IntArray(5)
-            repeat(samples) { outcomes[DynamicReincarnationRules.transition(currentCount, random)]++ }
+            repeat(samples) { outcomes[FateHarvestRegenerationRules.transition(currentCount, random)]++ }
             val freq = outcomes.map { it.toDouble() / samples }
             when (currentCount) {
                 4 -> {
@@ -55,7 +55,7 @@ class DynamicReincarnationRulesTest {
         val samples = 200_000
         var above = 0
         repeat(samples) {
-            val outcome = DynamicReincarnationRules.transition(3, random, ceiling = 3)
+            val outcome = FateHarvestRegenerationRules.transition(3, random, ceiling = 3)
             if (outcome > 3) above++
             assertTrue(outcome <= 3, "transition() returned $outcome, exceeding the passed ceiling of 3")
         }
@@ -71,7 +71,7 @@ class DynamicReincarnationRulesTest {
         val random = Random(2468)
         var discardPile = randomLegalDiscardPile(random)
         repeat(1000) {
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, random)
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, random)
             assertEquals(discardPile.size, result.regeneratedPile.size)
             result.finalMultiplicity.forEach { (name, count) ->
                 val ceiling = eligibleTypes.single { it.name == name }.rarity.copies
@@ -91,7 +91,7 @@ class DynamicReincarnationRulesTest {
         val random = Random(314)
         val discardPile = List(otherType.rarity.copies) { otherType }
         repeat(300) {
-            val result = DynamicReincarnationRules.regenerate(
+            val result = FateHarvestRegenerationRules.regenerate(
                 discardPile = discardPile,
                 eligibleTypes = eligibleTypes,
                 random = random,
@@ -115,7 +115,7 @@ class DynamicReincarnationRulesTest {
         // comment), so this is the one that matters to exercise directly.
         val random = Random(5)
         val exception = kotlin.test.assertFailsWith<IllegalArgumentException> {
-            DynamicReincarnationRules.transition(2, random, ceiling = 1)
+            FateHarvestRegenerationRules.transition(2, random, ceiling = 1)
         }
         assertTrue(exception.message?.contains("ceiling") == true, "expected a descriptive ceiling-violation message, got: ${exception.message}")
     }
@@ -124,7 +124,7 @@ class DynamicReincarnationRulesTest {
 
     /** Builds a discard pile with every included type's own count kept within `1..type.rarity
      * .copies` (the whole-game rarity-ceiling model's own hard boundary - see
-     * [DynamicReincarnationRules.transition]'s own doc) - a plain independent-random-draw pile
+     * [FateHarvestRegenerationRules.transition]'s own doc) - a plain independent-random-draw pile
      * risks a type appearing more times than its own canonical rarity permits. */
     private fun randomLegalDiscardPile(random: Random): List<com.tiersofexistence.engine.cards.FateHarvestCard> {
         val typeCount = random.nextInt(1, eligibleTypes.size)
@@ -136,7 +136,7 @@ class DynamicReincarnationRulesTest {
         val random = Random(42)
         repeat(500) {
             val discardPile = randomLegalDiscardPile(random)
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, random)
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, random)
             assertEquals(discardPile.size, result.regeneratedPile.size)
             assertEquals(discardPile.size, result.targetSize)
             assertEquals(discardPile.size, result.finalMultiplicity.values.sum())
@@ -149,7 +149,7 @@ class DynamicReincarnationRulesTest {
         val eligibleNames = eligibleTypes.map { it.name }.toSet()
         val discardPile = eligibleTypes.take(10).flatMap { type -> List(type.rarity.copies) { type } }
         repeat(200) {
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, random)
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, random)
             assertTrue(result.finalMultiplicity.keys.all { it in eligibleNames }, "regenerate must never invent a card type outside eligibleTypes")
         }
     }
@@ -166,7 +166,7 @@ class DynamicReincarnationRulesTest {
         val discardPile = List(onlyType.rarity.copies) { onlyType }
         var sawReintroducedType = false
         repeat(200) {
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, random)
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, random)
             if (result.finalMultiplicity.keys.any { it != onlyType.name }) sawReintroducedType = true
         }
         assertTrue(sawReintroducedType, "expected at least one previously-0-copy type to be reintroduced via refill across 200 regenerations")
@@ -175,7 +175,7 @@ class DynamicReincarnationRulesTest {
     @Test
     fun `same seed produces an identical regeneration outcome`() {
         val discardPile = eligibleTypes.take(8).flatMap { type -> List(type.rarity.copies) { type } }
-        fun run(seed: Long) = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, Random(seed))
+        fun run(seed: Long) = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, Random(seed))
         val r1 = run(555L)
         val r2 = run(555L)
         assertEquals(r1.finalMultiplicity, r2.finalMultiplicity)
@@ -220,22 +220,22 @@ class DynamicReincarnationRulesTest {
 
     @Test
     fun `ANTI_STAGNATION at generation 0 behaves identically to Phase 1B's plain evolution - the first reshuffle is unaffected`() {
-        val config = ReincarnationConfig.ANTI_STAGNATION
+        val config = FateHarvestRegenerationConfig.ANTI_STAGNATION
         val name = "Radiation Burst" // the single most heavily weighted card in TABLE_G5_STAGNATION_WEIGHTS
         repeat(500) { seed ->
-            val plain = DynamicReincarnationRules.transition(2, Random(seed.toLong()), ReincarnationConfig.DEFAULT)
-            val pressured = DynamicReincarnationRules.transition(2, Random(seed.toLong()), config, cardName = name, generationIndex = 0)
+            val plain = FateHarvestRegenerationRules.transition(2, Random(seed.toLong()), FateHarvestRegenerationConfig.DEFAULT)
+            val pressured = FateHarvestRegenerationRules.transition(2, Random(seed.toLong()), config, cardName = name, generationIndex = 0)
             assertEquals(plain, pressured, "generationIndex=0 must apply zero pressure regardless of card weight (seed=$seed)")
         }
     }
 
     @Test
     fun `ANTI_STAGNATION never suppresses a card absent from cardWeights, at any generation`() {
-        val config = ReincarnationConfig.ANTI_STAGNATION
+        val config = FateHarvestRegenerationConfig.ANTI_STAGNATION
         val name = "Last Gasp" // Table G5: r = -0.370, associated with SHORTER games - must never be suppressed
         repeat(500) { seed ->
-            val plain = DynamicReincarnationRules.transition(2, Random(seed.toLong()), ReincarnationConfig.DEFAULT)
-            val pressured = DynamicReincarnationRules.transition(2, Random(seed.toLong()), config, cardName = name, generationIndex = 20)
+            val plain = FateHarvestRegenerationRules.transition(2, Random(seed.toLong()), FateHarvestRegenerationConfig.DEFAULT)
+            val pressured = FateHarvestRegenerationRules.transition(2, Random(seed.toLong()), config, cardName = name, generationIndex = 20)
             assertEquals(plain, pressured, "a card with no positive Table G5 weight must be untouched even at a high generation index (seed=$seed)")
         }
     }
@@ -245,7 +245,7 @@ class DynamicReincarnationRulesTest {
         // Radiation Burst at count 2: base outcomes are 2->3 (up, 25%), 2->1 (down, 25%), 2->4 (up, 7%), remain 2 (43%).
         // Escalating pressure should shrink the empirical frequency of landing at 3 or 4 (up) and
         // grow the frequency of landing at 1 (down) as generationIndex increases.
-        val config = ReincarnationConfig.ANTI_STAGNATION
+        val config = FateHarvestRegenerationConfig.ANTI_STAGNATION
         val name = "Radiation Burst"
         val samples = 200_000
 
@@ -253,7 +253,7 @@ class DynamicReincarnationRulesTest {
             val random = Random(123)
             var upCount = 0
             repeat(samples) {
-                val outcome = DynamicReincarnationRules.transition(2, random, config, name, generationIndex)
+                val outcome = FateHarvestRegenerationRules.transition(2, random, config, name, generationIndex)
                 if (outcome > 2) upCount++
             }
             return upCount.toDouble() / samples
@@ -279,15 +279,15 @@ class DynamicReincarnationRulesTest {
         var materializeUp = 0
         val samples = 200_000
         repeat(samples) {
-            if (DynamicReincarnationRules.transition(2, random1, ReincarnationConfig.ANTI_STAGNATION, "Radiation Burst", generationIndex) > 2) radiationUp++
-            if (DynamicReincarnationRules.transition(2, random2, ReincarnationConfig.ANTI_STAGNATION, "Materialize Army", generationIndex) > 2) materializeUp++
+            if (FateHarvestRegenerationRules.transition(2, random1, FateHarvestRegenerationConfig.ANTI_STAGNATION, "Radiation Burst", generationIndex) > 2) radiationUp++
+            if (FateHarvestRegenerationRules.transition(2, random2, FateHarvestRegenerationConfig.ANTI_STAGNATION, "Materialize Army", generationIndex) > 2) materializeUp++
         }
         assertTrue(radiationUp < materializeUp, "Radiation Burst (stronger r) should have its up-transitions suppressed more than Materialize Army (weaker r): radiationUp=$radiationUp materializeUp=$materializeUp")
     }
 
     @Test
     fun `ANTI_STAGNATION's high-count bucket boosts the drop probability instead of touching a nonexistent up outcome`() {
-        val config = ReincarnationConfig.ANTI_STAGNATION
+        val config = FateHarvestRegenerationConfig.ANTI_STAGNATION
         val name = "Fluidic Wave" // Table G5: r = 0.254
         val samples = 200_000
 
@@ -295,7 +295,7 @@ class DynamicReincarnationRulesTest {
             val random = Random(77)
             var drops = 0
             repeat(samples) {
-                if (DynamicReincarnationRules.transition(4, random, config, name, generationIndex) == 3) drops++
+                if (FateHarvestRegenerationRules.transition(4, random, config, name, generationIndex) == 3) drops++
             }
             return drops.toDouble() / samples
         }
@@ -309,7 +309,7 @@ class DynamicReincarnationRulesTest {
     @Test
     fun `ANTI_STAGNATION preserves the exactly-one-random-call-per-transition determinism contract`() {
         val discardPile = eligibleTypes.take(6).flatMap { type -> List(type.rarity.copies) { type } }
-        fun run(seed: Long) = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, Random(seed), ReincarnationConfig.ANTI_STAGNATION, generationIndex = 4)
+        fun run(seed: Long) = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, Random(seed), FateHarvestRegenerationConfig.ANTI_STAGNATION, generationIndex = 4)
         val r1 = run(4242L)
         val r2 = run(4242L)
         assertEquals(r1.finalMultiplicity, r2.finalMultiplicity)
@@ -321,9 +321,105 @@ class DynamicReincarnationRulesTest {
         val random = Random(555)
         var discardPile = randomLegalDiscardPile(random)
         repeat(200) { generation ->
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, random, ReincarnationConfig.ANTI_STAGNATION, generationIndex = generation)
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, random, FateHarvestRegenerationConfig.ANTI_STAGNATION, generationIndex = generation)
             assertEquals(discardPile.size, result.regeneratedPile.size, "size conservation must hold at every generation, including deep into escalation (generation=$generation)")
             discardPile = result.regeneratedPile
         }
+    }
+
+    // --- Reproduction of the discovered defect: an in-flight (resolving) card must still consume
+    // its own whole-game rarity capacity, via GameState.resolvingCards + liveCardCountsOutsideDiscardPile ---
+
+    @Test
+    fun `a card still mid-resolution correctly consumes its own whole-game rarity capacity during a regeneration triggered by a different draw`() {
+        // Reproduces the exact scenario PlayerCountFateHarvestRegenerationCorrectedBenchmarkTest's
+        // first attempt found 73 violations of: an Immediate card (here, Radiation Burst, an
+        // unrestricted SINGLE-rarity card, so it's a member of eligibleTypes below - unlike a
+        // color card, which this file's own eligibleTypes filters to only GREEN's own) is drawn
+        // and begins resolving - NOT yet in any hand or the discard pile - and while it's still
+        // resolving, a *different* draw elsewhere in the same turn empties the draw pile and
+        // triggers a reshuffle. That reshuffle's own liveCountsOutsideDiscardPile must already
+        // reflect Radiation Burst as fully "used up" (its one and only canonical copy is the one
+        // currently resolving), so refill must never pick it - even though it has 0 copies in the
+        // discard pile itself at that moment.
+        val resolvingType = eligibleTypes.first { it.name == "Radiation Burst" }
+        val otherType = eligibleTypes.first { it.name != resolvingType.name }
+        val state = com.tiersofexistence.engine.state.GameState.newGame(listOf(com.tiersofexistence.engine.model.PlayerColor.RED, com.tiersofexistence.engine.model.PlayerColor.BLUE))
+        state.beginResolvingCard(resolvingType) // "drawn but not yet resolved" throughout this whole test
+
+        val random = Random(2718)
+        val discardPile = List(otherType.rarity.copies) { otherType }
+        repeat(300) {
+            val result = FateHarvestRegenerationRules.regenerate(
+                discardPile = discardPile,
+                eligibleTypes = eligibleTypes,
+                random = random,
+                liveCountsOutsideDiscardPile = state.liveCardCountsOutsideDiscardPile(),
+            )
+            assertTrue(
+                resolvingType.name !in result.finalMultiplicity,
+                "${resolvingType.name} is still mid-resolution (its one canonical copy fully accounted for) and must never be refilled into the regenerated pile",
+            )
+        }
+
+        // Resolving it now (as its real resolution eventually would) frees its capacity back up -
+        // proving the "used up" state above was specifically because it was resolving, not some
+        // permanent exclusion.
+        state.endResolvingCard(resolvingType)
+        var sawReintroduced = false
+        repeat(300) {
+            val result = FateHarvestRegenerationRules.regenerate(
+                discardPile = discardPile,
+                eligibleTypes = eligibleTypes,
+                random = random,
+                liveCountsOutsideDiscardPile = state.liveCardCountsOutsideDiscardPile(),
+            )
+            if (resolvingType.name in result.finalMultiplicity) sawReintroduced = true
+        }
+        assertTrue(sawReintroduced, "once no longer resolving, ${resolvingType.name} should be reachable via refill again across 300 regenerations")
+    }
+
+    @Test
+    fun `multiple simultaneously-resolving cards each correctly consume their own whole-game rarity capacity`() {
+        // The nested/multiple-in-flight case: two different unrestricted SINGLE-rarity cards both
+        // mid-resolution at once (see GameStateResolvingCardsTest for the zone-transition
+        // mechanism itself) - both must be simultaneously excluded from refill, independently.
+        val resolvingA = eligibleTypes.first { it.name == "Radiation Burst" }
+        val resolvingB = eligibleTypes.first { it.name == "Galactic Roundabout" }
+        val otherType = eligibleTypes.first { it.name != resolvingA.name && it.name != resolvingB.name }
+        val state = com.tiersofexistence.engine.state.GameState.newGame(listOf(com.tiersofexistence.engine.model.PlayerColor.RED, com.tiersofexistence.engine.model.PlayerColor.BLUE))
+        state.beginResolvingCard(resolvingA)
+        state.beginResolvingCard(resolvingB)
+
+        val random = Random(1618)
+        val discardPile = List(otherType.rarity.copies) { otherType }
+        repeat(300) {
+            val result = FateHarvestRegenerationRules.regenerate(
+                discardPile = discardPile,
+                eligibleTypes = eligibleTypes,
+                random = random,
+                liveCountsOutsideDiscardPile = state.liveCardCountsOutsideDiscardPile(),
+            )
+            assertTrue(resolvingA.name !in result.finalMultiplicity, "${resolvingA.name} is resolving and must not be refilled")
+            assertTrue(resolvingB.name !in result.finalMultiplicity, "${resolvingB.name} is resolving and must not be refilled")
+        }
+    }
+
+    @Test
+    fun `regeneration with an in-flight card produces deterministic, reproducible results for the same seed`() {
+        val resolvingType = eligibleTypes.first { it.name == "Radiation Burst" }
+        val otherType = eligibleTypes.first { it.name != resolvingType.name }
+        val discardPile = List(otherType.rarity.copies) { otherType }
+
+        fun run(seed: Long): RegenerationResult {
+            val state = com.tiersofexistence.engine.state.GameState.newGame(listOf(com.tiersofexistence.engine.model.PlayerColor.RED, com.tiersofexistence.engine.model.PlayerColor.BLUE))
+            state.beginResolvingCard(resolvingType)
+            return FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, Random(seed), liveCountsOutsideDiscardPile = state.liveCardCountsOutsideDiscardPile())
+        }
+
+        val r1 = run(9090L)
+        val r2 = run(9090L)
+        assertEquals(r1.finalMultiplicity, r2.finalMultiplicity)
+        assertEquals(r1.regeneratedPile.map { it.name }, r2.regeneratedPile.map { it.name })
     }
 }

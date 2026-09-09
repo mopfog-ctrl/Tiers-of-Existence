@@ -48,6 +48,12 @@ object CardLifecycle {
             state.players.getValue(player).hand += card
             return CardPlayResult.EnteredHand(request)
         }
+        // Mirrors TurnEngine's own Fate Harvest draw sites: an Immediate card is a live physical
+        // card the instant it's drawn, so it enters GameState.resolvingCards here, before
+        // attemptPlay's own matching endResolvingCard (see that method's doc) - "resolves
+        // atomically" (this class's own doc) means the begin/end pairing completes within this
+        // one call, never leaving the card visible in neither zone nor both.
+        state.beginResolvingCard(card)
         return attemptPlay(state, request)
     }
 
@@ -92,6 +98,16 @@ object CardLifecycle {
 
         player.hasPlayedCardThisPhase = true
         state.deck.discard(card)
+        // This is the shared discard point for both the Immediate-draw path (every card resolver
+        // ultimately funnels here) and the Held-card-play path. Only a card that began resolving
+        // via GameState.beginResolvingCard (i.e. TriggeringEvent.DrawnFromSquare - see that
+        // property's own class doc) needs the matching endResolvingCard; a Held card never enters
+        // resolvingCards at all (TurnEngine.kt puts it straight into the hand), so gating on the
+        // triggering event - rather than always calling endResolvingCard - is what keeps the two
+        // lifecycles from crossing.
+        if (request.triggeringEvent is TriggeringEvent.DrawnFromSquare) {
+            state.endResolvingCard(card)
+        }
         return CardPlayResult.Resolved(request)
     }
 }

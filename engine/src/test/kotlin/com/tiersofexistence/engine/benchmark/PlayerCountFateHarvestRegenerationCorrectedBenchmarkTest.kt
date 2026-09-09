@@ -20,27 +20,41 @@ import kotlin.random.Random
 
 /**
  * **PHASE 1B, CORRECTED MODEL — experimental, NOT canonical.** Re-establishes Phase 1B's own
- * dynamic-reincarnation baseline under the corrected whole-game rarity-ceiling model (see
- * `DynamicReincarnationRules`'s own class doc) using [ReincarnationConfig.DEFAULT] — no
- * anti-stagnation pressure, same transition/refill/cull rules the original Phase 1B run used,
- * just now genuinely respecting each card type's own canonical rarity as a hard ceiling across
- * the whole live game (draw pile + discard pile + every hand), not merely within the discard pile
- * being regenerated.
+ * Fate Harvest regeneration baseline under the corrected whole-game rarity-ceiling model (see
+ * `FateHarvestRegenerationRules`'s own class doc) using [FateHarvestRegenerationConfig.DEFAULT] —
+ * no anti-stagnation pressure, same transition/refill/cull rules the original Phase 1B run used,
+ * now genuinely respecting each card type's own canonical rarity as a hard ceiling across the
+ * *whole live game* — draw pile + discard pile + every hand + every currently-resolving card
+ * ([GameState.resolvingCards]) — not merely within the discard pile being regenerated.
  *
- * **Why this file exists rather than re-running [PlayerCountDynamicReincarnationBenchmarkTest]
+ * **This is the second attempt at this corrected-model baseline, from clean seeds, after fixing a
+ * real defect the first attempt found.** The first run
+ * (`docs/benchmarks/dynamic-reincarnation-benchmark-corrected-diagnostic.md`, preserved as
+ * diagnostic record, not reused as weighting evidence) found 73 whole-game-rarity-ceiling
+ * violations across 5,000 games — not a flaw in the ceiling model itself, but a genuine engine
+ * accounting gap: a drawn `CardTiming.IMMEDIATE` card was invisible to the "outside the discard
+ * pile" count while it was still being resolved (a local variable in whatever code was resolving
+ * it, not tracked in any zone at all), so a reshuffle that happened to fire mid-resolution could
+ * undercount that card's type and let it exceed its own rarity once the in-flight card was later
+ * discarded. Fixed (Direction 1, the user's own explicit choice: fix the state representation, not
+ * gameplay resolution order) by adding [GameState.resolvingCards] as a genuine fourth card zone —
+ * see that property's own class doc for the full design — and this benchmark now reads
+ * [GameState.liveCardCountsOutsideDiscardPile] (hands *and* resolving cards) instead of hand
+ * counts alone.
+ *
+ * **Why this file exists rather than re-running [PlayerCountFateHarvestRegenerationBenchmarkTest]
  * itself**: that file's own report (`docs/benchmarks/dynamic-reincarnation-benchmark.md`) is
  * preserved, unmodified, explicit historical record of the *original, uncapped* model — the user
  * ruled it "remains valuable evidence about the earlier uncapped experimental model, but it is not
  * the baseline for the corrected rarity-preserving model," and must never be silently overwritten.
- * Since [ReincarnationConfig.DEFAULT] itself was corrected in place (the only change that could
- * fix the shared uncapped-refill bug at all), simply re-running that same test class again would
- * silently replace the preserved uncapped-model numbers with corrected-model ones under the same
- * filename — this file duplicates the harness instead (this codebase's established convention for
- * independent benchmark variants) so both reports coexist, clearly attributed to their own model.
+ * This file duplicates the harness instead (this codebase's established convention for independent
+ * benchmark variants) so every report stays coexisting and clearly attributed to its own model/run.
  *
- * **This corrected-model run is what Phase 1C's own evidence-derived weights
- * (`StagnationPressureConfig.CORRECTED_BASELINE_STAGNATION_WEIGHTS`) are built from** — not the
- * original, now-superseded Table G5.
+ * **Only a genuinely clean run of this file (0 whole-game-rarity-ceiling violations) may supply
+ * evidence for Phase 1C's own weights** ([StagnationPressureConfig.CORRECTED_BASELINE_STAGNATION_WEIGHTS])
+ * — per the user's own explicit instruction, this file's job is strictly to establish and report
+ * that clean baseline; deriving or applying weights from it is a separate, later step this file
+ * does not do itself.
  *
  * **Scale**: 1,000 games per player-count cohort (5,000 total), matching the original Phase 1B
  * run's own scale for a like-for-like comparison.
@@ -48,9 +62,9 @@ import kotlin.random.Random
  * Gated behind its own `toe.benchmark.dynamic.corrected` system property (forwarded via
  * `engine/build.gradle.kts`'s `tasks.test` block) — skipped by default. Run via:
  * `./gradlew :engine:test --configure-on-demand -Dtoe.benchmark.dynamic.corrected=true --tests
- * "com.tiersofexistence.engine.benchmark.PlayerCountReincarnationCorrectedBenchmarkTest"`.
+ * "com.tiersofexistence.engine.benchmark.PlayerCountFateHarvestRegenerationCorrectedBenchmarkTest"`.
  */
-class PlayerCountReincarnationCorrectedBenchmarkTest {
+class PlayerCountFateHarvestRegenerationCorrectedBenchmarkTest {
 
     companion object {
         private const val MAX_TURNS_PER_GAME = 8000
@@ -59,8 +73,10 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
         private val PLAYER_COUNTS = listOf(2, 3, 4, 5, 6)
 
         // Independent of Baseline A's seed ranges (5.0e8+, 9.0e8+), the original uncapped Phase 1B
-        // run's (1.3e9+), and the anti-stagnation benchmark's (1.7e9+).
-        private const val BASE_SEED = 2_000_000_000L
+        // run's (1.3e9+), the anti-stagnation benchmark's (1.7e9+), and the first (contaminated,
+        // diagnostic-only) corrected-model attempt's (2.0e9+) - a genuinely fresh, clean seed range
+        // for this second, post-lifecycle-fix attempt.
+        private const val BASE_SEED = 2_100_000_000L
         private const val PLAYER_COUNT_SEED_STRIDE = 10_000_000L
 
         private fun seedFor(playerCount: Int, gameIndex: Int): Long = BASE_SEED + playerCount * PLAYER_COUNT_SEED_STRIDE + gameIndex
@@ -151,11 +167,16 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
         val deck: FateHarvestDeck,
         val expectedTotal: Int,
         val events: MutableList<RegenerationEvent>,
+        /** Must be called with the real [GameState] right after it's constructed - the
+         * [FateHarvestDeck.ReshuffleStrategy] closure needs a live reference to it (for
+         * [GameState.liveCardCountsOutsideDiscardPile]) but `state` doesn't exist yet when this
+         * deck itself is built. */
+        val bindState: (GameState) -> Unit,
     )
 
     private fun colorCardNamesFor(colors: Set<PlayerColor>): Set<String> = colors.flatMap { FateHarvestCatalog.colorCards[it].orEmpty() }.map { it.name }.toSet()
 
-    private fun buildCorrectedDeckForColors(colors: List<PlayerColor>, random: Random, players: Map<PlayerColor, PlayerState>): DeckConstruction {
+    private fun buildCorrectedDeckForColors(colors: List<PlayerColor>, random: Random): DeckConstruction {
         val unusedColors = PlayerColor.entries.filterNot { it in colors }.toSet()
         val removedNames = colorCardNamesFor(unusedColors)
         val eligibleTypes = FateHarvestCatalog.all.filter { it.name !in removedNames }
@@ -164,11 +185,13 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
 
         val events = mutableListOf<RegenerationEvent>()
         var index = 0
+        lateinit var stateRef: GameState
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
             index += 1
-            val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
-            // ReincarnationConfig.DEFAULT - the corrected model, no anti-stagnation pressure.
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = handCounts)
+            // FateHarvestRegenerationConfig.DEFAULT - the corrected model, no anti-stagnation
+            // pressure. liveCardCountsOutsideDiscardPile() includes both hands AND any card
+            // currently mid-resolution - the fix for the defect this file's own class doc explains.
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = stateRef.liveCardCountsOutsideDiscardPile())
             events += RegenerationEvent(index, result.targetSize, result.refillCount, result.cullCount, result.finalMultiplicity)
             result.regeneratedPile
         }
@@ -177,6 +200,7 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
             deck = FateHarvestDeck.forTesting(shuffled, random, strategy),
             expectedTotal = filtered.size,
             events = events,
+            bindState = { stateRef = it },
         )
     }
 
@@ -198,8 +222,9 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
         val turnOrder = TurnOrder(colors)
         val players = colors.associateWith { PlayerState(it) }
         players.values.forEach { it.tierPool(TierLevel.FIRST).startToken() }
-        val deckConstruction = buildCorrectedDeckForColors(colors, random, players)
+        val deckConstruction = buildCorrectedDeckForColors(colors, random)
         val state = GameState(players = players, turnOrder = turnOrder, deck = deckConstruction.deck)
+        deckConstruction.bindState(state)
 
         val decisionsByPlayer: Map<PlayerColor, com.tiersofexistence.engine.rules.TurnDecisionProvider> =
             colors.associateWith { RandomLegalDecisionProvider(Random(random.nextLong())) }
@@ -258,9 +283,15 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
 
         if (state.pendingRoll != null) fail("GameState.pendingRoll is still set after driveOneTurn returned: ${state.pendingRoll}")
 
+        if (state.resolvingCards.isNotEmpty()) fail("GameState.resolvingCards is not empty after driveOneTurn returned: ${state.resolvingCards.map { it.name }}")
+
         // Corrected-model-specific invariant, not checked by the original uncapped Phase 1B
         // harness: no card type's live population may ever exceed its own canonical rarity.
-        val allCardNames = state.deck.drawPileCards.map { it.name } + state.deck.discardPileCards.map { it.name } + state.players.values.flatMap { it.hand }.map { it.name }
+        // resolvingCards is always empty here (just checked above), but included anyway so this
+        // check reads as the same whole-game population liveCardCountsOutsideDiscardPile()
+        // itself uses, rather than a parallel definition that could drift from it.
+        val allCardNames = state.deck.drawPileCards.map { it.name } + state.deck.discardPileCards.map { it.name } +
+            state.players.values.flatMap { it.hand }.map { it.name } + state.resolvingCards.map { it.name }
         val liveCounts = allCardNames.groupingBy { it }.eachCount()
         liveCounts.forEach { (name, count) ->
             val ceiling = FateHarvestCatalog.all.single { it.name == name }.rarity.copies
@@ -278,7 +309,7 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
     }
 
     @Test
-    fun `corrected-model dynamic Fate Harvest reincarnation baseline, compared against Baseline A`() {
+    fun `corrected-model Fate Harvest regeneration baseline, clean rerun after the resolving-card lifecycle fix, compared against Baseline A`() {
         assumeTrue(
             System.getProperty("toe.benchmark.dynamic.corrected") == "true",
             "Skipped by default (experimental, heavy) - run with -Dtoe.benchmark.dynamic.corrected=true to execute.",
@@ -290,7 +321,7 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
         val allViolations = cohorts.flatMap { it.violations }
 
         val report = buildReport(cohorts, allViolations)
-        val reportFile = File("../docs/benchmarks/dynamic-reincarnation-benchmark-corrected.md")
+        val reportFile = File("../docs/benchmarks/fate-harvest-regeneration-benchmark-corrected.md")
         reportFile.parentFile.mkdirs()
         reportFile.writeText(report)
         println(report)
@@ -304,34 +335,36 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
 
     private fun buildReport(cohorts: List<CohortResult>, violations: List<InvariantViolation>): String {
         val sb = StringBuilder()
-        sb.appendLine("# T.O.E. Experimental Dynamic Fate Harvest Reincarnation Benchmark - CORRECTED whole-game rarity-ceiling model (Phase 1B, corrected)")
+        sb.appendLine("# T.O.E. Fate Harvest Regeneration Benchmark - CORRECTED whole-game rarity-ceiling model, clean rerun (Phase 1B, corrected)")
         sb.appendLine()
-        sb.appendLine("**Experimental, not canonical.** Re-establishes Phase 1B's own dynamic-reincarnation baseline under the " +
-            "corrected whole-game rarity-ceiling model (`DynamicReincarnationRules`) - no card type may ever exceed its own " +
-            "canonical rarity across draw pile + discard pile + every hand, for the whole game. Compared against the validated " +
-            "Baseline A fixed-composition benchmark (commit `d530a21`, `docs/benchmarks/player-count-benchmark.md`). The " +
-            "original, uncapped-model Phase 1B run (`docs/benchmarks/dynamic-reincarnation-benchmark.md`) remains preserved, " +
-            "unmodified, as historical record of that superseded model - it is explicitly NOT the baseline this report's own " +
-            "Table K5 evidence is used for. No balance or canon decision is made or recommended by this report either - it " +
-            "measures effects only.")
+        sb.appendLine("**Experimental, not canonical.** Re-establishes Phase 1B's own Fate Harvest regeneration baseline under the " +
+            "corrected whole-game rarity-ceiling model (`FateHarvestRegenerationRules`) - no card type may ever exceed its own " +
+            "canonical rarity across draw pile + discard pile + every hand + every currently-resolving card, for the whole game. " +
+            "This is the clean rerun after fixing the resolving-card accounting gap the first attempt found - see " +
+            "`docs/benchmarks/dynamic-reincarnation-benchmark-corrected-diagnostic.md` (preserved, not reused as weighting " +
+            "evidence) for that defect's own record. Compared against the validated Baseline A fixed-composition benchmark " +
+            "(commit `d530a21`, `docs/benchmarks/player-count-benchmark.md`). The original, uncapped-model Phase 1B run " +
+            "(`docs/benchmarks/dynamic-reincarnation-benchmark.md`) remains preserved, unmodified, as historical record of that " +
+            "superseded model. No balance or canon decision is made or recommended by this report either - it measures effects " +
+            "only; deriving Phase 1C weights from Table K5 below is a separate, later step.")
         sb.appendLine()
         sb.appendLine("Scale: $GAMES_PER_COHORT games/cohort x 5 player counts = ${GAMES_PER_COHORT * 5} total games, single stage, " +
             "seed = $BASE_SEED + playerCount * $PLAYER_COUNT_SEED_STRIDE + gameIndex (independent of every other benchmark's own seed range).")
         sb.appendLine()
-        sb.appendLine("## What changed from the original Phase 1B run")
+        sb.appendLine("## What changed since the first (contaminated) attempt")
         sb.appendLine()
         sb.appendLine(
-            "- **Whole-game rarity ceiling**: a card type's canonical rarity (1/2/3/4 copies) is now enforced as a hard " +
-                "maximum on its live population across draw pile + discard pile + every hand, not merely within the discard " +
-                "pile being regenerated - refill only ever selects among types with remaining whole-game capacity, and " +
-                "`transition` can never propose a count exceeding that capacity (folded into \"stay,\" same as unlisted " +
-                "probability mass already means).\n" +
-                "- **The generalized \">=4 copies\" bucket is removed** - it existed only to handle refill pushing a type " +
-                "past 4 in the old uncapped model, a state the corrected model makes structurally impossible. The 4-copy " +
-                "bucket's own rule (50% -> 3, 50% remain at 4) is unchanged, just no longer generalized upward.\n" +
-                "- Every other transition/refill/cull rule (1/2/3-copy transition probabilities, uniform-without-replacement " +
-                "culling, uniform-with-replacement refill among currently-eligible types, regeneration target size always " +
-                "exactly the discard pile's own size) is completely unchanged from the original Phase 1B run.",
+            "- **`GameState.resolvingCards`**: a new, explicit fourth card zone (alongside draw pile / discard pile / hands) - " +
+                "a drawn `CardTiming.IMMEDIATE` card lives here from the instant `TurnEngine` draws it until whatever resolves " +
+                "it (`TurnDriver.resolveImmediateCard`, or `discardStrandedImmediateCard` for a card-driven-move landing) " +
+                "discards it, closing the exact window the first attempt's 73 violations came from.\n" +
+                "- **`GameState.liveCardCountsOutsideDiscardPile()`**: the new single source of truth for \"how many copies of " +
+                "each type currently exist outside the discard pile being regenerated\" - every player's hand plus every " +
+                "resolving card - replacing the earlier hand-only computation every `ReshuffleStrategy` closure had to " +
+                "reimplement itself.\n" +
+                "- Every transition/refill/cull rule and the rarity-ceiling model itself are otherwise completely unchanged " +
+                "from the first attempt - this is a state-accounting fix, not a rule or resolution-order change (the user's " +
+                "own explicit instruction: \"Fix state representation, not game sequencing\").",
         )
         sb.appendLine()
 
@@ -379,13 +412,15 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
             name to pearson(counts, turnsList)
         }.sortedByDescending { it.second }
 
-        sb.appendLine("## Table K5 - Card-type final-multiplicity vs. game-length correlation, corrected model (pooled across all player counts, n=${allGames.size})")
+        sb.appendLine("## Table K5 - Card-type final-multiplicity vs. game-length correlation, corrected model, clean run (pooled across all player counts, n=${allGames.size})")
         sb.appendLine()
-        sb.appendLine("Pearson correlation between a card type's *final* multiplicity (now bounded by its own canonical rarity - " +
+        sb.appendLine("Pearson correlation between a card type's *final* multiplicity (bounded by its own canonical rarity - " +
             "at that game's last regeneration, or Generation 0 if none occurred) and that game's total turn count. " +
             "Correlational, not causal - pooled across player counts (a confound: player count itself strongly affects both " +
-            "game length and how many regenerations occur - see Table K4). **This table, not the original superseded Table " +
-            "G5, is the evidence source for `StagnationPressureConfig.CORRECTED_BASELINE_STAGNATION_WEIGHTS`.**")
+            "game length and how many regenerations occur - see Table K4). **This table - from this clean run, not the " +
+            "contaminated first attempt or the original superseded uncapped-model Table G5 - is the evidence source for " +
+            "`StagnationPressureConfig.CORRECTED_BASELINE_STAGNATION_WEIGHTS`, once the weight re-derivation step actually " +
+            "runs (a separate, later step this file does not itself perform).**")
         sb.appendLine()
         sb.appendLine("**Top 5 positively correlated with longer games:**")
         sb.appendLine()
@@ -407,12 +442,17 @@ class PlayerCountReincarnationCorrectedBenchmarkTest {
         sb.appendLine("1. **Direction vs. Baseline A**: per-player-count absolute mean-turns difference - " +
             diffs.joinToString(", ") { (pc, d) -> "${pc}P: ${fmt(d)}" } + ".")
         sb.appendLine("2. **Correctness**: " +
-            (if (violations.isEmpty()) "0 invariant violations across ${cohorts.sumOf { it.games.size }} games, including the new " +
-                "whole-game rarity-ceiling invariant (no card type's live population ever exceeded its own canonical rarity)."
-            else "**${violations.size} violation(s) found** - see raw detail."))
+            (if (violations.isEmpty()) "0 invariant violations across ${cohorts.sumOf { it.games.size }} games, including the " +
+                "whole-game rarity-ceiling invariant (no card type's live population - draw pile + discard pile + hands + " +
+                "resolving cards - ever exceeded its own canonical rarity) and resolvingCards being empty between every turn. " +
+                "This is the clean result the first attempt's 73 violations were meant to become."
+            else "**${violations.size} violation(s) found** - see raw detail. Per the user's own explicit instruction, a " +
+                "non-zero count here means this is NOT yet a clean baseline: stop and investigate rather than proceeding to " +
+                "any Phase 1C weight derivation."))
         sb.appendLine()
         sb.appendLine("No balance change, canon decision, or recommendation is made based on the above - this is a corrected-model " +
-            "measurement, reported for a later, separate decision, and as the evidence basis for Phase 1C's own re-derived weights.")
+            "measurement, reported for a later, separate decision, and (only if clean) the intended evidence basis for Phase 1C's " +
+            "own re-derived weights.")
         sb.appendLine()
         sb.appendLine("Total games run: ${cohorts.sumOf { it.games.size }}. Total invariant violations: ${violations.size}.")
 

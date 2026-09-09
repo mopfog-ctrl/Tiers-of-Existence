@@ -20,8 +20,8 @@ import kotlin.random.Random
 
 /**
  * **PHASE 1C — experimental, NOT canonical.** Characterizes the effect of the "evidence-weighted
- * anti-stagnation" reshuffle rule ([ReincarnationConfig.ANTI_STAGNATION] —
- * [DynamicReincarnationRules] driven with [StagnationPressureConfig]) against BOTH Baseline A
+ * anti-stagnation" reshuffle rule ([FateHarvestRegenerationConfig.ANTI_STAGNATION] —
+ * [FateHarvestRegenerationRules] driven with [StagnationPressureConfig]) against BOTH Baseline A
  * (commit `d530a21`, `docs/benchmarks/player-count-benchmark.md`, fixed-composition
  * `PlainShuffle`) AND Phase 1B's own plain-evolution dynamic reincarnation (commit reported in
  * `docs/benchmarks/dynamic-reincarnation-benchmark.md`, hardcoded below as `BASELINE_B`) —
@@ -31,9 +31,9 @@ import kotlin.random.Random
  * is a separate, later decision this file does not make or recommend either way; it only
  * measures.
  *
- * **Generation-index threading**: unlike Phase 1B's [PlayerCountDynamicReincarnationBenchmarkTest]
- * (which calls [DynamicReincarnationRules.regenerate] with its own default `generationIndex = 0`
- * every time, since [ReincarnationConfig.DEFAULT] never reads it), this benchmark tracks a
+ * **Generation-index threading**: unlike Phase 1B's [PlayerCountFateHarvestRegenerationBenchmarkTest]
+ * (which calls [FateHarvestRegenerationRules.regenerate] with its own default `generationIndex = 0`
+ * every time, since [FateHarvestRegenerationConfig.DEFAULT] never reads it), this benchmark tracks a
  * per-game regeneration counter and passes it through explicitly — the exact mechanism
  * [StagnationPressureConfig.escalation] depends on to apply progressively stronger pressure at
  * later reshuffles while leaving a game's first reshuffle to evolve purely naturally.
@@ -150,11 +150,14 @@ class PlayerCountAntiStagnationBenchmarkTest {
         val deck: FateHarvestDeck,
         val expectedTotal: Int,
         val events: MutableList<RegenerationEvent>,
+        /** Must be called with the real [GameState] right after it's constructed - see
+         * [FateHarvestRegenerationRules]'s own callers for why this indirection exists. */
+        val bindState: (GameState) -> Unit,
     )
 
     private fun colorCardNamesFor(colors: Set<PlayerColor>): Set<String> = colors.flatMap { FateHarvestCatalog.colorCards[it].orEmpty() }.map { it.name }.toSet()
 
-    private fun buildAntiStagnationDeckForColors(colors: List<PlayerColor>, random: Random, players: Map<PlayerColor, PlayerState>): DeckConstruction {
+    private fun buildAntiStagnationDeckForColors(colors: List<PlayerColor>, random: Random): DeckConstruction {
         val unusedColors = PlayerColor.entries.filterNot { it in colors }.toSet()
         val removedNames = colorCardNamesFor(unusedColors)
         val eligibleTypes = FateHarvestCatalog.all.filter { it.name !in removedNames }
@@ -163,13 +166,9 @@ class PlayerCountAntiStagnationBenchmarkTest {
 
         val events = mutableListOf<RegenerationEvent>()
         var generationIndex = 0
+        lateinit var stateRef: GameState
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
-            // players' own PlayerState objects are the ones GameState.players ends up holding
-            // (mutated in place) - live hand counts are always current at reshuffle time, and the
-            // draw pile is guaranteed empty whenever a reshuffle fires, so hands are the entire
-            // "outside the discard pile" population for the whole-game rarity ceiling.
-            val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, ReincarnationConfig.ANTI_STAGNATION, generationIndex, handCounts)
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, rnd, FateHarvestRegenerationConfig.ANTI_STAGNATION, generationIndex, stateRef.liveCardCountsOutsideDiscardPile())
             events += RegenerationEvent(generationIndex + 1, result.targetSize, result.refillCount, result.cullCount, result.finalMultiplicity)
             generationIndex += 1
             result.regeneratedPile
@@ -179,6 +178,7 @@ class PlayerCountAntiStagnationBenchmarkTest {
             deck = FateHarvestDeck.forTesting(shuffled, random, strategy),
             expectedTotal = filtered.size,
             events = events,
+            bindState = { stateRef = it },
         )
     }
 
@@ -202,8 +202,9 @@ class PlayerCountAntiStagnationBenchmarkTest {
         val turnOrder = TurnOrder(colors)
         val players = colors.associateWith { PlayerState(it) }
         players.values.forEach { it.tierPool(TierLevel.FIRST).startToken() }
-        val deckConstruction = buildAntiStagnationDeckForColors(colors, random, players)
+        val deckConstruction = buildAntiStagnationDeckForColors(colors, random)
         val state = GameState(players = players, turnOrder = turnOrder, deck = deckConstruction.deck)
+        deckConstruction.bindState(state)
 
         val decisionsByPlayer: Map<PlayerColor, com.tiersofexistence.engine.rules.TurnDecisionProvider> =
             colors.associateWith { RandomLegalDecisionProvider(Random(random.nextLong())) }
@@ -245,7 +246,7 @@ class PlayerCountAntiStagnationBenchmarkTest {
         return metrics to violation
     }
 
-    /** Same shape as [PlayerCountDynamicReincarnationBenchmarkTest]'s own — deliberately
+    /** Same shape as [PlayerCountFateHarvestRegenerationBenchmarkTest]'s own — deliberately
      * duplicated, not shared, per this codebase's established convention for independent
      * benchmark harnesses. Checks total card conservation (never per-card-name multiplicity,
      * which is expected to evolve under this mode too), token conservation, Phase validity, no
@@ -308,7 +309,7 @@ class PlayerCountAntiStagnationBenchmarkTest {
         sb.appendLine("# T.O.E. Experimental Anti-Stagnation Fate Harvest Reincarnation Benchmark (Phase 1C)")
         sb.appendLine()
         sb.appendLine("**Experimental, not canonical.** Compares the evidence-weighted anti-stagnation reshuffle rule " +
-            "(`ReincarnationConfig.ANTI_STAGNATION`) against both Baseline A (commit `d530a21`, " +
+            "(`FateHarvestRegenerationConfig.ANTI_STAGNATION`) against both Baseline A (commit `d530a21`, " +
             "`docs/benchmarks/player-count-benchmark.md`) and Phase 1B's own plain dynamic reincarnation " +
             "(`docs/benchmarks/dynamic-reincarnation-benchmark.md`). No balance or canon decision is made or " +
             "recommended by this report - it measures effects only, per the task's own explicit scope.")
@@ -320,7 +321,7 @@ class PlayerCountAntiStagnationBenchmarkTest {
         sb.appendLine()
         sb.appendLine(
             "- **Same underlying transition/refill/cull rules as Phase 1B** " +
-                "(`DynamicReincarnationRules`), with `ReincarnationConfig.stagnationPressure` set to " +
+                "(`FateHarvestRegenerationRules`), with `FateHarvestRegenerationConfig.stagnationPressure` set to " +
                 "`StagnationPressureConfig.DEFAULT`.\n" +
                 "- **Evidence-weighted suppression**: only card types Table G5 positively correlates with longer " +
                 "games (Radiation Burst r=0.408, Graviton Rift r=0.267, Fluidic Wave r=0.254, Materialize Army " +

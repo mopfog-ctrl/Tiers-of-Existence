@@ -329,11 +329,26 @@ class TurnDriver(
      * fabricate new behavior.
      */
     private fun resolveImmediateCard(state: GameState, decisions: TurnDecisionProvider, player: PlayerColor, card: FateHarvestCard, tier: TierLevel, squarePosition: Int) {
+        // card entered GameState.resolvingCards the instant TurnEngine drew it - this whole
+        // function is that card's entire resolution, however it ends: a normal Resolved play
+        // discards (and ends resolving for) the card from inside CardLifecycle.attemptPlay
+        // itself, an Annulment cancellation does the same from inside playWithPrecedenceWindow,
+        // and a Rejected play (no legal target at all - never reached attemptPlay) is discarded
+        // and ended right here. Deliberately NOT a single try/finally around the whole call: the
+        // card can be discarded (into the discard pile) partway through this function's own call
+        // graph - inside a resolver invoked via CardEffectDispatcher.dispatch below - and a token
+        // move that resolver performs afterward can itself trigger a nested draw and reshuffle;
+        // ending resolvingCards only at the very end of this function would leave the card
+        // double-counted (both in the discard pile and still resolvingCards) for that whole
+        // window. Ending it at the exact same moment it's actually discarded, wherever that
+        // happens, is what keeps every card in exactly one zone at all times - see
+        // GameState.resolvingCards' own class doc.
         val targets = decisions.chooseImmediateCardTargets(state, player, card)
         val request = CardPlayRequest(player, card, targets, TriggeringEvent.DrawnFromSquare(tier, squarePosition))
         val result = playWithPrecedenceWindow(state, request)
         if (result is CardPlayResult.Rejected) {
             state.deck.discard(card)
+            state.endResolvingCard(card)
         }
     }
 
@@ -385,6 +400,13 @@ class TurnDriver(
         val chain = precedence.openWindow(state, SuspendedAction.PendingCardResolution(request))
         if (chain.isSuspendedActionCancelled) {
             state.deck.discard(request.card)
+            // Shared with the Held-card-play path (offerHeldCardPlay) - only an Immediate-drawn
+            // card (TriggeringEvent.DrawnFromSquare) ever entered GameState.resolvingCards in the
+            // first place, so only that path needs the matching endResolvingCard here; see
+            // CardLifecycle.attemptPlay's identical gating for why.
+            if (request.triggeringEvent is TriggeringEvent.DrawnFromSquare) {
+                state.endResolvingCard(request.card)
+            }
             return null
         }
         val result = CardEffectDispatcher.dispatch(state, request)

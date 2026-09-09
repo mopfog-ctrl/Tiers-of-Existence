@@ -336,7 +336,16 @@ object TurnEngine {
             SquareType.FATE_HARVEST -> {
                 pool.advanceInZone(id, newZonePosition)
                 val card = state.deck.draw()
-                if (card.timing == CardTiming.HELD) state.players.getValue(color).hand += card
+                if (card.timing == CardTiming.HELD) {
+                    state.players.getValue(color).hand += card
+                } else {
+                    // Immediate cards never enter a hand - they're live but not yet resolved, so
+                    // GameState.resolvingCards is where this specific physical card lives from
+                    // this instant until whatever resolves it (TurnDriver.resolveImmediateCard,
+                    // or discardStrandedImmediateCard for a card-driven-move landing) discards
+                    // it and calls endResolvingCard - see that property's own class doc.
+                    state.beginResolvingCard(card)
+                }
                 ZoneMoveResult.StillInZone(zoneNumber, newZonePosition, SquareEffect.DrewCard(card))
             }
             else -> {
@@ -407,7 +416,13 @@ object TurnEngine {
             }
             SquareType.FATE_HARVEST -> {
                 val card = state.deck.draw()
-                if (card.timing == CardTiming.HELD) state.players.getValue(color).hand += card
+                if (card.timing == CardTiming.HELD) {
+                    state.players.getValue(color).hand += card
+                } else {
+                    // See the Zone-internal Fate Harvest case's own comment above -
+                    // GameState.resolvingCards tracks this card until it's discarded.
+                    state.beginResolvingCard(card)
+                }
                 MoveResult(square.index, emptyList(), square.type, SquareEffect.DrewCard(card))
             }
             SquareType.MARAUDER_CONSTRUCTION_FACILITY -> {

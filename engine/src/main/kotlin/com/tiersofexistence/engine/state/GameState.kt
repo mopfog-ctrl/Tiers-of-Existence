@@ -2,6 +2,7 @@ package com.tiersofexistence.engine.state
 
 import com.tiersofexistence.engine.board.BoardLayouts
 import com.tiersofexistence.engine.board.TierBoard
+import com.tiersofexistence.engine.cards.FateHarvestCard
 import com.tiersofexistence.engine.cards.FateHarvestDeck
 import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
@@ -114,6 +115,84 @@ class GameState(
      * currently pending; see [beginPendingRoll]/[clearPendingRoll]. */
     var pendingRoll: PendingRoll? = null
         private set
+
+    private val _resolvingCards: MutableList<FateHarvestCard> = mutableListOf()
+
+    /**
+     * Every [FateHarvestCard] currently drawn but not yet in any other zone — a physical card
+     * has left the deck's own draw pile but hasn't reached the discard pile or a hand yet,
+     * because whoever is driving the game is still in the middle of resolving it (choosing its
+     * target(s), running it through a Precedence window, waiting on a triggered decision like
+     * Cleansing's opponent discard, or similar). A drawn [com.tiersofexistence.engine.cards.CardTiming.HELD]
+     * card never appears here at all — [TurnEngine][com.tiersofexistence.engine.rules.TurnEngine]
+     * puts it straight into the drawing player's hand, so it's a live card in the hand zone from
+     * the instant it's drawn, no separate "resolving" state needed.
+     *
+     * **This is a genuine fourth card zone, not a derived/best-effort count** — before this
+     * existed, a card between [FateHarvestDeck.draw] and its own eventual [FateHarvestDeck
+     * .discard] lived only as a local variable in whatever code was resolving it, invisible to
+     * every other part of the engine; nothing needed to see it *until* an experimental reshuffle
+     * mechanism needed to account for a card type's whole-game population and undercounted
+     * exactly this window (found via `PlayerCountReincarnationCorrectedBenchmarkTest`'s
+     * whole-game rarity-ceiling check). [beginResolvingCard]/[endResolvingCard] make the
+     * transition explicit and symmetric — every drawn Immediate card enters this zone exactly
+     * once (at [TurnEngine.resolvePrimaryTierLanding][com.tiersofexistence.engine.rules.TurnEngine]/
+     * the Zone-internal equivalent, its two draw sites) and leaves it exactly once (wherever its
+     * own resolution actually discards it — [com.tiersofexistence.engine.cards.play.CardLifecycle
+     * .attemptPlay]'s own discard, [com.tiersofexistence.engine.rules.TurnDriver]'s
+     * Rejected-play/Annulment-cancelled discards, or
+     * [com.tiersofexistence.engine.cards.resolvers.discardStrandedImmediateCard] for a
+     * card-driven-move landing) — so a card can never be double-counted (still "resolving" after
+     * it's already been added to the discard pile) or lost (removed from the deck but present in
+     * no zone at all). A plain `MutableList`, not a count, because more than one physical card
+     * can genuinely be resolving at once — nesting is possible (one card's own resolution moving
+     * a token onto another Fate Harvest square before the first card has finished resolving) and
+     * this collection makes no assumption about how many are ever in flight simultaneously.
+     *
+     * Always empty by the time [com.tiersofexistence.engine.rules.TurnDriver.driveOneTurn]
+     * returns — every path that adds a card here resolves it synchronously within the same
+     * turn, so this is a *within-turn* accounting zone only, never something that needs to
+     * survive across turns the way [pendingRoll] briefly can't either.
+     */
+    val resolvingCards: List<FateHarvestCard> get() = _resolvingCards.toList()
+
+    /** Marks [card] as drawn-but-not-yet-resolved — see [resolvingCards]'s own doc for exactly
+     * when this is called and why. Never called for a [com.tiersofexistence.engine.cards.CardTiming.HELD]
+     * card (already live in a hand the instant it's drawn). */
+    fun beginResolvingCard(card: FateHarvestCard) {
+        _resolvingCards += card
+    }
+
+    /** The counterpart to [beginResolvingCard] — called at the exact point [card]'s own
+     * resolution reaches ITS discard (regardless of which of the several discard paths
+     * [resolvingCards]'s own doc lists actually fires for this particular play), so the
+     * transition out of the "resolving" zone is symmetric with the transition into it. Throws if
+     * [card] isn't currently resolving — the same "never silently no-op a lifecycle mismatch"
+     * discipline [PlayerState.hand]'s own `require(hand.remove(...))` calls already use elsewhere
+     * in this codebase, since a card that reaches here without ever having begun resolving (or
+     * that's already been ended) means a caller's own bookkeeping is wrong, not a legitimate
+     * state to paper over. */
+    fun endResolvingCard(card: FateHarvestCard) {
+        check(_resolvingCards.remove(card)) {
+            "endResolvingCard(${card.name}) called but that card is not currently resolving " +
+                "(resolvingCards=${_resolvingCards.map { it.name }}) - a caller's begin/end pairing is wrong"
+        }
+    }
+
+    /**
+     * Every [FateHarvestCard] currently live *outside* [deck]'s own discard pile: every player's
+     * hand plus every card currently mid-resolution ([resolvingCards]) — never the draw pile
+     * itself, since [FateHarvestDeck.draw] only ever needs this (via a
+     * [FateHarvestDeck.ReshuffleStrategy] that wants to respect each card type's own whole-game
+     * rarity ceiling) at the exact moment the draw pile is already empty. Grouped by
+     * [FateHarvestCard.name] to a physical-copy count, matching how every other pile/hand
+     * multiplicity in this codebase is already counted. This is the single, correct source for
+     * "how many copies of this type exist outside the pile being regenerated right now" — see
+     * `com.tiersofexistence.engine.benchmark.FateHarvestRegenerationRules`'s own class doc for
+     * how a `ReshuffleStrategy` uses it.
+     */
+    fun liveCardCountsOutsideDiscardPile(): Map<String, Int> =
+        (players.values.flatMap { it.hand } + resolvingCards).groupingBy { it.name }.eachCount()
 
     init {
         turnQueue = buildTurnQueue()

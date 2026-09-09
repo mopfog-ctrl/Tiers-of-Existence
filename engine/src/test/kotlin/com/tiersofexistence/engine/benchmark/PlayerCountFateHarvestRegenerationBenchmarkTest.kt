@@ -20,11 +20,20 @@ import java.io.File
 import kotlin.random.Random
 
 /**
- * **PHASE 1B — experimental, NOT canonical.** Characterizes the effect of a candidate "dynamic
- * Fate Harvest reincarnation" reshuffle rule ([DynamicReincarnationRules]) against the validated
+ * **PHASE 1B — experimental, NOT canonical.** Characterizes the effect of a candidate Fate
+ * Harvest regeneration reshuffle rule ([FateHarvestRegenerationRules]) against the validated
  * Baseline A fixed-composition benchmark (commit `d530a21`,
  * `docs/benchmarks/player-count-benchmark.md`) — whether it should ever become canonical is a
  * *separate, later* decision this file does not make or recommend either way; it only measures.
+ *
+ * **Terminology note**: this class and the report it writes still use "reincarnation" in several
+ * places ("dynamic Fate Harvest reincarnation," `docs/benchmarks/dynamic-reincarnation-benchmark
+ * .md`'s own filename) — that terminology is historical, not current. "Reincarnation" in ToE
+ * belongs to players/Tier Tokens, never Fate Harvest cards; the active system is now named
+ * [FateHarvestRegenerationRules]/[FateHarvestRegenerationConfig]. This class's own report is
+ * preserved unmodified (filename included) as historical experimental record of the run that
+ * predates the rename, per the user's explicit instruction not to silently overwrite or reinterpret
+ * it — it is deliberately NOT re-run to relabel it.
  *
  * Baseline A ([PlayerCountBenchmarkTest], `FateHarvestDeck.ReshuffleStrategy.PlainShuffle`) is
  * completely untouched by this file's existence — `FateHarvestDeck` gained a purely additive,
@@ -45,9 +54,9 @@ import kotlin.random.Random
  * JVM via `engine/build.gradle.kts`'s `tasks.test` block, same mechanism as
  * [PlayerCountBenchmarkTest]'s own `toe.benchmark`) — skipped by default. Run via:
  * `./gradlew :engine:test --configure-on-demand -Dtoe.benchmark.dynamic=true --tests
- * "com.tiersofexistence.engine.benchmark.PlayerCountDynamicReincarnationBenchmarkTest"`.
+ * "com.tiersofexistence.engine.benchmark.PlayerCountFateHarvestRegenerationBenchmarkTest"`.
  */
-class PlayerCountDynamicReincarnationBenchmarkTest {
+class PlayerCountFateHarvestRegenerationBenchmarkTest {
 
     companion object {
         private const val MAX_TURNS_PER_GAME = 8000
@@ -160,18 +169,23 @@ class PlayerCountDynamicReincarnationBenchmarkTest {
         val meanCulls get() = games.map { it.totalCulls }.average()
     }
 
-    // --- deck construction: experimental reincarnation strategy ---
+    // --- deck construction: experimental Fate Harvest regeneration strategy ---
 
     private data class ExperimentalDeckConstruction(
         val deck: FateHarvestDeck,
         val expectedTotal: Int,
         val gen0Multiplicity: Map<String, Int>,
         val events: MutableList<RegenerationEvent>,
+        /** Must be called with the real [GameState] right after it's constructed - the
+         * [FateHarvestDeck.ReshuffleStrategy] closure needs a live reference to it (for
+         * [GameState.liveCardCountsOutsideDiscardPile], which needs hands and any currently-
+         * resolving card) but `state` doesn't exist yet when this deck itself is built. */
+        val bindState: (GameState) -> Unit,
     )
 
     private fun colorCardNamesFor(colors: Set<PlayerColor>): Set<String> = colors.flatMap { FateHarvestCatalog.colorCards[it].orEmpty() }.map { it.name }.toSet()
 
-    private fun buildExperimentalDeckForColors(colors: List<PlayerColor>, random: Random, players: Map<PlayerColor, PlayerState>): ExperimentalDeckConstruction {
+    private fun buildExperimentalDeckForColors(colors: List<PlayerColor>, random: Random): ExperimentalDeckConstruction {
         val unusedColors = PlayerColor.entries.filterNot { it in colors }.toSet()
         val removedNames = colorCardNamesFor(unusedColors)
         val eligibleTypes = FateHarvestCatalog.all.filter { it.name !in removedNames }
@@ -181,14 +195,10 @@ class PlayerCountDynamicReincarnationBenchmarkTest {
 
         val events = mutableListOf<RegenerationEvent>()
         var index = 0
+        lateinit var stateRef: GameState
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
             index += 1
-            // players' own PlayerState objects are the ones GameState.players ends up holding
-            // (mutated in place) - live hand counts are always current at reshuffle time, and the
-            // draw pile is guaranteed empty whenever a reshuffle fires, so hands are the entire
-            // "outside the discard pile" population for the whole-game rarity ceiling.
-            val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = handCounts)
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = stateRef.liveCardCountsOutsideDiscardPile())
             events += RegenerationEvent(index, result.targetSize, result.refillCount, result.cullCount, result.finalMultiplicity)
             result.regeneratedPile
         }
@@ -198,6 +208,7 @@ class PlayerCountDynamicReincarnationBenchmarkTest {
             expectedTotal = filtered.size,
             gen0Multiplicity = gen0Multiplicity,
             events = events,
+            bindState = { stateRef = it },
         )
     }
 
@@ -221,8 +232,9 @@ class PlayerCountDynamicReincarnationBenchmarkTest {
         val turnOrder = TurnOrder(colors)
         val players = colors.associateWith { PlayerState(it) }
         players.values.forEach { it.tierPool(TierLevel.FIRST).startToken() }
-        val deckConstruction = buildExperimentalDeckForColors(colors, random, players)
+        val deckConstruction = buildExperimentalDeckForColors(colors, random)
         val state = GameState(players = players, turnOrder = turnOrder, deck = deckConstruction.deck)
+        deckConstruction.bindState(state)
 
         val seatStats: Map<PlayerColor, SeatDecisionStats> = colors.associateWith { SeatDecisionStats() }
         val decisionsByPlayer: Map<PlayerColor, com.tiersofexistence.engine.rules.TurnDecisionProvider> =
@@ -339,7 +351,7 @@ class PlayerCountDynamicReincarnationBenchmarkTest {
         sb.appendLine("# T.O.E. Experimental Dynamic Fate Harvest Reincarnation Benchmark (Phase 1B)")
         sb.appendLine()
         sb.appendLine("**Experimental, not canonical.** Compares the candidate dynamic-reincarnation reshuffle rule " +
-            "(`DynamicReincarnationRules`) against the validated Baseline A fixed-composition benchmark (commit " +
+            "(`FateHarvestRegenerationRules`) against the validated Baseline A fixed-composition benchmark (commit " +
             "`d530a21`, `docs/benchmarks/player-count-benchmark.md`). No balance or canon decision is made or " +
             "recommended by this report - it measures effects only, per the task's own explicit scope.")
         sb.appendLine()
@@ -364,7 +376,7 @@ class PlayerCountDynamicReincarnationBenchmarkTest {
                 "`FateHarvestDeck.draw()` itself (a strategy that returns the wrong size throws immediately).\n" +
                 "- **\"Current multiplicity\"**: the literal count of each type physically present in the discard " +
                 "pile about to regenerate - not a separately-tracked persistent ecology counter. See " +
-                "`DynamicReincarnationRules`'s own class doc for the full reasoning.",
+                "`FateHarvestRegenerationRules`'s own class doc for the full reasoning.",
         )
         sb.appendLine()
 

@@ -39,5 +39,10 @@ import com.tiersofexistence.engine.state.GameState
 internal fun discardStrandedImmediateCard(state: GameState, effect: SquareEffect) {
     if (effect is SquareEffect.DrewCard && effect.card.timing == CardTiming.IMMEDIATE) {
         state.deck.discard(effect.card)
+        // This card entered GameState.resolvingCards the instant TurnEngine drew it (see that
+        // property's own class doc) - discarding it here IS its entire "resolution" for a
+        // card-driven move, so the matching transition out of the resolving zone happens right
+        // alongside the discard, same as every other end-of-resolution discard path does.
+        state.endResolvingCard(effect.card)
     }
 }

@@ -16,9 +16,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The Phase 1C equivalent of [DynamicReincarnationDeterminismTest] (Phase 1B) — proves "same
+ * The Phase 1C equivalent of [FateHarvestRegenerationDeterminismTest] (Phase 1B) — proves "same
  * initial state + same seed + same decisions = identical regeneration outcomes and gameplay"
- * holds when [ReincarnationConfig.ANTI_STAGNATION] is the active strategy, driven through the
+ * holds when [FateHarvestRegenerationConfig.ANTI_STAGNATION] is the active strategy, driven through the
  * real `TurnEngine`/`TurnDriver` path, with a generation counter threaded from the
  * `ReshuffleStrategy` closure exactly the way a real caller (e.g.
  * `PlayerCountAntiStagnationBenchmarkTest`) would.
@@ -57,14 +57,15 @@ class AntiStagnationDeterminismTest {
         val filtered = FateHarvestCatalog.buildDeck().filter { it.name in eligibleTypes.map { t -> t.name } }
         val shuffled = filtered.shuffled(random)
         var generationIndex = 0
+        lateinit var stateRef: GameState
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
-            val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, ReincarnationConfig.ANTI_STAGNATION, generationIndex, handCounts)
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, rnd, FateHarvestRegenerationConfig.ANTI_STAGNATION, generationIndex, stateRef.liveCardCountsOutsideDiscardPile())
             generationIndex += 1
             result.regeneratedPile
         }
         val deck = FateHarvestDeck.forTesting(shuffled, random, strategy)
         val state = GameState(players = players, turnOrder = TurnOrder(colors), deck = deck)
+        stateRef = state
         val decisionsByPlayer = colors.associateWith { RandomLegalDecisionProvider(Random(random.nextLong())) }
         val driver = TurnDriver(decisionsByPlayer, rollForPhase = { phase -> Dice.rollForPhase(phase, random) })
 
@@ -99,15 +100,16 @@ class AntiStagnationDeterminismTest {
         val filtered = FateHarvestCatalog.buildDeck().filter { it.name in eligibleTypes.map { t -> t.name } }
         var generationIndex = 0
         var regenerations = 0
+        lateinit var stateRef: GameState
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
             regenerations += 1
-            val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, ReincarnationConfig.ANTI_STAGNATION, generationIndex, handCounts)
+            val result = FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, rnd, FateHarvestRegenerationConfig.ANTI_STAGNATION, generationIndex, stateRef.liveCardCountsOutsideDiscardPile())
             generationIndex += 1
             result.regeneratedPile
         }
         val deck = FateHarvestDeck.forTesting(filtered.shuffled(random), random, strategy)
         val state = GameState(players = players, turnOrder = TurnOrder(colors), deck = deck)
+        stateRef = state
         val decisionsByPlayer = colors.associateWith { RandomLegalDecisionProvider(Random(random.nextLong())) }
         val driver = TurnDriver(decisionsByPlayer, rollForPhase = { phase -> Dice.rollForPhase(phase, random) })
         state.skipEmptyPhases()

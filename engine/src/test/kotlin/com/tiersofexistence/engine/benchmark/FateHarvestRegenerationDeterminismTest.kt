@@ -18,12 +18,12 @@ import kotlin.test.assertTrue
 /**
  * The experimental-invariant equivalent of `TurnEngineDeckReshuffleDeterminismTest` (which covers
  * Baseline A's `PlainShuffle` strategy) — proves "same initial state + same seed + same decisions
- * = identical regeneration outcomes and gameplay" holds for the experimental dynamic-reincarnation
- * strategy specifically, driven through the real `TurnEngine`/`TurnDriver` path, not a hand-rolled
- * loop. Uses a small deck (`FateHarvestCatalog.all` filtered to one seated color, ~5-6 legal
- * types) so regenerations happen quickly within a short turn budget.
+ * = identical regeneration outcomes and gameplay" holds for the experimental Fate Harvest
+ * regeneration strategy specifically, driven through the real `TurnEngine`/`TurnDriver` path, not
+ * a hand-rolled loop. Uses a small deck (`FateHarvestCatalog.all` filtered to one seated color,
+ * ~5-6 legal types) so regenerations happen quickly within a short turn budget.
  */
-class DynamicReincarnationDeterminismTest {
+class FateHarvestRegenerationDeterminismTest {
 
     private val colors = listOf(PlayerColor.RED, PlayerColor.BLUE)
     private val turnBudget = 400
@@ -50,7 +50,7 @@ class DynamicReincarnationDeterminismTest {
             }
             "$color:hand=$hand:tiers=$tiers"
         }
-        return "$deckPart||$playersPart||winners=${state.winners}||turn=${state.currentTurn}||phase=${state.currentPhase}"
+        return "$deckPart||$playersPart||winners=${state.winners}||turn=${state.currentTurn}||phase=${state.currentPhase}||resolving=${state.resolvingCards.map { it.name }}"
     }
 
     private fun driveAndFingerprint(seed: Long): List<String> {
@@ -61,17 +61,17 @@ class DynamicReincarnationDeterminismTest {
         val eligibleTypes = smallEligibleTypeSet()
         val filtered = FateHarvestCatalog.buildDeck().filter { it.name in eligibleTypes.map { t -> t.name } }
         val shuffled = filtered.shuffled(random)
-        // `players`' PlayerState objects are the same ones GameState.players will hold (mutated in
-        // place as hands change), so reading live hand counts here at reshuffle time is always
-        // current - no forward reference to `state` needed. The draw pile is guaranteed empty
-        // whenever a reshuffle fires (FateHarvestDeck.draw only calls this once it is), so hands
-        // are the entire "outside the discard pile" population.
+        // GameState.liveCardCountsOutsideDiscardPile() needs a live reference to `state` itself
+        // (hands plus any currently-resolving card - see that method's own doc), but `state` isn't
+        // constructed until after `strategy`/`deck` are - this closure only reads `stateRef` once
+        // actually invoked, well after `stateRef` is assigned below.
+        lateinit var stateRef: GameState
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
-            val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
-            DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = handCounts).regeneratedPile
+            FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = stateRef.liveCardCountsOutsideDiscardPile()).regeneratedPile
         }
         val deck = FateHarvestDeck.forTesting(shuffled, random, strategy)
         val state = GameState(players = players, turnOrder = TurnOrder(colors), deck = deck)
+        stateRef = state
         val decisionsByPlayer = colors.associateWith { RandomLegalDecisionProvider(Random(random.nextLong())) }
         val driver = TurnDriver(decisionsByPlayer, rollForPhase = { phase -> Dice.rollForPhase(phase, random) })
 
@@ -87,7 +87,7 @@ class DynamicReincarnationDeterminismTest {
     }
 
     @Test
-    fun `two independently constructed games using the experimental dynamic-reincarnation strategy from the same seed produce identical turn-by-turn fingerprints`() {
+    fun `two independently constructed games using the experimental Fate Harvest regeneration strategy from the same seed produce identical turn-by-turn fingerprints`() {
         val seed = 271828182L
         val run1 = driveAndFingerprint(seed)
         val run2 = driveAndFingerprint(seed)
@@ -98,20 +98,21 @@ class DynamicReincarnationDeterminismTest {
     }
 
     @Test
-    fun `the small deck actually regenerates via the dynamic-reincarnation strategy at least once within the turn budget`() {
+    fun `the small deck actually regenerates via the Fate Harvest regeneration strategy at least once within the turn budget`() {
         val random = Random(3L)
         val players = colors.associateWith { PlayerState(it) }
         players.values.forEach { it.tierPool(TierLevel.FIRST).startToken() }
         val eligibleTypes = smallEligibleTypeSet()
         val filtered = FateHarvestCatalog.buildDeck().filter { it.name in eligibleTypes.map { t -> t.name } }
         var regenerations = 0
+        lateinit var stateRef: GameState
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
             regenerations += 1
-            val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
-            DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = handCounts).regeneratedPile
+            FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = stateRef.liveCardCountsOutsideDiscardPile()).regeneratedPile
         }
         val deck = FateHarvestDeck.forTesting(filtered.shuffled(random), random, strategy)
         val state = GameState(players = players, turnOrder = TurnOrder(colors), deck = deck)
+        stateRef = state
         val decisionsByPlayer = colors.associateWith { RandomLegalDecisionProvider(Random(random.nextLong())) }
         val driver = TurnDriver(decisionsByPlayer, rollForPhase = { phase -> Dice.rollForPhase(phase, random) })
         state.skipEmptyPhases()
@@ -120,6 +121,36 @@ class DynamicReincarnationDeterminismTest {
             driver.driveOneTurn(state)
             turnsTaken += 1
         }
-        assertTrue(regenerations > 0, "expected at least one dynamic-reincarnation regeneration within $turnBudget turns")
+        assertTrue(regenerations > 0, "expected at least one Fate Harvest regeneration within $turnBudget turns")
+    }
+
+    @Test
+    fun `resolvingCards is always empty immediately after driveOneTurn returns, across a full run`() {
+        // Every path that adds a card to GameState.resolvingCards resolves it synchronously
+        // within the same turn (see that property's own class doc) - this is the general
+        // regression guard for that guarantee, run against the same small-deck scenario the
+        // determinism tests above use, which reshuffles (and therefore reads resolvingCards)
+        // repeatedly within the turn budget.
+        val random = Random(77L)
+        val players = colors.associateWith { PlayerState(it) }
+        players.values.forEach { it.tierPool(TierLevel.FIRST).startToken() }
+        val eligibleTypes = smallEligibleTypeSet()
+        val filtered = FateHarvestCatalog.buildDeck().filter { it.name in eligibleTypes.map { t -> t.name } }
+        lateinit var stateRef: GameState
+        val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
+            FateHarvestRegenerationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = stateRef.liveCardCountsOutsideDiscardPile()).regeneratedPile
+        }
+        val deck = FateHarvestDeck.forTesting(filtered.shuffled(random), random, strategy)
+        val state = GameState(players = players, turnOrder = TurnOrder(colors), deck = deck)
+        stateRef = state
+        val decisionsByPlayer = colors.associateWith { RandomLegalDecisionProvider(Random(random.nextLong())) }
+        val driver = TurnDriver(decisionsByPlayer, rollForPhase = { phase -> Dice.rollForPhase(phase, random) })
+        state.skipEmptyPhases()
+        var turnsTaken = 0
+        while (turnsTaken < turnBudget && state.winners.isEmpty() && state.currentTurn != null) {
+            driver.driveOneTurn(state)
+            turnsTaken += 1
+            assertTrue(state.resolvingCards.isEmpty(), "resolvingCards should always be empty between turns, found ${state.resolvingCards.map { it.name }} after turn $turnsTaken")
+        }
     }
 }
