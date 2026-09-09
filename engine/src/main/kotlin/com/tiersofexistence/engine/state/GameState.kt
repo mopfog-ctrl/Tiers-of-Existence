@@ -194,6 +194,21 @@ class GameState(
     fun liveCardCountsOutsideDiscardPile(): Map<String, Int> =
         (players.values.flatMap { it.hand } + resolvingCards).groupingBy { it.name }.eachCount()
 
+    /** Total outstanding skip-turn debt across every (player, Tier) pair — the sum of
+     * [pendingSkips]'s own per-pair counters. A read-only observability accessor, added
+     * specifically so external instrumentation can correlate this debt against other
+     * outcomes (see `com.tiersofexistence.engine.benchmark
+     * .PlayerCountStructuralPredictorAnalysisTest`) — it mutates nothing and no gameplay logic
+     * reads it; [pendingSkips] itself, and how debt is queued/consumed, are completely
+     * unchanged by this property's existence. */
+    val totalPendingSkipDebt: Int get() = pendingSkips.values.sum()
+
+    /** How many [DeferredTurnModifier.ExtraTierTurn] entries are still queued and unconsumed —
+     * same read-only observability rationale as [totalPendingSkipDebt]. [DeferredTurnModifier]
+     * currently has only that one subtype (see its own class doc), so this is simply
+     * [deferredModifiers]'s own size, not filtered by type. */
+    val totalPendingExtraTierTurns: Int get() = deferredModifiers.size
+
     init {
         turnQueue = buildTurnQueue()
     }

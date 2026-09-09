@@ -1714,6 +1714,87 @@ the task's explicit stop condition, this pass is measurement and interpretation 
 action (a different weighting scheme, abandoning card-identity weighting in favor of a different
 mechanism, or closing Phase 1C's experimental line entirely) needs its own separate go-ahead.
 
+## Phase 1C: structural stagnation characterization — card identity's Outcome C does not generalize; a few structural predictors show weak but consistent signal
+
+**Explicitly does not revisit or generalize the prior report's Outcome C finding.** That finding is
+narrow — "the present 32-card catalog's own multiplicities don't discriminate subsequent stagnation
+once player count/depth/eligibility are accounted for" — not "card identity can never matter for
+stagnation in T.O.E." Per-card multiplicity is retained in this pass's own dataset for future-catalog
+comparison, but is not reanalyzed or reweighted here. This pass asks a different question: do
+*structural* properties of the game state itself — Tier occupancy, Marauder/Staging-Pile population,
+hand sizes, deck-pile sizes, outstanding skip-turn/extra-tier-turn debt, proximity to victory, and an
+aggregate (not per-card) composition summary — predict how much play remains from a given
+regeneration event, and does regeneration depth predict that independently of elapsed turns.
+
+**One small, additive, read-only engine change was needed and made: `GameState.totalPendingSkipDebt`/
+`totalPendingExtraTierTurns`.** `GameState.pendingSkips`/`deferredModifiers` were previously fully
+private, with only write-only queue methods exposed — there was no way for any external observer to
+read outstanding skip/extra-turn debt at all, and this task's own required predictor list named that
+debt as a minimum-required field. Both new properties are pure sums over already-existing private
+state, mutate nothing, and are read by no gameplay logic — judged in-scope for a Clearance C2
+instrument/test pass on the same "read-only, additive, no behavior change" basis as the earlier
+`GameState.isOver` accessor. This is the only main-source-tree change this pass made; everything else
+(`PlayerCountStructuralPredictorAnalysisTest`) lives in the test tree.
+
+**Determinism verified, not assumed**: this run's per-cohort mean-turns and cap-rate figures matched
+the published corrected baseline exactly, confirming the new instrumentation (a pure read of
+`GameState` at each regeneration, including the two new accessors) consumes no `Random` and doesn't
+perturb gameplay. 5,000 games, 0 invariant violations (including the whole-game rarity-ceiling check).
+
+**The critical temporal question — does regeneration depth predict stagnation independently of
+elapsed turns — comes back essentially no, with one boundary-line exception.** Raw r(depth, turns
+elapsed) is ~0.99-1.0 at every player count (depth and elapsed turns are nearly collinear, as
+expected — more turns mechanically means more reshuffles). The partial correlation of depth with
+turns-remaining, controlling for elapsed turns, is 0.002/-0.007/0.029/0.039/0.050 at 2P/3P/4P/5P/6P —
+essentially zero at 2P-5P, and only the 6P cell (0.050) clears the report's own ±0.05 reporting
+threshold, and only just. **Practical answer: depth carries no meaningful independent signal beyond
+what elapsed-turns already explains at any player count** — the weak 6P exception is reported honestly
+rather than rounded away, but doesn't support treating depth as its own stagnation driver.
+
+**Within-player-count structural predictors vs. turns-remaining**: of 25 structural predictors, 6 are
+sign-consistent (same direction, |r|≥0.05) across at least 3 reliable player-count cells:
+`highestTierInPlay`, `playersOnTier4`, `stagingPile@Tier2`, `inPlayTokens@Tier3`, `stagingPile@Tier3`,
+`inPlayTokens@Tier4` — all negative (more Tier-3/4 occupancy or progress associates with *less* play
+remaining, the mechanically sensible direction, since reaching the upper Tiers is itself progress
+toward winning). Magnitudes are modest (|r| roughly 0.07-0.19) — reported as measured associations and
+candidates for further investigation, explicitly not as weights or proof of causation. Every other
+predictor (hand sizes, pile sizes, Marauder counts at most Tiers, pending-skip debt) showed no
+reliable, sign-consistent relationship.
+
+**One notable tail-only finding surfaced during report review, not caught by the within-player-count
+table**: `totalPendingExtraTierTurns`'s point-biserial correlation with tail-game membership (top 10%
+longest games per player count, using each game's own last regeneration event) is 0.336 — an order of
+magnitude larger than every other non-tautological predictor in that same table (`depth`/
+`turnsElapsedAtRegeneration` themselves score 0.59-0.60, but that's near-tautological, since a longer
+game mechanically produces a later last-event depth and a larger elapsed-turns value). This is flagged
+explicitly as a measured association only, with the same base-rate-confound caveat already established
+for card identity: outstanding `ExtraTierTurn` debt may simply have more opportunity to accumulate the
+longer a game already runs, rather than independently driving a game into the tail — distinguishing
+those two would need its own dedicated follow-up, not asserted here.
+
+**Proximity to victory (`minDistanceToWin`) is honestly reported as low-coverage, not padded.** Only
+1.9%-4.6% of regeneration events (across player counts) happen after any player has an in-play 4th-Tier
+main-loop token at all — most regenerations occur well before anyone is close to winning. Its own
+correlation with turns-remaining is inconsistent in sign across player counts (0.237, -0.017, 0.235,
+-0.167, -0.099) at this coverage level and is not treated as reliable evidence either way.
+
+**A real internal-consistency bug was found and fixed during report review, before finalizing (the
+same "review actual output, don't trust the first generated report" discipline that caught bugs in the
+prior two Phase 1C passes).** A first draft's added "notable tail-only finding" paragraph in Section 7
+recomputed its own per-player-count p90 threshold from only the subset of games that had at least one
+regeneration event, rather than reusing Section 6's own threshold (computed from *every* game in each
+cohort, including any with zero regeneration events) — producing a different tail-membership assignment
+and therefore a different, inconsistent r for the same named statistic within the same report (0.374
+in the added paragraph vs. 0.336 in Section 6's own table for `totalPendingExtraTierTurns`). Fixed by
+having Section 6 return its own `p90ByPc` map and Section 7 reuse it directly rather than recomputing a
+different one — reran, and both figures now agree (0.336). Full report:
+`docs/benchmarks/anti-stagnation-structural-predictors.md`.
+
+**No balance change, canon decision, weight derivation, or configuration change was made.**
+`StagnationPressureConfig`/`FateHarvestRegenerationConfig.ANTI_STAGNATION` were not touched; card
+identity was retained in the recorded dataset (per-card multiplicity at each regeneration) for future
+comparison but not reweighted or reanalyzed in this pass, per the task's own explicit instruction.
+
 ## Deferred — post-baseline simulation/design questions (retained, not acted upon)
 
 The user has explicitly deferred the items below until after the canonical 2-6-player probability

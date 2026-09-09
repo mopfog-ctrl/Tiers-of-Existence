@@ -25,4 +25,6 @@ tasks.test {
     systemProperty("toe.benchmark.dynamic.corrected", System.getProperty("toe.benchmark.dynamic.corrected", "false"))
     // Same mechanism for the Phase 1C refined per-regeneration-event evidence analysis.
     systemProperty("toe.benchmark.eventanalysis", System.getProperty("toe.benchmark.eventanalysis", "false"))
+    // Same mechanism for the Phase 1C structural stagnation-characterization benchmark.
+    systemProperty("toe.benchmark.structural", System.getProperty("toe.benchmark.structural", "false"))
 }
