@@ -1654,6 +1654,66 @@ result** — per the task's own explicit scope, this is a measurement only, and 
 disposition (keep investigating, try a different weighting scheme, or set the mechanic aside) is a
 separate, later decision.
 
+**Refined evidence analysis: the pooled-correlation weighting evidence above does not survive proper
+conditioning — Outcome C, card identity does not meaningfully discriminate.** The weight-derivation
+pass above used pooled correlation (a card's *final* multiplicity vs. that game's *total* turn
+count) — every one of the 32 cards came back positively correlated, a result flagged at the time as
+a likely base-rate confound (longer games mean more regenerations, giving every card more chances to
+drift upward) rather than real per-card evidence. A dedicated follow-up
+(`PlayerCountRegenerationEventAnalysisTest`, Clearance C2 instrument/test only — no gameplay,
+regeneration semantics, rarity ceilings, or `StagnationPressureConfig` change) instrumented the same
+corrected model (`FateHarvestRegenerationConfig.DEFAULT`, no anti-stagnation pressure) at the level
+of individual regeneration events rather than whole games, recording player count, regeneration
+depth, turns elapsed, and every eligible card's post-regeneration multiplicity, then analyzed the
+sharper, forward-looking relationship the task specified: *a card's multiplicity immediately after a
+regeneration* vs. *turns remaining from that point*, conditioned on player count, regeneration
+depth, and rarity class — replacing final-multiplicity-vs-total-length as the primary evidence model.
+Full report: `docs/benchmarks/anti-stagnation-refined-evidence.md` (a new file; the corrected
+baseline's own report and the pooled-correlation Phase 1C report above are both preserved unmodified
+as historical/superseded-methodology record).
+
+**Determinism verified directly, not just asserted**: this analysis deliberately reused the corrected
+baseline's own `BASE_SEED` (the instrumentation reads only already-computed values, consuming no
+`Random` itself) — every cohort's aggregate turns/cap-rate under the instrumented run matched the
+already-published Table K1 figures exactly, confirmed in the report's own Section 1. 0 whole-game-
+rarity-ceiling violations across 5,000 games (14,936 total regeneration events).
+
+**Headline result, within-player-count (the primary table, eliminating the pooling confound the
+original pass had)**: every one of the 32 cards' own multiplicity-vs-turns-remaining correlations
+collapsed to noise once measured this way — the largest reliable |r| across any card/player-count
+cell was ≈0.05, versus the 0.19–0.37 the pooled model reported for literally every card. 0 of 32
+cards showed a sign-consistent (same direction, |r|≥0.05) relationship across at least 3 of the 5
+player-count cells. The rarity-class-level aggregate (Section 6) shows the same near-zero pattern
+(pooled normalized r ranging −0.043 to −0.009 across the four rarity classes, each card's own
+per-class range narrow), so rarity class doesn't discriminate either. A genuinely new, previously-
+undocumented confound this pass identified: the original pooled Table K5 never restricted a color-
+restricted card's own sample to games where that color was actually seated, silently diluting those
+6 cards' correlations with structural-zero "observations" from games where the card couldn't
+possibly exist at all — a different and additional confound from the already-known player-count
+pooling one.
+
+**One genuinely reportable finding, not causal and not about card identity**: persistent-elevated
+multiplicity states (elevated now and at the immediately preceding regeneration) show a
+statistically distinguishable but modest association with *shorter* subsequent play than transient-
+elevated states (−113 turns, z=−7.89) — the opposite direction a stagnation-driving hypothesis would
+predict. The report flags this finding's own major caveat: persistent-elevated vastly outnumbers the
+other categories (≈92% of all depth≥2 observations) purely because `regenerate()`'s own refill step
+fills empty slots uniformly up to a type's own ceiling regardless of how often that type is actually
+played, so most cards sit near their own ceiling most of the time by construction — this is a
+structural artifact of the refill algorithm, not evidence of anything about play dynamics, and the
+report explicitly cautions against over-reading it.
+
+**Outcome C, per the task's own A/B/C framework: card identity does not meaningfully discriminate
+after conditioning.** This suggests card identity may be the wrong control variable for
+anti-stagnation — something else (which player's own draws/discards happen to interact with the
+reshuffle boundary, sheer regeneration depth/count itself, or a structural property of the refill
+mechanism rather than which specific card benefits from it) is a more plausible next place to look,
+per the report's own Section 10. **No weights were manufactured from this result, and
+`StagnationPressureConfig`/`FateHarvestRegenerationConfig.ANTI_STAGNATION` were not touched** — per
+the task's explicit stop condition, this pass is measurement and interpretation only; any further
+action (a different weighting scheme, abandoning card-identity weighting in favor of a different
+mechanism, or closing Phase 1C's experimental line entirely) needs its own separate go-ahead.
+
 ## Deferred — post-baseline simulation/design questions (retained, not acted upon)
 
 The user has explicitly deferred the items below until after the canonical 2-6-player probability
