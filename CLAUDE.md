@@ -1575,12 +1575,21 @@ go-ahead, same as every other major piece of work in this file.
   audience-pacing hypothesis empirically (the "Audience pacing" deferred item) — do NOT encode
   generational or other demographic assumptions into rules directly; treat presentation-profile
   preference as something to observe, not assume.
-- **Phase 5 — Mechanics/deck-composition reconsideration, gated on Phases 2-4 (not started).** Only
-  after presentation pacing has been explored and found insufficient on its own: reconsider whether
-  game length itself (not just perceived pace) should change, and by how much — targeting
-  distribution shape (p90/p95, extreme-game frequency) rather than the mean alone (the "Game
-  length" deferred item). This is the ONLY phase that would touch actual gameplay mechanics, and
-  per the user's own hierarchy it comes last, not first.
+- **Phase 5 — System-level reconsideration after pacing evidence, gated on Phases 1-4 (not
+  started).** **Clarified framing** (the user's own correction to an earlier draft of this phase):
+  Phase 5 is NOT the point where "balance begins" — T.O.E. already has endogenous, interacting
+  self-balancing mechanisms (Staging Pile thresholds, Ion Battery/Hatchery flow, the Fate Harvest
+  deck's own card mix, Marauder caps, Zone of Protection risk/reward, and so on), all already
+  playable and already producing the monotonic, quantified game-length behavior Phase 1
+  established. Phase 5 is where those *existing* mechanisms — probabilities, deck parameters,
+  interactions — are reconsidered *at the system level*, using the aggregate evidence Phases 1-4
+  actually accumulated (canonical baseline behavior, pacing research/implementation/validation
+  findings), rather than tuned in isolation or from first principles. Targets distribution shape
+  (p90/p95, extreme-game frequency) rather than the mean alone (the "Game length" deferred item).
+  This is the ONLY phase that would touch actual gameplay mechanics, and per the user's own
+  hierarchy it comes last, not first — Phase 1B's experimental dynamic-reincarnation benchmark
+  (above) is exactly the kind of evidence-gathering this phase would draw on, not itself a Phase 5
+  action (it made no balance change or canon decision).
 - **Phase 6 — Deck size/variant experiments, gated on Phase 5's own findings if any changes are
   actually warranted (not started).** If Phase 5 concludes a deck-composition change is warranted:
   treat every variant as an explicit, named configuration (never accidental simulation randomness)
@@ -1598,3 +1607,49 @@ go-ahead, same as every other major piece of work in this file.
 Each phase should get its own explicit go-ahead before starting, consistent with how every other
 major piece of work in this codebase has been sequenced — this list exists so that go-ahead can
 reference a specific, already-scoped phase rather than re-deriving the plan from scratch.
+
+## Standing requirement: parameterize configurable values in numeric mechanics (from Phase 1B on)
+
+**A durable engineering policy, not scoped to one phase or file** — applies to every numeric
+mechanic touched or added from this point forward, motivated directly by Phase 1B's own
+experimental reincarnation work and the eventual multiplayer/server-oriented version of T.O.E.,
+which needs to vary game values without rewriting rules logic.
+
+**The rule**: when a mechanic's behavior depends on specific numbers — probabilities, thresholds,
+counts, weightings — distinguish two things before writing the code:
+- **Semantic invariants**: what the rule *means* and *how it behaves structurally* — these are not
+  configurable, because varying them would change what the mechanic *is*, not just how strongly it
+  acts. Example: a regenerated Fate Harvest pile's target size is always exactly the discard pile's
+  own size (`FateHarvestDeck.draw()` enforces this as a hard invariant on any `ReshuffleStrategy`)
+  — that's not a tunable number, it's what "regenerate this pile" *means* (conservation).
+  Similarly, culling never removes the same physical card twice, and refill can always repeat a
+  type — these follow from what culling/refilling mean, not a choice between equally-valid
+  numeric alternatives.
+- **Configurable values**: the actual numeric knobs that could reasonably vary between a server's
+  default ruleset and a house-rule/experimental one, while the mechanic's meaning stays the same.
+  Example: `DynamicReincarnationRules.ReincarnationConfig` (`engine/src/test/kotlin/com
+  /tiersofexistence/engine/benchmark/DynamicReincarnationRules.kt`) — every transition probability,
+  the high-count-bucket threshold and its own drop probability, and the refill/cull *selection
+  functions* themselves (not just their parameters) are fields on this config, defaulting to
+  exactly the experimental values the 5,000-game Phase 1B benchmark validated, but swappable by
+  constructing a different `ReincarnationConfig` without touching `transition`/`regenerate`'s own
+  logic at all. This is the reference implementation of the pattern this policy asks for.
+
+**Scope discipline, both directions**: do not retroactively refactor an existing, unrelated numeric
+mechanic (Staging Pile thresholds, Ion Battery counts, card rarities, dice ranges, ...) into a
+config object just because this policy now exists — that's exactly the "refactor unrelated systems
+merely to parameterize everything" this policy explicitly rules out, and every one of those
+existing constants is Baseline A's own validated, canonical behavior (touching them isn't free).
+But *any new numeric mechanic, or any existing one that gets modified for a real reason from here
+on*, should default to a swappable-configuration shape rather than inlining fresh numeric literals
+into control flow — the cost of doing it right the first time is small, and doing it after the fact
+(as Phase 1B did, generalizing the original hard-coded probabilities once the >4 defect exposed
+that they needed to be config-driven anyway) is strictly more work.
+
+**Determinism is preserved for every valid configuration, not just the default one** — the actual
+mechanism: every code path consumes `random` the same *number of times, in the same order*
+regardless of which config values are in effect (e.g. `DynamicReincarnationRules.transition` always
+calls `random.nextDouble()` exactly once per invocation, whatever the configured probabilities are)
+— this is what makes "same seed → same game" hold for *any* configuration a future server might
+supply, not merely the one this session validated. A future config surface should preserve this
+property explicitly, not assume it falls out for free.
