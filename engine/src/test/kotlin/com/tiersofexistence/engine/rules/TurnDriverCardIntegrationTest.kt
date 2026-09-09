@@ -19,6 +19,7 @@ import com.tiersofexistence.engine.state.PlayerState
 import com.tiersofexistence.engine.state.TokenId
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -364,5 +365,80 @@ class TurnDriverCardIntegrationTest {
         assertEquals(listOf(1), state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayPositions)
         assertTrue(state.players.getValue(RED).hand.isEmpty()) // not returned
         assertTrue(state.players.getValue(GREEN).hand.isEmpty()) // Annulment itself also spent
+    }
+
+    // --- Confirmed by construction (per the user's own request to verify/check): a skipped
+    // player gets no turn on that Tier occurrence at all, so never gets a card-play window there
+    // either; a player granted a genuine extra turn on that Tier gets a fully independent
+    // card-play window on it, same as any other turn. ---
+
+    @Test
+    fun `a player skipped via pendingSkips is never offered a card-play decision for that occurrence`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), plain(3))
+        val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
+        state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
+        state.skipEmptyPhases()
+        assertEquals(RED, state.currentTurn) // Round 1: nobody's skipped yet
+
+        // Queue RED's skip now — too late to affect the in-progress Round 1 queue (already
+        // built), so it applies starting Round 2's 1st Tier Phase, exactly like
+        // GameState.queueSkipNextTierTurn's own contract.
+        state.queueSkipNextTierTurn(RED, TierLevel.FIRST)
+
+        var redAsked = false
+        val redDecisions = ScriptedDecisions(heldCardBeforeRoll = { _, _ -> redAsked = true; null })
+        val greenDecisions = ScriptedDecisions()
+        val driver = TurnDriver(mapOf(RED to redDecisions, GREEN to greenDecisions), rollForPhase = { 1 })
+
+        driver.driveOneTurn(state) // RED's ordinary Round 1 turn — the flag mechanism itself works
+        assertTrue(redAsked) // positive control: RED WAS asked on a turn RED actually got
+        redAsked = false
+
+        driver.driveOneTurn(state) // GREEN's Round 1 turn — ends Round 1, builds Round 2's queue,
+        // where RED's skip debt is consumed by buildTurnQueue filtering RED out entirely.
+        assertEquals(GREEN, state.currentTurn) // RED was filtered out of Round 2's 1st Tier queue
+        assertFalse(redAsked) // RED's decision provider was never invoked for the skipped occurrence
+
+        driver.driveOneTurn(state) // GREEN's Round 2 turn
+        assertFalse(redAsked) // still never asked
+        assertEquals(RED, state.currentTurn) // Round 3: RED is eligible again, debt fully consumed
+    }
+
+    @Test
+    fun `a player granted an extra turn on the same Tier gets a fully independent card-play window on it`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2), plain(3), plain(4), plain(5))
+        val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED))
+        val redId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
+        val tacticalMotion = cardNamed("Tactical Motion") // Held, moves any token 2 spaces
+        state.players.getValue(RED).hand += tacticalMotion
+        state.skipEmptyPhases()
+        assertEquals(Phase.Tier(TierLevel.FIRST), state.currentPhase)
+
+        // Splice a genuine extra turn for RED onto this same Tier's live queue — RED's normal
+        // turn hasn't happened yet this Round, so this attaches right after it, per
+        // GameState.queueExtraTierTurn's own contract.
+        state.queueExtraTierTurn(RED, TierLevel.FIRST)
+
+        var askedCount = 0
+        val decisions = ScriptedDecisions(
+            heldCardBeforeRoll = { _, _ ->
+                askedCount += 1
+                // Only actually playable the 2nd time (the extra turn) — proves it's a fresh,
+                // independent offer, not the same one somehow re-fired or skipped.
+                if (askedCount == 2) CardChoice(tacticalMotion, listOf(CardTarget.Token(redId))) else null
+            },
+        )
+        val driver = TurnDriver(decisions, rollForPhase = { 1 })
+
+        driver.driveOneTurn(state) // RED's normal turn — declines, rolls 1: 0 -> 1
+        assertEquals(1, askedCount)
+        assertEquals(RED, state.currentTurn) // the queued extra turn keeps RED active
+
+        driver.driveOneTurn(state) // RED's genuinely separate extra turn on the same Tier
+        assertEquals(2, askedCount) // a second, independent card-play window was actually offered
+        // Tactical Motion (+2) applied before this turn's own roll (+1): 1 -> 3 -> 4.
+        assertEquals(listOf(4), state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayPositions)
+        assertTrue(state.players.getValue(RED).hand.isEmpty())
     }
 }
