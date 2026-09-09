@@ -25,18 +25,26 @@ class DelayedMotionResolverTest {
 
     private fun cardNamed(name: String) = FateHarvestCatalog.all.single { it.name == name }
 
-    private fun requestFor(player: PlayerColor) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed("Delayed Motion"),
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor): CardPlayRequest {
+        val card = cardNamed("Delayed Motion")
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     @Test
     fun `adds 2 to the source player's own pending roll`() {
         val state = GameState.newGame(listOf(RED))
         val roll = state.beginPendingRoll(RED, 4)
 
-        val result = DelayedMotionResolver.resolve(state, requestFor(RED))
+        val result = DelayedMotionResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(6, roll.total)
@@ -48,7 +56,7 @@ class DelayedMotionResolverTest {
         val state = GameState.newGame(listOf(RED))
         state.beginPendingRoll(RED, 4)
 
-        val result = DelayedMotionResolver.resolve(state, requestFor(RED))
+        val result = DelayedMotionResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.deck.discardPileSize)
@@ -59,7 +67,7 @@ class DelayedMotionResolverTest {
     fun `rejected when there is no pending roll at all`() {
         val state = GameState.newGame(listOf(RED))
 
-        val result = DelayedMotionResolver.resolve(state, requestFor(RED))
+        val result = DelayedMotionResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.CardSpecificRestriction>(result.reason)
@@ -71,7 +79,7 @@ class DelayedMotionResolverTest {
         val state = GameState.newGame(listOf(RED, GREEN))
         val roll = state.beginPendingRoll(GREEN, 4)
 
-        val result = DelayedMotionResolver.resolve(state, requestFor(RED))
+        val result = DelayedMotionResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.CardSpecificRestriction>(result.reason)
@@ -86,7 +94,7 @@ class DelayedMotionResolverTest {
         val state = GameState.newGame(listOf(RED))
         val roll = state.beginPendingRoll(RED, 4)
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(6, roll.total)

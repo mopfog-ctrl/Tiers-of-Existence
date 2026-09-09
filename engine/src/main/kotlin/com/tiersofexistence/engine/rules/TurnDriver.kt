@@ -369,9 +369,18 @@ class TurnDriver(
         require(hand.remove(choice.card)) {
             "TurnDecisionProvider chose ${choice.card.name} to play from hand, but $player doesn't have it"
         }
+        // A held card is a live physical card the instant it leaves hand - the Precedence window
+        // playWithPrecedenceWindow opens right below can run arbitrarily long (other players'
+        // own responses, nested draws/reshuffles) before this card is actually discarded or
+        // returned, so it needs the same GameState.resolvingCards tracking a drawn Immediate card
+        // gets - see that property's own class doc.
+        state.beginResolvingCard(choice.card)
         val request = CardPlayRequest(player, choice.card, choice.targets, TriggeringEvent.PlayedFromHand)
         val result = playWithPrecedenceWindow(state, request)
-        if (result is CardPlayResult.Rejected) hand += choice.card
+        if (result is CardPlayResult.Rejected) {
+            hand += choice.card
+            state.endResolvingCard(choice.card)
+        }
     }
 
     /** Acts on a Marauder's landing effect — the only offer a Marauder can get is
@@ -400,13 +409,12 @@ class TurnDriver(
         val chain = precedence.openWindow(state, SuspendedAction.PendingCardResolution(request))
         if (chain.isSuspendedActionCancelled) {
             state.deck.discard(request.card)
-            // Shared with the Held-card-play path (offerHeldCardPlay) - only an Immediate-drawn
-            // card (TriggeringEvent.DrawnFromSquare) ever entered GameState.resolvingCards in the
-            // first place, so only that path needs the matching endResolvingCard here; see
-            // CardLifecycle.attemptPlay's identical gating for why.
-            if (request.triggeringEvent is TriggeringEvent.DrawnFromSquare) {
-                state.endResolvingCard(request.card)
-            }
+            // Shared by both callers (resolveImmediateCard's Immediate-drawn cards,
+            // offerHeldCardPlay's Held-played cards) - both already called
+            // GameState.beginResolvingCard for this exact card before reaching here, so this
+            // discard always has a matching in-flight card to end; see CardLifecycle.attemptPlay's
+            // identical unconditional call for the same reasoning.
+            state.endResolvingCard(request.card)
             return null
         }
         val result = CardEffectDispatcher.dispatch(state, request)

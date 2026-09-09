@@ -48,12 +48,20 @@ class LastGaspResolverTest {
         listOf(Square(0, SquareType.BIRTH_CANAL)) + (1..9).map { plain(it) },
     )
 
-    private fun requestFor(player: PlayerColor, target: CardTarget.Token) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed("Last Gasp"),
-        targets = listOf(target),
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor, target: CardTarget.Token): CardPlayRequest {
+        val card = cardNamed("Last Gasp")
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            targets = listOf(target),
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     @Test
     fun `moves 8 spaces, destroys everything passed including the mover's own other tokens, and self-destructs on arrival`() {
@@ -66,7 +74,7 @@ class LastGaspResolverTest {
         greenPool.startToken()
         greenPool.moveInPlay(0, 5) // GREEN's token, in the path
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, redPool.inPlayCount) // secondId destroyed by the pass, moverId self-destructed
@@ -86,7 +94,7 @@ class LastGaspResolverTest {
         greenPool.moveInPlay(0, 4)
         greenPool.enterZone(fromPosition = 4, zoneNumber = 1)
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(1), greenPool.zoneResidents) // untouched
@@ -107,7 +115,7 @@ class LastGaspResolverTest {
         greenPool.startToken()
         greenPool.moveInPlay(0, 5) // GREEN's token, on Reprieve
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(3), redPool.inPlayPositions) // the Reprieve-protected token survives; only the mover is gone
@@ -126,7 +134,7 @@ class LastGaspResolverTest {
         greenMarauders.placeOnBirthCanal(TierLevel.THIRD)
         greenMarauders.move(TierLevel.THIRD, 0, 3) // sitting on Reprieve
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, greenMarauders.inPlayCount(TierLevel.THIRD)) // not protected
@@ -140,7 +148,7 @@ class LastGaspResolverTest {
         greenMarauders.placeOnBirthCanal(TierLevel.THIRD)
         greenMarauders.move(TierLevel.THIRD, 0, 4)
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, greenMarauders.inPlayCount(TierLevel.THIRD))
@@ -156,7 +164,7 @@ class LastGaspResolverTest {
         greenPool.startToken()
         greenPool.moveInPlay(0, 4) // in the path, should be destroyed despite being a Tier token
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, redMarauders.inPlayCount(TierLevel.THIRD)) // mover self-destructed
@@ -169,7 +177,7 @@ class LastGaspResolverTest {
         val state = gameWith(board)
         val moverId = state.players.getValue(RED).tierPool(TierLevel.THIRD).startToken()!!
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
         assertIs<CardPlayResult.Resolved>(result) // no crash from a redundant destroy
     }
@@ -181,7 +189,7 @@ class LastGaspResolverTest {
         val pool = state.players.getValue(RED).tierPool(TierLevel.THIRD)
         val moverId = pool.startToken()!!
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(moverId)), CardTarget.Token(moverId))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, pool.stagingPile) // staged normally, not destroyed-and-returned-to-Ion-Battery
@@ -192,7 +200,7 @@ class LastGaspResolverTest {
         val state = gameWith(tenPlainSquares())
         val greenId = state.players.getValue(GREEN).tierPool(TierLevel.THIRD).startToken()!!
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(greenId)), CardTarget.Token(greenId))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(greenId)), CardTarget.Token(greenId))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.WrongTokenType>(result.reason)
@@ -214,7 +222,7 @@ class LastGaspResolverTest {
         pool.moveInPlay(0, 2)
         pool.enterZone(fromPosition = 2, zoneNumber = 1)
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(id)), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(pool.zoneResidents.isEmpty())
@@ -229,7 +237,7 @@ class LastGaspResolverTest {
         val id = pool.startToken()!!
         pool.destroyInPlay(0)
 
-        val result = LastGaspResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
+        val result = LastGaspResolver.resolve(state, requestFor(state, RED, CardTarget.Token(id)), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.NoLegalTarget>(result.reason)
@@ -241,7 +249,7 @@ class LastGaspResolverTest {
         val pool = state.players.getValue(RED).tierPool(TierLevel.THIRD)
         val moverId = pool.startToken()!!
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED, CardTarget.Token(moverId)))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED, CardTarget.Token(moverId)))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, pool.inPlayCount)

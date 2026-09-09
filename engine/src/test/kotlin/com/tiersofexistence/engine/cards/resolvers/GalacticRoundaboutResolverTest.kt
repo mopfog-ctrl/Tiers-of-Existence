@@ -35,11 +35,19 @@ class GalacticRoundaboutResolverTest {
 
     private fun plain(index: Int) = Square(index, SquareType.PLAIN)
 
-    private fun requestFor(player: PlayerColor) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed("Galactic Roundabout"),
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor): CardPlayRequest {
+        val card = cardNamed("Galactic Roundabout")
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     private fun gameWith(tier: TierLevel, board: TierBoard, colors: List<PlayerColor> = listOf(RED, GREEN)): GameState {
         val players = colors.associateWith { PlayerState(it) }
@@ -53,7 +61,7 @@ class GalacticRoundaboutResolverTest {
         state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
         state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()
 
-        val result = GalacticRoundaboutResolver.resolve(state, requestFor(RED))
+        val result = GalacticRoundaboutResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(2), state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayPositions)
@@ -70,7 +78,7 @@ class GalacticRoundaboutResolverTest {
         val greenId = greenMarauders.placeOnBirthCanal(TierLevel.FIRST)
         greenMarauders.move(TierLevel.FIRST, 0, 1) // sits directly in RED's Marauder's path
 
-        val result = GalacticRoundaboutResolver.resolve(state, requestFor(RED))
+        val result = GalacticRoundaboutResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         // Ordinary Marauder movement would destroy GREEN's Marauder as RED's passes over
@@ -93,7 +101,7 @@ class GalacticRoundaboutResolverTest {
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9) // zone position 1
 
-        val result = GalacticRoundaboutResolver.resolve(state, requestFor(RED))
+        val result = GalacticRoundaboutResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(9), pool.zoneResidents) // still a resident
@@ -113,7 +121,7 @@ class GalacticRoundaboutResolverTest {
         pool.moveInPlay(0, 1)
         pool.enterZone(fromPosition = 1, zoneNumber = 9) // zone position 1, only slot in this Zone
 
-        val result = GalacticRoundaboutResolver.resolve(state, requestFor(RED))
+        val result = GalacticRoundaboutResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(pool.zoneResidents.isEmpty())
@@ -130,7 +138,7 @@ class GalacticRoundaboutResolverTest {
         state.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()
         state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()
 
-        val result = GalacticRoundaboutResolver.resolve(state, requestFor(RED))
+        val result = GalacticRoundaboutResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(setOf(RED, GREEN), state.winners)
@@ -145,7 +153,7 @@ class GalacticRoundaboutResolverTest {
         state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()
         state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).moveInPlay(0, 1) // won't land exactly on You Win
 
-        val result = GalacticRoundaboutResolver.resolve(state, requestFor(RED))
+        val result = GalacticRoundaboutResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(setOf(RED), state.winners)
@@ -160,7 +168,7 @@ class GalacticRoundaboutResolverTest {
         state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()
         state.declareWinner(RED) // an earlier, separate resolution already decided the game
 
-        val result = GalacticRoundaboutResolver.resolve(state, requestFor(RED))
+        val result = GalacticRoundaboutResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(setOf(RED), state.winners) // GREEN's own exact landing in this sweep doesn't get added
@@ -172,7 +180,7 @@ class GalacticRoundaboutResolverTest {
         val state = gameWith(TierLevel.FIRST, board)
         state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(2), state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayPositions)

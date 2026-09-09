@@ -39,12 +39,20 @@ class CirculateResolverTest {
         return GameState(players, TurnOrder(colors), boards = BoardLayouts.current() + (TierLevel.FIRST to board))
     }
 
-    private fun requestFor(player: PlayerColor, target: CardTarget.Token) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed("Circulate (Elemental)"),
-        targets = listOf(target),
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor, target: CardTarget.Token): CardPlayRequest {
+        val card = cardNamed("Circulate (Elemental)")
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            targets = listOf(target),
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     @Test
     fun `moves the target token from the main loop into the next Zone of Protection`() {
@@ -57,7 +65,7 @@ class CirculateResolverTest {
         val id = pool.startToken()!!
         pool.moveInPlay(0, 1)
 
-        val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
+        val result = CirculateResolver.resolve(state, requestFor(state, RED, CardTarget.Token(id)), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(1 !in pool.inPlayPositions)
@@ -74,7 +82,7 @@ class CirculateResolverTest {
         val greenPool = state.players.getValue(GREEN).tierPool(TierLevel.FIRST)
         val greenId = greenPool.startToken()!!
 
-        val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(greenId)), CardTarget.Token(greenId))
+        val result = CirculateResolver.resolve(state, requestFor(state, RED, CardTarget.Token(greenId)), CardTarget.Token(greenId))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(1), greenPool.zoneResidents)
@@ -97,7 +105,7 @@ class CirculateResolverTest {
         val id = pool.startToken()!!
         pool.moveInPlay(0, 2)
 
-        val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
+        val result = CirculateResolver.resolve(state, requestFor(state, RED, CardTarget.Token(id)), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(2), pool.zoneResidents) // Zone 2, not Zone 1
@@ -119,7 +127,7 @@ class CirculateResolverTest {
         val id = pool.startToken()!!
         pool.moveInPlay(0, 3) // nothing ahead of 3 except wrapping back to 0, then 1
 
-        val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
+        val result = CirculateResolver.resolve(state, requestFor(state, RED, CardTarget.Token(id)), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(1), pool.zoneResidents)
@@ -137,7 +145,7 @@ class CirculateResolverTest {
         pool.moveInPlay(0, 2)
         pool.enterZone(fromPosition = 2, zoneNumber = 1)
 
-        val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
+        val result = CirculateResolver.resolve(state, requestFor(state, RED, CardTarget.Token(id)), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.ZoneOfProtectionBlocksTarget>(result.reason)
@@ -153,7 +161,7 @@ class CirculateResolverTest {
         val state = gameWith(board)
         val marauderId = state.players.getValue(RED).marauders.placeOnBirthCanal(TierLevel.FIRST)
 
-        val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(marauderId)), CardTarget.Token(marauderId))
+        val result = CirculateResolver.resolve(state, requestFor(state, RED, CardTarget.Token(marauderId)), CardTarget.Token(marauderId))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.WrongTokenType>(result.reason)
@@ -171,7 +179,7 @@ class CirculateResolverTest {
         val id = pool.startToken()!!
         pool.destroyInPlay(0) // gone before this resolver ever runs
 
-        val result = CirculateResolver.resolve(state, requestFor(RED, CardTarget.Token(id)), CardTarget.Token(id))
+        val result = CirculateResolver.resolve(state, requestFor(state, RED, CardTarget.Token(id)), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.NoLegalTarget>(result.reason)
@@ -187,7 +195,7 @@ class CirculateResolverTest {
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
         val id = pool.startToken()!!
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED, CardTarget.Token(id)))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED, CardTarget.Token(id)))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(1), pool.zoneResidents)

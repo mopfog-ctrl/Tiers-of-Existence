@@ -50,12 +50,20 @@ class ParallelPhasingResolverTest {
         return GameState(players, TurnOrder(colors), boards = BoardLayouts.current() + (TierLevel.FIRST to board))
     }
 
-    private fun requestFor(player: PlayerColor, targets: List<CardTarget>) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed("Parallel Phasing"),
-        targets = targets,
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor, targets: List<CardTarget>): CardPlayRequest {
+        val card = cardNamed("Parallel Phasing")
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            targets = targets,
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     @Test
     fun `moves the player's own token and an opponent's token 4 spaces each`() {
@@ -65,7 +73,7 @@ class ParallelPhasingResolverTest {
 
         val result = ParallelPhasingResolver.resolve(
             state,
-            requestFor(RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId))),
+            requestFor(state, RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId))),
             CardTarget.Token(ownId),
             CardTarget.Token(opponentId),
         )
@@ -84,7 +92,7 @@ class ParallelPhasingResolverTest {
 
         val result = ParallelPhasingResolver.resolve(
             state,
-            requestFor(RED, listOf(CardTarget.Token(ownMarauderId), CardTarget.Token(opponentId))),
+            requestFor(state, RED, listOf(CardTarget.Token(ownMarauderId), CardTarget.Token(opponentId))),
             CardTarget.Token(ownMarauderId),
             CardTarget.Token(opponentId),
         )
@@ -103,7 +111,7 @@ class ParallelPhasingResolverTest {
 
         val result = ParallelPhasingResolver.resolve(
             state,
-            requestFor(RED, listOf(CardTarget.Token(notOwnId), CardTarget.Token(otherId))),
+            requestFor(state, RED, listOf(CardTarget.Token(notOwnId), CardTarget.Token(otherId))),
             CardTarget.Token(notOwnId),
             CardTarget.Token(otherId),
         )
@@ -122,7 +130,7 @@ class ParallelPhasingResolverTest {
 
         val result = ParallelPhasingResolver.resolve(
             state,
-            requestFor(RED, listOf(CardTarget.Token(ownId), CardTarget.Token(alsoOwnId))),
+            requestFor(state, RED, listOf(CardTarget.Token(ownId), CardTarget.Token(alsoOwnId))),
             CardTarget.Token(ownId),
             CardTarget.Token(alsoOwnId),
         )
@@ -141,7 +149,7 @@ class ParallelPhasingResolverTest {
 
         val result = ParallelPhasingResolver.resolve(
             state,
-            requestFor(RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId))),
+            requestFor(state, RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId))),
             CardTarget.Token(ownId),
             CardTarget.Token(opponentId),
         )
@@ -164,7 +172,7 @@ class ParallelPhasingResolverTest {
 
         val result = ParallelPhasingResolver.resolve(
             state,
-            requestFor(RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId))),
+            requestFor(state, RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId))),
             CardTarget.Token(ownId),
             CardTarget.Token(opponentId),
         )
@@ -187,7 +195,7 @@ class ParallelPhasingResolverTest {
 
         val result = ParallelPhasingResolver.resolve(
             state,
-            requestFor(RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId))),
+            requestFor(state, RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId))),
             CardTarget.Token(ownId),
             CardTarget.Token(opponentId),
         )
@@ -201,7 +209,7 @@ class ParallelPhasingResolverTest {
         val state = gameWith(boardOf6())
         val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
         val opponentId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
-        val request = requestFor(RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId)))
+        val request = requestFor(state, RED, listOf(CardTarget.Token(ownId), CardTarget.Token(opponentId)))
 
         val result = CardEffectDispatcher.dispatch(state, request)
 
@@ -214,7 +222,7 @@ class ParallelPhasingResolverTest {
     fun `CardEffectDispatcher rejects Parallel Phasing given the wrong number of targets`() {
         val state = gameWith(boardOf6())
         val ownId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
-        val request = requestFor(RED, listOf(CardTarget.Token(ownId)))
+        val request = requestFor(state, RED, listOf(CardTarget.Token(ownId)))
 
         val result = CardEffectDispatcher.dispatch(state, request)
 

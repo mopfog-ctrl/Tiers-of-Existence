@@ -27,11 +27,19 @@ class FluidicWaveResolverTest {
 
     private fun cardNamed(name: String) = FateHarvestCatalog.all.single { it.name == name }
 
-    private fun requestFor(player: PlayerColor) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed("Fluidic Wave"),
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor): CardPlayRequest {
+        val card = cardNamed("Fluidic Wave")
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     @Test
     fun `wipes every player's 1st Tier in-play and Staging Pile tokens, including the Blue player's own`() {
@@ -44,7 +52,7 @@ class FluidicWaveResolverTest {
         bluePool.moveInPlay(0, 5)
         greenPool.moveInPlay(0, 5)
 
-        val result = FluidicWaveResolver.resolve(state, requestFor(BLUE))
+        val result = FluidicWaveResolver.resolve(state, requestFor(state, BLUE))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(5 !in bluePool.inPlayPositions) // Blue's own token was wiped too, not spared
@@ -60,7 +68,7 @@ class FluidicWaveResolverTest {
         redPool.moveInPlay(0, 10)
         redPool.enterZone(fromPosition = 10, zoneNumber = 2)
 
-        val result = FluidicWaveResolver.resolve(state, requestFor(BLUE))
+        val result = FluidicWaveResolver.resolve(state, requestFor(state, BLUE))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(2), redPool.zoneResidents) // untouched
@@ -70,7 +78,7 @@ class FluidicWaveResolverTest {
     fun `1st Tier auto-replenishes from the Ion Battery after the wipe, same as any other slot-freeing mutation`() {
         val state = GameState.newGame(listOf(BLUE, RED))
 
-        val result = FluidicWaveResolver.resolve(state, requestFor(BLUE))
+        val result = FluidicWaveResolver.resolve(state, requestFor(state, BLUE))
 
         assertIs<CardPlayResult.Resolved>(result)
         // Ion Battery reserves are untouched by the wipe itself, so there's plenty left to
@@ -85,7 +93,7 @@ class FluidicWaveResolverTest {
         state.players.getValue(RED).marauders.placeOnBirthCanal(TierLevel.FIRST)
         state.players.getValue(RED).marauders.placeOnBirthCanal(TierLevel.SECOND)
 
-        val result = FluidicWaveResolver.resolve(state, requestFor(BLUE))
+        val result = FluidicWaveResolver.resolve(state, requestFor(state, BLUE))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, state.players.getValue(RED).marauders.inPlayCount(TierLevel.FIRST))
@@ -97,7 +105,7 @@ class FluidicWaveResolverTest {
         val state = GameState.newGame(listOf(BLUE, RED))
         state.players.getValue(RED).tierPool(TierLevel.SECOND).startToken()
 
-        val result = FluidicWaveResolver.resolve(state, requestFor(BLUE))
+        val result = FluidicWaveResolver.resolve(state, requestFor(state, BLUE))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(RED).tierPool(TierLevel.SECOND).inPlayCount)
@@ -107,7 +115,7 @@ class FluidicWaveResolverTest {
     fun `played by a non-Blue player is rejected and never wipes anything`() {
         val state = GameState.newGame(listOf(BLUE, RED))
 
-        val result = FluidicWaveResolver.resolve(state, requestFor(RED))
+        val result = FluidicWaveResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.WrongColor>(result.reason)
@@ -121,7 +129,7 @@ class FluidicWaveResolverTest {
         val state = GameState.newGame(listOf(BLUE, RED))
         state.players.getValue(RED).tierPool(TierLevel.FIRST).sendToStagingPile(0)
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(BLUE))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, BLUE))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile)

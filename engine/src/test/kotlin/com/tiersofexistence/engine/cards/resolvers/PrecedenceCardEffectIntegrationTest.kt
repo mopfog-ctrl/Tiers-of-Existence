@@ -60,6 +60,11 @@ class PrecedenceCardEffectIntegrationTest {
 
         // GREEN plays Tactical Step (Precedence, +1) on their own endangered token before the move resolves.
         val rescue = CardPlayRequest(GREEN, cardNamed("Tactical Step"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        // Mirrors PrecedenceOrchestrator.offerResponseRounds' own beginResolvingCard call at the
+        // exact moment a response is removed from hand and added to the chain — see
+        // GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+        // endResolvingCard now expects this.
+        state.beginResolvingCard(rescue.card)
         chain.respond(GREEN, rescue)
         chain.pass(RED)
         chain.pass(GREEN)
@@ -111,8 +116,10 @@ class PrecedenceCardEffectIntegrationTest {
 
         val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN))
         val step = CardPlayRequest(RED, cardNamed("Tactical Step"), listOf(CardTarget.Token(redId)), TriggeringEvent.RespondingInChain(chain.id))
+        state.beginResolvingCard(step.card) // see rule-23-worked-example test above for why
         chain.respond(RED, step)
         val motion = CardPlayRequest(GREEN, cardNamed("Tactical Motion"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        state.beginResolvingCard(motion.card)
         chain.respond(GREEN, motion) // played second, resolves FIRST (reverse order) — independent token, no conflict
         chain.pass(RED)
         chain.pass(GREEN)
@@ -145,8 +152,10 @@ class PrecedenceCardEffectIntegrationTest {
         val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN))
         // RED's movement card can target any player's token (rule 11), including GREEN's.
         val step = CardPlayRequest(RED, cardNamed("Tactical Step"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        state.beginResolvingCard(step.card)
         chain.respond(RED, step) // played first, resolves LAST
         val motion = CardPlayRequest(GREEN, cardNamed("Tactical Motion"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        state.beginResolvingCard(motion.card)
         chain.respond(GREEN, motion) // played second, resolves FIRST — same token as step
         chain.pass(RED)
         chain.pass(GREEN)
@@ -173,8 +182,10 @@ class PrecedenceCardEffectIntegrationTest {
 
         val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN))
         val redsStep = CardPlayRequest(RED, cardNamed("Tactical Step"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        state.beginResolvingCard(redsStep.card)
         chain.respond(RED, redsStep) // played first, resolves LAST — token not yet in a Zone when chosen
         val greenMovesSelfIntoZone = CardPlayRequest(GREEN, cardNamed("Tactical Motion"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        state.beginResolvingCard(greenMovesSelfIntoZone.card)
         chain.respond(GREEN, greenMovesSelfIntoZone) // played second, resolves FIRST: 0 -> 2, entering the Zone
         chain.pass(RED)
         chain.pass(GREEN)
@@ -201,8 +212,10 @@ class PrecedenceCardEffectIntegrationTest {
 
         val chain = InteractionChain.open(SuspendedAction.PendingRoll(RED), eligiblePlayers = listOf(RED, GREEN, BLACK))
         val tacticalStep = CardPlayRequest(RED, cardNamed("Tactical Step"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        state.beginResolvingCard(tacticalStep.card)
         chain.respond(RED, tacticalStep) // played first, resolves LAST — the token still exists when chosen
         val gravitonRift = CardPlayRequest(BLACK, cardNamed("Graviton Rift"), listOf(CardTarget.Token(greenId)), TriggeringEvent.RespondingInChain(chain.id))
+        state.beginResolvingCard(gravitonRift.card)
         chain.respond(BLACK, gravitonRift) // played second, resolves FIRST: destroys GREEN's token outright
         chain.pass(RED)
         chain.pass(GREEN)

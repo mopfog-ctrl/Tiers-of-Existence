@@ -70,10 +70,19 @@ object CardLifecycle {
     ): CardPlayResult {
         val hand = state.players.getValue(player).hand
         require(hand.remove(card)) { "$player does not have ${card.name} in hand" }
+        // The card is a live physical card the instant it leaves hand, same as a freshly drawn
+        // Immediate card - see GameState.resolvingCards' own class doc. attemptPlay's own
+        // matching endResolvingCard handles the success path; the Rejected branch below ends it
+        // itself, since returning the card to hand is this call's own equivalent of a discard -
+        // either way the card leaves resolvingCards at the exact moment it lands somewhere else.
+        state.beginResolvingCard(card)
 
         val request = CardPlayRequest(player, card, targets, TriggeringEvent.PlayedFromHand)
         val result = attemptPlay(state, request)
-        if (result is CardPlayResult.Rejected) hand += card
+        if (result is CardPlayResult.Rejected) {
+            hand += card
+            state.endResolvingCard(card)
+        }
         return result
     }
 
@@ -98,16 +107,15 @@ object CardLifecycle {
 
         player.hasPlayedCardThisPhase = true
         state.deck.discard(card)
-        // This is the shared discard point for both the Immediate-draw path (every card resolver
-        // ultimately funnels here) and the Held-card-play path. Only a card that began resolving
-        // via GameState.beginResolvingCard (i.e. TriggeringEvent.DrawnFromSquare - see that
-        // property's own class doc) needs the matching endResolvingCard; a Held card never enters
-        // resolvingCards at all (TurnEngine.kt puts it straight into the hand), so gating on the
-        // triggering event - rather than always calling endResolvingCard - is what keeps the two
-        // lifecycles from crossing.
-        if (request.triggeringEvent is TriggeringEvent.DrawnFromSquare) {
-            state.endResolvingCard(card)
-        }
+        // This is the shared discard point every real play path funnels through - a drawn
+        // Immediate card (TriggeringEvent.DrawnFromSquare, begun in onDrawnFromSquare/TurnEngine's
+        // own draw sites), a Held card played from hand (TriggeringEvent.PlayedFromHand, begun in
+        // playFromHand/TurnDriver.offerHeldCardPlay), and a Precedence-chain response
+        // (TriggeringEvent.RespondingInChain, begun in PrecedenceOrchestrator.offerResponseRounds)
+        // all enter GameState.resolvingCards at the moment they leave their prior zone (draw pile
+        // or hand), so this success-path discard always has a matching in-flight card to end -
+        // see resolvingCards' own class doc for the full invariant.
+        state.endResolvingCard(card)
         return CardPlayResult.Resolved(request)
     }
 }

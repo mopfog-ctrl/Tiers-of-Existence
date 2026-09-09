@@ -47,12 +47,20 @@ class PlasmaBurstResolverTest {
     private fun gameWith(board: TierBoard, colors: List<PlayerColor> = listOf(RED, GREEN)): GameState =
         gameWith(TierLevel.FIRST, board, colors)
 
-    private fun requestFor(player: PlayerColor, position: Int, tier: TierLevel = TierLevel.FIRST) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed("Plasma Burst"),
-        targets = listOf(CardTarget.BoardPosition(tier, position)),
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor, position: Int, tier: TierLevel = TierLevel.FIRST): CardPlayRequest {
+        val card = cardNamed("Plasma Burst")
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            targets = listOf(CardTarget.BoardPosition(tier, position)),
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     @Test
     fun `removes all tokens of any owner from the 3 chosen consecutive squares`() {
@@ -65,7 +73,7 @@ class PlasmaBurstResolverTest {
         greenPool.startToken()
         greenPool.moveInPlay(0, 3)
 
-        val result = PlasmaBurstResolver.resolve(state, requestFor(RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
+        val result = PlasmaBurstResolver.resolve(state, requestFor(state, RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(1 !in redPool.inPlayPositions)
@@ -80,7 +88,7 @@ class PlasmaBurstResolverTest {
         redPool.startToken()
         redPool.moveInPlay(0, 5) // outside [1, 2, 3]
 
-        val result = PlasmaBurstResolver.resolve(state, requestFor(RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
+        val result = PlasmaBurstResolver.resolve(state, requestFor(state, RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(5), redPool.inPlayPositions)
@@ -94,7 +102,7 @@ class PlasmaBurstResolverTest {
         marauders.placeOnBirthCanal(TierLevel.FIRST)
         marauders.move(TierLevel.FIRST, 0, 2)
 
-        val result = PlasmaBurstResolver.resolve(state, requestFor(RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
+        val result = PlasmaBurstResolver.resolve(state, requestFor(state, RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, marauders.inPlayCount(TierLevel.FIRST))
@@ -111,7 +119,7 @@ class PlasmaBurstResolverTest {
         greenPool.startToken()
         greenPool.moveInPlay(0, 1) // stacked with Red's on the same square
 
-        val result = PlasmaBurstResolver.resolve(state, requestFor(RED, 0), CardTarget.BoardPosition(TierLevel.FIRST, 0))
+        val result = PlasmaBurstResolver.resolve(state, requestFor(state, RED, 0), CardTarget.BoardPosition(TierLevel.FIRST, 0))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(1 !in redPool.inPlayPositions)
@@ -132,7 +140,7 @@ class PlasmaBurstResolverTest {
         greenPool.moveInPlay(0, 2)
         greenPool.enterZone(fromPosition = 2, zoneNumber = 1)
 
-        val result = PlasmaBurstResolver.resolve(state, requestFor(RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
+        val result = PlasmaBurstResolver.resolve(state, requestFor(state, RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(greenPool.zoneResidents.isEmpty())
@@ -151,7 +159,7 @@ class PlasmaBurstResolverTest {
         greenPool.startToken()
         greenPool.moveInPlay(0, 2) // sitting on the entry square, never actually entered
 
-        val result = PlasmaBurstResolver.resolve(state, requestFor(RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
+        val result = PlasmaBurstResolver.resolve(state, requestFor(state, RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(2 !in greenPool.inPlayPositions)
@@ -174,7 +182,7 @@ class PlasmaBurstResolverTest {
         greenPool.moveInPlay(0, 5)
         greenPool.enterZone(fromPosition = 5, zoneNumber = 1)
 
-        val result = PlasmaBurstResolver.resolve(state, requestFor(RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1)) // squares [1,2,3]
+        val result = PlasmaBurstResolver.resolve(state, requestFor(state, RED, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1)) // squares [1,2,3]
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(1), greenPool.zoneResidents)
@@ -193,7 +201,7 @@ class PlasmaBurstResolverTest {
         redPool.startToken() // second Red token, stays on Birth Canal (index 0)
 
         // window starting at 3: squares [3, 0, 1] (wraps past the end of a 4-square board)
-        val result = PlasmaBurstResolver.resolve(state, requestFor(RED, 3, TierLevel.THIRD), CardTarget.BoardPosition(TierLevel.THIRD, 3))
+        val result = PlasmaBurstResolver.resolve(state, requestFor(state, RED, 3, TierLevel.THIRD), CardTarget.BoardPosition(TierLevel.THIRD, 3))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(redPool.inPlayPositions.isEmpty())
@@ -207,7 +215,7 @@ class PlasmaBurstResolverTest {
         greenPool.startToken()
         greenPool.moveInPlay(0, 1)
 
-        val result = PlasmaBurstResolver.resolve(state, requestFor(GREEN, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
+        val result = PlasmaBurstResolver.resolve(state, requestFor(state, GREEN, 1), CardTarget.BoardPosition(TierLevel.FIRST, 1))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.WrongColor>(result.reason)
@@ -223,7 +231,7 @@ class PlasmaBurstResolverTest {
         greenPool.startToken()
         greenPool.moveInPlay(0, 1)
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED, 1))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED, 1))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(1 !in greenPool.inPlayPositions)

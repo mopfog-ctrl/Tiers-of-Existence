@@ -39,11 +39,19 @@ class CardResolversTest {
         return GameState(players, TurnOrder(colors), boards = BoardLayouts.current() + (tier to board))
     }
 
-    private fun requestFor(player: PlayerColor, cardName: String) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed(cardName),
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor, cardName: String): CardPlayRequest {
+        val card = cardNamed(cardName)
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     // --- MovementCardResolver ---
 
@@ -53,7 +61,7 @@ class CardResolversTest {
         val state = gameWith(TierLevel.FIRST, board)
         val id = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
 
-        val result = MovementCardResolver.resolve(state, requestFor(RED, "Skip, Hop, and Jump (Dimensional)"), CardTarget.Token(id), spaces = 3)
+        val result = MovementCardResolver.resolve(state, requestFor(state, RED, "Skip, Hop, and Jump (Dimensional)"), CardTarget.Token(id), spaces = 3)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile) // landed on the Nebula
@@ -69,7 +77,7 @@ class CardResolversTest {
         pool.enterZone(fromPosition = 0, zoneNumber = 2)
         val target = CardTarget.Token(id)
 
-        val result = MovementCardResolver.resolve(state, requestFor(RED, "Skip, Hop, and Jump (Dimensional)"), target, spaces = 1)
+        val result = MovementCardResolver.resolve(state, requestFor(state, RED, "Skip, Hop, and Jump (Dimensional)"), target, spaces = 1)
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.ZoneOfProtectionBlocksTarget>((result as CardPlayResult.Rejected).reason)
@@ -82,7 +90,7 @@ class CardResolversTest {
         val state = gameWith(TierLevel.FOURTH, board)
         val id = state.players.getValue(RED).tierPool(TierLevel.FOURTH).startToken()!!
 
-        val result = MovementCardResolver.resolve(state, requestFor(RED, "Evasive Action"), CardTarget.Token(id), spaces = 2)
+        val result = MovementCardResolver.resolve(state, requestFor(state, RED, "Evasive Action"), CardTarget.Token(id), spaces = 2)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(RED, state.winner) // exact landing on You Win via a card-driven move
@@ -96,7 +104,7 @@ class CardResolversTest {
         state.players.getValue(WHITE).tierPool(TierLevel.FIRST).startToken()
         state.players.getValue(WHITE).tierPool(TierLevel.FIRST).moveInPlay(0, 1) // strictly between 0 and 2: passed, not landed on
 
-        val result = MovementCardResolver.resolve(state, requestFor(RED, "Tactical Motion"), CardTarget.Token(marauderId), spaces = 2)
+        val result = MovementCardResolver.resolve(state, requestFor(state, RED, "Tactical Motion"), CardTarget.Token(marauderId), spaces = 2)
 
         assertIs<CardPlayResult.Resolved>(result)
         // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap once the
@@ -113,7 +121,7 @@ class CardResolversTest {
         state.players.getValue(WHITE).tierPool(TierLevel.FIRST).startToken()
         state.players.getValue(WHITE).tierPool(TierLevel.FIRST).moveInPlay(0, 1) // exactly where the Marauder will land
 
-        val result = MovementCardResolver.resolve(state, requestFor(RED, "Sidestep (Extinction Avoidance)"), CardTarget.Token(marauderId), spaces = 1)
+        val result = MovementCardResolver.resolve(state, requestFor(state, RED, "Sidestep (Extinction Avoidance)"), CardTarget.Token(marauderId), spaces = 1)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(WHITE).tierPool(TierLevel.FIRST).inPlayCount) // landed on, not destroyed
@@ -126,7 +134,7 @@ class CardResolversTest {
         val state = GameState.newGame(listOf(WHITE, RED))
         state.players.getValue(WHITE).marauders.placeOnBirthCanal(TierLevel.FOURTH) // already at the normal cap of 1
 
-        val result = MarauderConstructionCardResolver.resolve(state, requestFor(WHITE, "Dwarf Star"), WHITE, TierLevel.FOURTH)
+        val result = MarauderConstructionCardResolver.resolve(state, requestFor(state, WHITE, "Dwarf Star"), WHITE, TierLevel.FOURTH)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(2, state.players.getValue(WHITE).marauders.inPlayCount(TierLevel.FOURTH))
@@ -136,7 +144,7 @@ class CardResolversTest {
     fun `Dwarf Star played by a non-White player is rejected and never places a Marauder`() {
         val state = GameState.newGame(listOf(WHITE, RED))
 
-        val result = MarauderConstructionCardResolver.resolve(state, requestFor(RED, "Dwarf Star"), RED, TierLevel.FOURTH)
+        val result = MarauderConstructionCardResolver.resolve(state, requestFor(state, RED, "Dwarf Star"), RED, TierLevel.FOURTH)
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.WrongColor>((result as CardPlayResult.Rejected).reason)
@@ -148,7 +156,7 @@ class CardResolversTest {
     fun `Materialize Help places a Marauder specifically on the 3rd Tier`() {
         val state = GameState.newGame(listOf(RED))
 
-        val result = MarauderConstructionCardResolver.resolve(state, requestFor(RED, "Materialize Help"), RED, TierLevel.THIRD)
+        val result = MarauderConstructionCardResolver.resolve(state, requestFor(state, RED, "Materialize Help"), RED, TierLevel.THIRD)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(RED).marauders.inPlayCount(TierLevel.THIRD))
@@ -164,7 +172,7 @@ class CardResolversTest {
 
         val result = BirthCanalConstructionCardResolver.resolve(
             state,
-            requestFor(GreenColor, "Verdant Growth"),
+            requestFor(state, GreenColor, "Verdant Growth"),
             GreenColor,
             listOf(TierLevel.FIRST, TierLevel.SECOND, TierLevel.THIRD),
         )
@@ -181,7 +189,7 @@ class CardResolversTest {
 
         val result = BirthCanalConstructionCardResolver.resolve(
             state,
-            requestFor(RED, "Verdant Growth"),
+            requestFor(state, RED, "Verdant Growth"),
             RED,
             listOf(TierLevel.FIRST, TierLevel.SECOND, TierLevel.THIRD),
         )
@@ -199,7 +207,7 @@ class CardResolversTest {
         repeat(3) { state.advancePhase() } // Marauder -> 4th -> 3rd -> 2nd
         assertEquals(com.tiersofexistence.engine.rules.Phase.Tier(TierLevel.SECOND), state.currentPhase)
 
-        val result = BirthCanalConstructionCardResolver.resolve(state, requestFor(RED, "Planetary Nebula"), RED, listOf(TierLevel.SECOND))
+        val result = BirthCanalConstructionCardResolver.resolve(state, requestFor(state, RED, "Planetary Nebula"), RED, listOf(TierLevel.SECOND))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(2, state.players.getValue(RED).tierPool(TierLevel.SECOND).inPlayCount)
@@ -209,7 +217,7 @@ class CardResolversTest {
     fun `Planetary Nebula is rejected outside the 2nd Tier Phase, even for the right player`() {
         val state = GameState.newGame(listOf(RED)) // starts on the Marauder Phase
 
-        val result = BirthCanalConstructionCardResolver.resolve(state, requestFor(RED, "Planetary Nebula"), RED, listOf(TierLevel.SECOND))
+        val result = BirthCanalConstructionCardResolver.resolve(state, requestFor(state, RED, "Planetary Nebula"), RED, listOf(TierLevel.SECOND))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.WrongScope>((result as CardPlayResult.Rejected).reason)
@@ -221,7 +229,7 @@ class CardResolversTest {
     fun `Emitting Nebula is rejected outside the 1st Tier Phase`() {
         val state = GameState.newGame(listOf(RED)) // Marauder Phase, not 1st Tier
 
-        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(RED, "Emitting Nebula"), RED, TierLevel.FIRST)
+        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(state, RED, "Emitting Nebula"), RED, TierLevel.FIRST)
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.WrongScope>((result as CardPlayResult.Rejected).reason)
@@ -234,7 +242,7 @@ class CardResolversTest {
         state.skipEmptyPhases() // Round 1 always lands directly on the 1st Tier Phase
         assertEquals(com.tiersofexistence.engine.rules.Phase.Tier(TierLevel.FIRST), state.currentPhase)
 
-        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(RED, "Emitting Nebula"), RED, TierLevel.FIRST)
+        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(state, RED, "Emitting Nebula"), RED, TierLevel.FIRST)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile)
@@ -246,7 +254,7 @@ class CardResolversTest {
     fun `Lucky Nebula adds directly to the 1st Tier Staging Pile without a Nebula landing`() {
         val state = GameState.newGame(listOf(RED))
 
-        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(RED, "Lucky Nebula"), RED, TierLevel.FIRST)
+        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(state, RED, "Lucky Nebula"), RED, TierLevel.FIRST)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile)
@@ -261,7 +269,7 @@ class CardResolversTest {
         pool.startToken()
         pool.sendToStagingPile(0) // 2 of 3
 
-        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(RED, "Luckier Nebula"), RED, TierLevel.SECOND)
+        val result = StagingPileConstructionCardResolver.resolve(state, requestFor(state, RED, "Luckier Nebula"), RED, TierLevel.SECOND)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, pool.stagingPile) // promoted

@@ -21,11 +21,19 @@ class DestructionCardResolversTest {
 
     private fun cardNamed(name: String) = FateHarvestCatalog.all.single { it.name == name }
 
-    private fun requestFor(player: PlayerColor, cardName: String) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed(cardName),
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor, cardName: String): CardPlayRequest {
+        val card = cardNamed(cardName)
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     // --- DestructionCardResolver (Divine Assistance, Insidious Flux) ---
 
@@ -34,7 +42,7 @@ class DestructionCardResolversTest {
         val state = GameState.newGame(listOf(RED, GREEN))
         val id = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).idAt(0)!!
 
-        val result = DestructionCardResolver.resolve(state, requestFor(RED, "Divine Assistance"), CardTarget.Token(id))
+        val result = DestructionCardResolver.resolve(state, requestFor(state, RED, "Divine Assistance"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
         // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap, so GREEN
@@ -49,7 +57,7 @@ class DestructionCardResolversTest {
         pool.sendToStagingPile(0)
         val target = CardTarget.StagingPileToken(GREEN, TierLevel.FIRST)
 
-        val result = DestructionCardResolver.resolve(state, requestFor(RED, "Divine Assistance"), target)
+        val result = DestructionCardResolver.resolve(state, requestFor(state, RED, "Divine Assistance"), target)
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, pool.stagingPile)
@@ -63,7 +71,7 @@ class DestructionCardResolversTest {
         pool.moveInPlay(0, 10)
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
 
-        val result = DestructionCardResolver.resolve(state, requestFor(RED, "Divine Assistance"), CardTarget.Token(id))
+        val result = DestructionCardResolver.resolve(state, requestFor(state, RED, "Divine Assistance"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertTrue(pool.zoneResidents.isEmpty())
@@ -77,7 +85,7 @@ class DestructionCardResolversTest {
         pool.moveInPlay(0, 10)
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
 
-        val result = DestructionCardResolver.resolve(state, requestFor(RED, "Insidious Flux"), CardTarget.Token(id))
+        val result = DestructionCardResolver.resolve(state, requestFor(state, RED, "Insidious Flux"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.ZoneOfProtectionBlocksTarget>((result as CardPlayResult.Rejected).reason)
@@ -91,7 +99,7 @@ class DestructionCardResolversTest {
         pool.startToken()
         pool.sendToStagingPile(0)
 
-        val result = DestructionCardResolver.resolve(state, requestFor(GREEN, "Insidious Flux"), CardTarget.StagingPileToken(RED, TierLevel.SECOND))
+        val result = DestructionCardResolver.resolve(state, requestFor(state, GREEN, "Insidious Flux"), CardTarget.StagingPileToken(RED, TierLevel.SECOND))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, pool.stagingPile)
@@ -104,7 +112,7 @@ class DestructionCardResolversTest {
         val id = pool.idAt(0)!!
         pool.destroyInPlay(0) // the token is gone before this resolver ever runs
 
-        val result = DestructionCardResolver.resolve(state, requestFor(RED, "Divine Assistance"), CardTarget.Token(id))
+        val result = DestructionCardResolver.resolve(state, requestFor(state, RED, "Divine Assistance"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.NoLegalTarget>((result as CardPlayResult.Rejected).reason)
@@ -122,7 +130,7 @@ class DestructionCardResolversTest {
 
         val result = DestructionCardResolver.resolve(
             state,
-            requestFor(RED, "Divine Assistance"),
+            requestFor(state, RED, "Divine Assistance"),
             CardTarget.StagingPileToken(GREEN, TierLevel.FIRST),
         )
 
@@ -137,7 +145,7 @@ class DestructionCardResolversTest {
         val state = GameState.newGame(listOf(RED))
         val id = state.players.getValue(RED).tierPool(TierLevel.FIRST).idAt(0)!!
 
-        val result = InfernalAbyssResolver.resolve(state, requestFor(RED, "Infernal Abyss"), CardTarget.Token(id))
+        val result = InfernalAbyssResolver.resolve(state, requestFor(state, RED, "Infernal Abyss"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
         // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap, so RED
@@ -150,7 +158,7 @@ class DestructionCardResolversTest {
         val state = GameState.newGame(listOf(RED, GREEN))
         val id = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).idAt(0)!!
 
-        val result = InfernalAbyssResolver.resolve(state, requestFor(RED, "Infernal Abyss"), CardTarget.Token(id))
+        val result = InfernalAbyssResolver.resolve(state, requestFor(state, RED, "Infernal Abyss"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertEquals(1, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayCount) // untouched
@@ -165,7 +173,7 @@ class DestructionCardResolversTest {
         pool.moveInPlay(0, 10)
         pool.enterZone(fromPosition = 10, zoneNumber = 2)
 
-        val result = InfernalAbyssResolver.resolve(state, requestFor(RED, "Infernal Abyss"), CardTarget.Token(id))
+        val result = InfernalAbyssResolver.resolve(state, requestFor(state, RED, "Infernal Abyss"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertTrue(pool.zoneResidents.isNotEmpty()) // Infernal Abyss gets no own-Zone carve-out
@@ -179,7 +187,7 @@ class DestructionCardResolversTest {
         val id = state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()!!
         val before1st = state.players.getValue(YELLOW).tierPool(TierLevel.FIRST).inPlayCount
 
-        val result = CorpuscleRotResolver.resolve(state, requestFor(YELLOW, "Corpuscle Rot"), CardTarget.Token(id))
+        val result = CorpuscleRotResolver.resolve(state, requestFor(state, YELLOW, "Corpuscle Rot"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).inPlayCount)
@@ -204,7 +212,7 @@ class DestructionCardResolversTest {
         assertEquals(0, secondPool.ionBattery)
         assertEquals(0, secondPool.hatchery)
 
-        val result = CorpuscleRotResolver.resolve(state, requestFor(YELLOW, "Corpuscle Rot"), CardTarget.Token(id))
+        val result = CorpuscleRotResolver.resolve(state, requestFor(state, YELLOW, "Corpuscle Rot"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Resolved>(result) // the destroy half still applies, no crash
         assertEquals(0, state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).inPlayCount)
@@ -222,7 +230,7 @@ class DestructionCardResolversTest {
         val state = GameState.newGame(listOf(YELLOW, GREEN))
         val id = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).idAt(0)!!
 
-        val result = CorpuscleRotResolver.resolve(state, requestFor(YELLOW, "Corpuscle Rot"), CardTarget.Token(id))
+        val result = CorpuscleRotResolver.resolve(state, requestFor(state, YELLOW, "Corpuscle Rot"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.WrongTokenType>(result.reason)
@@ -235,7 +243,7 @@ class DestructionCardResolversTest {
         val state = GameState.newGame(listOf(RED, GREEN))
         val id = state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).startToken()!!
 
-        val result = CorpuscleRotResolver.resolve(state, requestFor(RED, "Corpuscle Rot"), CardTarget.Token(id))
+        val result = CorpuscleRotResolver.resolve(state, requestFor(state, RED, "Corpuscle Rot"), CardTarget.Token(id))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertEquals(1, state.players.getValue(GREEN).tierPool(TierLevel.FOURTH).inPlayCount) // untouched

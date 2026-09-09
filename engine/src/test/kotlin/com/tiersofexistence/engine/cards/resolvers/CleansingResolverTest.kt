@@ -27,19 +27,27 @@ class CleansingResolverTest {
 
     private fun cardNamed(name: String) = FateHarvestCatalog.all.single { it.name == name }
 
-    private fun requestFor(player: PlayerColor, targets: List<CardTarget> = emptyList()) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed("Cleansing (Atmospheric)"),
-        targets = targets,
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor, targets: List<CardTarget> = emptyList()): CardPlayRequest {
+        val card = cardNamed("Cleansing (Atmospheric)")
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            targets = targets,
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     @Test
     fun `targeting an opponent with cards in hand returns AwaitingDecision naming them`() {
         val state = GameState.newGame(listOf(RED, GREEN))
         state.players.getValue(GREEN).hand += cardNamed("Tactical Step")
 
-        val result = CleansingResolver.resolve(state, requestFor(RED, listOf(CardTarget.PlayerChoice(GREEN))), CardTarget.PlayerChoice(GREEN))
+        val result = CleansingResolver.resolve(state, requestFor(state, RED, listOf(CardTarget.PlayerChoice(GREEN))), CardTarget.PlayerChoice(GREEN))
 
         val awaiting = assertIs<CardPlayResult.AwaitingDecision>(result)
         assertEquals(PendingDecision.OpponentDiscardChoice(GREEN), awaiting.pending)
@@ -52,7 +60,7 @@ class CleansingResolverTest {
     fun `targeting an opponent with an empty hand is rejected, not played`() {
         val state = GameState.newGame(listOf(RED, GREEN)) // GREEN's hand starts empty
 
-        val result = CleansingResolver.resolve(state, requestFor(RED, listOf(CardTarget.PlayerChoice(GREEN))), CardTarget.PlayerChoice(GREEN))
+        val result = CleansingResolver.resolve(state, requestFor(state, RED, listOf(CardTarget.PlayerChoice(GREEN))), CardTarget.PlayerChoice(GREEN))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.NoLegalTarget>(result.reason)
@@ -65,7 +73,7 @@ class CleansingResolverTest {
     fun `targeting yourself is rejected, not played`() {
         val state = GameState.newGame(listOf(RED, GREEN))
 
-        val result = CleansingResolver.resolve(state, requestFor(RED, listOf(CardTarget.PlayerChoice(RED))), CardTarget.PlayerChoice(RED))
+        val result = CleansingResolver.resolve(state, requestFor(state, RED, listOf(CardTarget.PlayerChoice(RED))), CardTarget.PlayerChoice(RED))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.WrongTokenType>(result.reason)
@@ -76,7 +84,7 @@ class CleansingResolverTest {
     fun `targeting a color not in this game is rejected`() {
         val state = GameState.newGame(listOf(RED, GREEN))
 
-        val result = CleansingResolver.resolve(state, requestFor(RED, listOf(CardTarget.PlayerChoice(BLACK))), CardTarget.PlayerChoice(BLACK))
+        val result = CleansingResolver.resolve(state, requestFor(state, RED, listOf(CardTarget.PlayerChoice(BLACK))), CardTarget.PlayerChoice(BLACK))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.NoLegalTarget>(result.reason)
@@ -111,7 +119,7 @@ class CleansingResolverTest {
         val state = GameState.newGame(listOf(RED, GREEN))
         state.players.getValue(GREEN).hand += cardNamed("Tactical Step")
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED, listOf(CardTarget.PlayerChoice(GREEN))))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED, listOf(CardTarget.PlayerChoice(GREEN))))
 
         val awaiting = assertIs<CardPlayResult.AwaitingDecision>(result)
         assertEquals(PendingDecision.OpponentDiscardChoice(GREEN), awaiting.pending)
@@ -121,7 +129,7 @@ class CleansingResolverTest {
     fun `dispatched without a target is rejected, not a crash`() {
         val state = GameState.newGame(listOf(RED, GREEN))
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.NoLegalTarget>(result.reason)

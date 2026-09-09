@@ -68,8 +68,17 @@ class PrecedenceOrchestrator(private val decisionsFor: (PlayerColor) -> TurnDeci
         val results = CardEffectDispatcher.dispatchAll(state, order)
         chain.finishResolving()
         val resolvedEntryIds = order.zip(results).filter { (_, result) -> result is CardPlayResult.Resolved }.map { it.first.id }.toSet()
+        // Every entry's own card entered GameState.resolvingCards the moment offerResponseRounds
+        // removed it from its player's hand (see that method's doc) - a Resolved entry already
+        // ended its own card via CardLifecycle.attemptPlay, so this sweep's explicit
+        // endResolvingCard covers every other entry (cancelled, Annulment-own, or rejected at
+        // resolution time - a stale target never reaches attemptPlay at all), matching the
+        // discard it performs right alongside. See GameState.resolvingCards' own class doc.
         chain.entriesSnapshot().forEach { entry ->
-            if (entry.id !in resolvedEntryIds) state.deck.discard(entry.request.card)
+            if (entry.id !in resolvedEntryIds) {
+                state.deck.discard(entry.request.card)
+                state.endResolvingCard(entry.request.card)
+            }
         }
         return chain
     }
@@ -100,6 +109,12 @@ class PrecedenceOrchestrator(private val decisionsFor: (PlayerColor) -> TurnDeci
                 require(hand.remove(choice.card)) {
                     "$player chose to respond with ${choice.card.name}, but doesn't have it in hand"
                 }
+                // Live physical card from this instant until openWindow's own end-of-chain sweep
+                // (or CardLifecycle.attemptPlay, for a Resolved entry) ends it - a chain can hold
+                // several such in-flight responses at once, and dispatch happens only after every
+                // round closes, so this can be a genuinely long window. See
+                // GameState.resolvingCards' own class doc.
+                state.beginResolvingCard(choice.card)
                 chain.respond(player, CardPlayRequest(player, choice.card, choice.targets, TriggeringEvent.RespondingInChain(chain.id)))
             }
         }

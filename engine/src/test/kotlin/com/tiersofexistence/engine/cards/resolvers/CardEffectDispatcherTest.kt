@@ -24,14 +24,21 @@ class CardEffectDispatcherTest {
 
     private fun cardNamed(name: String) = FateHarvestCatalog.all.single { it.name == name }
 
-    private fun requestFor(player: com.tiersofexistence.engine.model.PlayerColor, cardName: String, targets: List<CardTarget> = emptyList()) =
-        CardPlayRequest(player, cardNamed(cardName), targets, TriggeringEvent.PlayedFromHand)
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: com.tiersofexistence.engine.model.PlayerColor, cardName: String, targets: List<CardTarget> = emptyList()): CardPlayRequest {
+        val card = cardNamed(cardName)
+        state.beginResolvingCard(card)
+        return CardPlayRequest(player, card, targets, TriggeringEvent.PlayedFromHand)
+    }
 
     @Test
     fun `dispatches a fixed-Tier construction card`() {
         val state = GameState.newGame(listOf(WHITE))
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(WHITE, "Dwarf Star"))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, WHITE, "Dwarf Star"))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(WHITE).marauders.inPlayCount(TierLevel.FOURTH))
@@ -41,7 +48,7 @@ class CardEffectDispatcherTest {
     fun `dispatches a player-chosen Tier construction card`() {
         val state = GameState.newGame(listOf(RED))
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED, "Materialize Army", listOf(CardTarget.TierChoice(TierLevel.THIRD))))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED, "Materialize Army", listOf(CardTarget.TierChoice(TierLevel.THIRD))))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(1, state.players.getValue(RED).marauders.inPlayCount(TierLevel.THIRD))
@@ -51,7 +58,7 @@ class CardEffectDispatcherTest {
     fun `a Tier-choice card dispatched without a target is rejected, not a crash`() {
         val state = GameState.newGame(listOf(RED))
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED, "Materialize Army"))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED, "Materialize Army"))
 
         assertIs<CardPlayResult.Rejected>(result)
         assertIs<TargetValidationError.NoLegalTarget>((result as CardPlayResult.Rejected).reason)
@@ -62,7 +69,7 @@ class CardEffectDispatcherTest {
         val state = GameState.newGame(listOf(RED))
         val id = state.players.getValue(RED).tierPool(TierLevel.FIRST).idAt(0)!!
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED, "Tactical Step", listOf(CardTarget.Token(id))))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED, "Tactical Step", listOf(CardTarget.Token(id))))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(listOf(1), state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayPositions)
@@ -76,7 +83,7 @@ class CardEffectDispatcherTest {
         val secondTierId = state.players.getValue(GREEN).tierPool(TierLevel.SECOND).idAt(0)!!
         val targets = listOf(CardTarget.Token(firstTierId), CardTarget.Token(secondTierId))
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(BLACK, "Graviton Rift", targets))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, BLACK, "Graviton Rift", targets))
 
         assertIs<CardPlayResult.Resolved>(result)
         // 1st Tier auto-replenishes from the Ion Battery back up to the 2-in-play cap; the 2nd

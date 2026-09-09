@@ -23,11 +23,19 @@ class RadiationBurstResolverTest {
 
     private fun cardNamed(name: String) = FateHarvestCatalog.all.single { it.name == name }
 
-    private fun requestFor(player: PlayerColor) = CardPlayRequest(
-        sourcePlayer = player,
-        card = cardNamed("Radiation Burst"),
-        triggeringEvent = TriggeringEvent.PlayedFromHand,
-    )
+    // Registers the card as resolving before handing back the request, mirroring what the real
+    // Held-card-play path (TurnDriver.offerHeldCardPlay) does at the point a card leaves hand -
+    // see GameState.resolvingCards' own class doc for why CardLifecycle.attemptPlay's matching
+    // endResolvingCard now expects this.
+    private fun requestFor(state: GameState, player: PlayerColor): CardPlayRequest {
+        val card = cardNamed("Radiation Burst")
+        state.beginResolvingCard(card)
+        return CardPlayRequest(
+            sourcePlayer = player,
+            card = card,
+            triggeringEvent = TriggeringEvent.PlayedFromHand,
+        )
+    }
 
     @Test
     fun `empties every player's Staging Pile across every Tier`() {
@@ -37,7 +45,7 @@ class RadiationBurstResolverTest {
         state.players.getValue(RED).tierPool(TierLevel.SECOND).startToken()
         state.players.getValue(RED).tierPool(TierLevel.SECOND).sendToStagingPile(0)
 
-        val result = RadiationBurstResolver.resolve(state, requestFor(RED))
+        val result = RadiationBurstResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile)
@@ -50,7 +58,7 @@ class RadiationBurstResolverTest {
         val state = GameState.newGame(listOf(RED))
         state.players.getValue(RED).tierPool(TierLevel.FIRST).sendToStagingPile(0)
 
-        val result = RadiationBurstResolver.resolve(state, requestFor(RED))
+        val result = RadiationBurstResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile)
@@ -64,7 +72,7 @@ class RadiationBurstResolverTest {
         val stagedCount = pool.stagingPile
         val ionBatteryBeforeBurst = pool.ionBattery
 
-        RadiationBurstResolver.resolve(state, requestFor(RED))
+        RadiationBurstResolver.resolve(state, requestFor(state, RED))
 
         assertEquals(ionBatteryBeforeBurst + stagedCount, pool.ionBattery)
     }
@@ -80,7 +88,7 @@ class RadiationBurstResolverTest {
         assertEquals(2, pool.stagingPile)
         val secondTierInPlayBefore = state.players.getValue(RED).tierPool(TierLevel.FOURTH).inPlayCount
 
-        val result = RadiationBurstResolver.resolve(state, requestFor(RED))
+        val result = RadiationBurstResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, pool.stagingPile)
@@ -94,7 +102,7 @@ class RadiationBurstResolverTest {
         val pool = state.players.getValue(RED).tierPool(TierLevel.FIRST)
         val inPlayBefore = pool.inPlayPositions
 
-        val result = RadiationBurstResolver.resolve(state, requestFor(RED))
+        val result = RadiationBurstResolver.resolve(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(inPlayBefore, pool.inPlayPositions)
@@ -106,7 +114,7 @@ class RadiationBurstResolverTest {
         val state = GameState.newGame(listOf(GREEN))
         state.players.getValue(GREEN).tierPool(TierLevel.FIRST).sendToStagingPile(0)
 
-        val result = RadiationBurstResolver.resolve(state, requestFor(GREEN))
+        val result = RadiationBurstResolver.resolve(state, requestFor(state, GREEN))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).stagingPile)
@@ -117,7 +125,7 @@ class RadiationBurstResolverTest {
         val state = GameState.newGame(listOf(RED))
         state.players.getValue(RED).tierPool(TierLevel.FIRST).sendToStagingPile(0)
 
-        val result = CardEffectDispatcher.dispatch(state, requestFor(RED))
+        val result = CardEffectDispatcher.dispatch(state, requestFor(state, RED))
 
         assertIs<CardPlayResult.Resolved>(result)
         assertEquals(0, state.players.getValue(RED).tierPool(TierLevel.FIRST).stagingPile)
