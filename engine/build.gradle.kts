@@ -19,4 +19,8 @@ tasks.test {
     systemProperty("toe.benchmark", System.getProperty("toe.benchmark", "false"))
     // Same mechanism for the experimental Phase 1B dynamic-reincarnation benchmark.
     systemProperty("toe.benchmark.dynamic", System.getProperty("toe.benchmark.dynamic", "false"))
+    // Same mechanism for the experimental Phase 1C anti-stagnation benchmark.
+    systemProperty("toe.benchmark.antistagnation", System.getProperty("toe.benchmark.antistagnation", "false"))
+    // Same mechanism for the corrected-model (whole-game rarity-ceiling) dynamic-reincarnation baseline.
+    systemProperty("toe.benchmark.dynamic.corrected", System.getProperty("toe.benchmark.dynamic.corrected", "false"))
 }

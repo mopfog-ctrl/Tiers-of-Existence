@@ -1507,6 +1507,82 @@ explicitly as correlational, not causal, and explicitly confounded with player c
 the task's own explicit scope, this is a measurement for a later, separate decision, not an
 argument for or against adopting the mechanic.
 
+## Phase 1C: experimental evidence-weighted anti-stagnation reincarnation pressure — in progress, mechanism corrected
+
+**Experimental, not canonical, and not a Phase 2+ activity** — a candidate refinement of Phase
+1B's own dynamic reincarnation, run alongside (never in place of) Baseline A and Phase 1B. The
+user's spec: allow early reshuffles to evolve the deck naturally, but make successive reshuffles
+progressively favor eventual game resolution, so reshuffling itself becomes a probabilistic
+anti-stagnation mechanism — with the *where* and *how strongly* driven by benchmark evidence, never
+applied as a uniform, indiscriminate reduction, and never suppressing a card merely for becoming
+common if its prevalence actually correlates with shorter games.
+
+**A first pass at this (weighted directly off Phase 1B's own Table G5) was implemented and
+benchmarked, then superseded before being reported here** — the user issued a follow-up correction
+partway through: the original interpretation let a card type's multiplicity grow past its own
+canonical rarity (the same uncapped-refill issue Phase 1B's own deck itself had — see that
+section's "generalized >=4 bucket" note), and the fix needed to be *whole-game*, not just
+discard-pile-local: no card type may ever exceed its own canonical rarity across draw pile +
+discard pile + every hand combined, for the whole game, not merely within the pile being
+regenerated at any one moment. **This has been corrected in the shared mechanism
+(`DynamicReincarnationRules`) that both `ReincarnationConfig.DEFAULT` (Phase 1B's own rule) and
+`ReincarnationConfig.ANTI_STAGNATION` (this Phase) are built on** — see `DynamicReincarnationRules`'s
+own class doc for the exact mechanics (`transition`'s new `ceiling` parameter, `regenerate`'s new
+`liveCountsOutsideDiscardPile` parameter and per-refill-slot capacity accounting, the removal of the
+now-invalid generalized ">=4 copies" bucket in favor of an exact 4-copy bucket). Fully tested
+(`DynamicReincarnationRulesTest`'s ceiling-respecting regression coverage,
+`DynamicReincarnationDeterminismTest`/`AntiStagnationDeterminismTest` both updated to thread live
+hand counts through their `ReshuffleStrategy` closures) and verified not to disturb Baseline A or
+any other existing behavior.
+
+**Per the user's explicit instruction, the original uncapped-model Phase 1B report
+(`docs/benchmarks/dynamic-reincarnation-benchmark.md`) is preserved unmodified as historical record
+of that superseded model — it is NOT reused as evidence for the corrected model.** A new,
+independent benchmark (`PlayerCountReincarnationCorrectedBenchmarkTest`, its own report
+`docs/benchmarks/dynamic-reincarnation-benchmark-corrected.md`) re-establishes Phase 1B's own
+baseline under the corrected model at the same 5,000-game scale, including its own card-type-vs-
+game-length correlation table (Table K5) — this corrected table, not the original Table G5, is what
+`StagnationPressureConfig`'s evidence-derived default weights must be built from, per the user's
+explicit "establish a new experimental result under the corrected model before using its statistics
+to determine the later-reshuffle resolution-pressure weighting."
+
+**Status at the time of this commit: the mechanism fix is complete and verified in isolation
+(`DynamicReincarnationRulesTest`'s pure-logic regression coverage, `DynamicReincarnationDeterminismTest`/
+`AntiStagnationDeterminismTest`'s real-turn-loop determinism coverage — all green), but the
+corrected-model baseline benchmark run itself surfaced a genuine, previously-unknown architectural
+gap that must be resolved with the user before the evidence-derived weights or any further
+whole-game benchmark can be trusted — reported here rather than papered over, per the standing
+instruction not to invent a new rule to make an undefined case work.**
+
+**Finding**: the first full 5,000-game corrected-model run (`PlayerCountReincarnationCorrectedBenchmarkTest`)
+found 73 whole-game-rarity-ceiling violations (a card type's live population — draw pile + discard
+pile + every hand — exceeding its own canonical rarity by exactly 1), spread across arbitrary card
+names (Dwarf Star, Cleansing (Atmospheric), Circulate (Elemental), Sidestep (Extinction Avoidance),
+Radiation Burst, Corpuscle Rot, Planetary Nebula, Insidious Flux, and others), never the same type
+twice in an obviously-related way. Root cause, not yet fixed: `TurnEngine`'s two `state.deck.draw()`
+call sites (`resolvePrimaryTierLanding`/zone-internal Fate Harvest landing) return a drawn
+`CardTiming.IMMEDIATE` card as a local value that `TurnDriver.resolveImmediateCard` resolves
+(and discards) *later*, possibly after further steps (target selection, an `AwaitingDecision` like
+Cleansing's opponent-discard choice, a Precedence window) — during that window, the drawn card is
+in neither the draw pile, the discard pile, nor any hand; it is invisible to
+`liveCountsOutsideDiscardPile`'s hand-based "outside the discard pile" accounting. If a *different*,
+later draw within that same turn triggers a reshuffle while the first card is still in this
+untracked state, `regenerate()` computes that type's remaining capacity as if the in-flight copy
+didn't exist, permits the discard-pile-side count up to the card's full canonical rarity, and once
+the in-flight card is eventually discarded too, that type's whole-game total exceeds its ceiling by
+exactly one. This is real reincarnation-caused card duplication (not a general engine bug — the
+same total-conservation and per-card-name-multiplicity checks have found zero violations across
+Baseline A's own 8,750 games, because `PlainShuffle` never depends on tracking capacity at all, so
+this in-flight window is harmless there): the aggregate physical-card total stayed conserved in
+every one of the 73 cases (only the per-type ceiling check flagged), consistent with one type
+gaining exactly the capacity a different type's own regeneration decision effectively lost.
+**Not fixed yet** — resolving it needs either giving `ReshuffleStrategy` visibility into whatever
+card(s) are currently mid-resolution (a `FateHarvestDeck.draw()`/`TurnEngine` API change) or
+restructuring resolution order so a reshuffle can never fire while a card is in flight, and the
+right choice among those (or another) is a design decision, not an inference for this pass to make
+silently. The evidence-derived weight re-derivation and any further whole-game benchmark stay
+blocked until this is resolved.
+
 ## Deferred — post-baseline simulation/design questions (retained, not acted upon)
 
 The user has explicitly deferred the items below until after the canonical 2-6-player probability

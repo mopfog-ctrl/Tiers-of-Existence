@@ -16,25 +16,20 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The experimental-invariant equivalent of `TurnEngineDeckReshuffleDeterminismTest` (which covers
- * Baseline A's `PlainShuffle` strategy) — proves "same initial state + same seed + same decisions
- * = identical regeneration outcomes and gameplay" holds for the experimental dynamic-reincarnation
- * strategy specifically, driven through the real `TurnEngine`/`TurnDriver` path, not a hand-rolled
- * loop. Uses a small deck (`FateHarvestCatalog.all` filtered to one seated color, ~5-6 legal
- * types) so regenerations happen quickly within a short turn budget.
+ * The Phase 1C equivalent of [DynamicReincarnationDeterminismTest] (Phase 1B) — proves "same
+ * initial state + same seed + same decisions = identical regeneration outcomes and gameplay"
+ * holds when [ReincarnationConfig.ANTI_STAGNATION] is the active strategy, driven through the
+ * real `TurnEngine`/`TurnDriver` path, with a generation counter threaded from the
+ * `ReshuffleStrategy` closure exactly the way a real caller (e.g.
+ * `PlayerCountAntiStagnationBenchmarkTest`) would.
  */
-class DynamicReincarnationDeterminismTest {
+class AntiStagnationDeterminismTest {
 
     private val colors = listOf(PlayerColor.RED, PlayerColor.BLUE)
     private val turnBudget = 400
 
-    /** One unrestricted [com.tiersofexistence.engine.cards.CardTiming.IMMEDIATE] card per rarity
-     * bucket (1/2/3/4 copies) - Immediate cards always resolve and discard within the same turn
-     * they're drawn regardless of what a `TurnDecisionProvider` decides (unlike a Held card that
-     * can sit unplayed in a hand indefinitely), so this 10-physical-card deck reliably cycles
-     * back to the discard pile fast, and its 4 distinct types exercise every transition bucket. */
     private fun smallEligibleTypeSet() =
-        listOf("Galactic Roundabout", "Divine Assistance", "Evasive Action", "Phase Control").map { name ->
+        listOf("Radiation Burst", "Divine Assistance", "Evasive Action", "Phase Control").map { name ->
             FateHarvestCatalog.all.single { it.name == name }
         }
 
@@ -61,14 +56,12 @@ class DynamicReincarnationDeterminismTest {
         val eligibleTypes = smallEligibleTypeSet()
         val filtered = FateHarvestCatalog.buildDeck().filter { it.name in eligibleTypes.map { t -> t.name } }
         val shuffled = filtered.shuffled(random)
-        // `players`' PlayerState objects are the same ones GameState.players will hold (mutated in
-        // place as hands change), so reading live hand counts here at reshuffle time is always
-        // current - no forward reference to `state` needed. The draw pile is guaranteed empty
-        // whenever a reshuffle fires (FateHarvestDeck.draw only calls this once it is), so hands
-        // are the entire "outside the discard pile" population.
+        var generationIndex = 0
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
             val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
-            DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = handCounts).regeneratedPile
+            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, ReincarnationConfig.ANTI_STAGNATION, generationIndex, handCounts)
+            generationIndex += 1
+            result.regeneratedPile
         }
         val deck = FateHarvestDeck.forTesting(shuffled, random, strategy)
         val state = GameState(players = players, turnOrder = TurnOrder(colors), deck = deck)
@@ -87,8 +80,8 @@ class DynamicReincarnationDeterminismTest {
     }
 
     @Test
-    fun `two independently constructed games using the experimental dynamic-reincarnation strategy from the same seed produce identical turn-by-turn fingerprints`() {
-        val seed = 271828182L
+    fun `two independently constructed games using ANTI_STAGNATION from the same seed produce identical turn-by-turn fingerprints`() {
+        val seed = 161803398L
         val run1 = driveAndFingerprint(seed)
         val run2 = driveAndFingerprint(seed)
 
@@ -98,17 +91,20 @@ class DynamicReincarnationDeterminismTest {
     }
 
     @Test
-    fun `the small deck actually regenerates via the dynamic-reincarnation strategy at least once within the turn budget`() {
-        val random = Random(3L)
+    fun `the small deck actually regenerates via ANTI_STAGNATION at least once within the turn budget, escalating the generation counter`() {
+        val random = Random(11L)
         val players = colors.associateWith { PlayerState(it) }
         players.values.forEach { it.tierPool(TierLevel.FIRST).startToken() }
         val eligibleTypes = smallEligibleTypeSet()
         val filtered = FateHarvestCatalog.buildDeck().filter { it.name in eligibleTypes.map { t -> t.name } }
+        var generationIndex = 0
         var regenerations = 0
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
             regenerations += 1
             val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
-            DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = handCounts).regeneratedPile
+            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, ReincarnationConfig.ANTI_STAGNATION, generationIndex, handCounts)
+            generationIndex += 1
+            result.regeneratedPile
         }
         val deck = FateHarvestDeck.forTesting(filtered.shuffled(random), random, strategy)
         val state = GameState(players = players, turnOrder = TurnOrder(colors), deck = deck)
@@ -120,6 +116,7 @@ class DynamicReincarnationDeterminismTest {
             driver.driveOneTurn(state)
             turnsTaken += 1
         }
-        assertTrue(regenerations > 0, "expected at least one dynamic-reincarnation regeneration within $turnBudget turns")
+        assertTrue(regenerations > 0, "expected at least one ANTI_STAGNATION regeneration within $turnBudget turns")
+        assertTrue(generationIndex == regenerations, "generationIndex should track exactly one increment per regeneration event")
     }
 }

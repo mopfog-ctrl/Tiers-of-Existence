@@ -171,7 +171,7 @@ class PlayerCountDynamicReincarnationBenchmarkTest {
 
     private fun colorCardNamesFor(colors: Set<PlayerColor>): Set<String> = colors.flatMap { FateHarvestCatalog.colorCards[it].orEmpty() }.map { it.name }.toSet()
 
-    private fun buildExperimentalDeckForColors(colors: List<PlayerColor>, random: Random): ExperimentalDeckConstruction {
+    private fun buildExperimentalDeckForColors(colors: List<PlayerColor>, random: Random, players: Map<PlayerColor, PlayerState>): ExperimentalDeckConstruction {
         val unusedColors = PlayerColor.entries.filterNot { it in colors }.toSet()
         val removedNames = colorCardNamesFor(unusedColors)
         val eligibleTypes = FateHarvestCatalog.all.filter { it.name !in removedNames }
@@ -183,7 +183,12 @@ class PlayerCountDynamicReincarnationBenchmarkTest {
         var index = 0
         val strategy = FateHarvestDeck.ReshuffleStrategy { discardPile, rnd ->
             index += 1
-            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd)
+            // players' own PlayerState objects are the ones GameState.players ends up holding
+            // (mutated in place) - live hand counts are always current at reshuffle time, and the
+            // draw pile is guaranteed empty whenever a reshuffle fires, so hands are the entire
+            // "outside the discard pile" population for the whole-game rarity ceiling.
+            val handCounts = players.values.flatMap { it.hand }.groupingBy { it.name }.eachCount()
+            val result = DynamicReincarnationRules.regenerate(discardPile, eligibleTypes, rnd, liveCountsOutsideDiscardPile = handCounts)
             events += RegenerationEvent(index, result.targetSize, result.refillCount, result.cullCount, result.finalMultiplicity)
             result.regeneratedPile
         }
@@ -216,7 +221,7 @@ class PlayerCountDynamicReincarnationBenchmarkTest {
         val turnOrder = TurnOrder(colors)
         val players = colors.associateWith { PlayerState(it) }
         players.values.forEach { it.tierPool(TierLevel.FIRST).startToken() }
-        val deckConstruction = buildExperimentalDeckForColors(colors, random)
+        val deckConstruction = buildExperimentalDeckForColors(colors, random, players)
         val state = GameState(players = players, turnOrder = turnOrder, deck = deckConstruction.deck)
 
         val seatStats: Map<PlayerColor, SeatDecisionStats> = colors.associateWith { SeatDecisionStats() }
