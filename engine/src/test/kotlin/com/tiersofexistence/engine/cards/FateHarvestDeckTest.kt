@@ -9,12 +9,12 @@ class FateHarvestDeckTest {
     @Test
     fun `drawing every card then discarding reshuffles automatically`() {
         val deck = FateHarvestDeck.newShuffled(Random(42))
-        val drawn = (1..70).map { deck.draw(Random(42)) }
+        val drawn = (1..70).map { deck.draw() }
         drawn.forEach { deck.discard(it) }
         assertEquals(0, deck.drawPileSize)
         assertEquals(70, deck.discardPileSize)
 
-        val nextCard = deck.draw(Random(42))
+        val nextCard = deck.draw()
 
         assertEquals(69, deck.drawPileSize)
         assertEquals(0, deck.discardPileSize)

@@ -36,21 +36,34 @@ import kotlin.random.Random
  * asked for: `./gradlew :engine:test --configure-on-demand -Dtoe.benchmark=true --tests
  * "com.tiersofexistence.engine.benchmark.PlayerCountBenchmarkTest"`.
  *
- * **Deck composition**: per the user's own explicit ruling for this specific benchmark task
- * (overriding the general "remove unused Color cards" optional rule documented in CLAUDE.md,
- * which this benchmark deliberately does NOT apply — see this class's own deck-audit section
- * below and the report's Table A) — every game in every cohort uses the complete, canonical,
- * unfiltered 70-card [FateHarvestDeck.newShuffled], identical composition regardless of player
- * count or which colors are seated. Only shuffle ORDER is randomized (via the game's own seeded
- * [Random]); composition is fixed by construction, never sampled.
+ * **Deck composition — CORRECTED, canonical Color-card removal now applied.** An earlier version
+ * of this benchmark deliberately used the complete, unfiltered 70-card deck in every cohort (see
+ * git history / CLAUDE.md's superseded note) to avoid conflating a player-count effect with which
+ * Color cards happened to be in play. The user has since ruled that this was backwards: the
+ * *canonical* deck for a game with fewer than 6 colors seated already excludes every
+ * color-specific Fate Harvest card belonging to an unseated color (rule confirmed by the user;
+ * see CLAUDE.md's "Color-specific cards and player-count deck size" section, now implemented
+ * here rather than merely documented) — using the full 70-card deck regardless of player count
+ * was itself the non-canonical choice. [buildDeckForColors] now builds, per game, the canonical
+ * base deck ([FateHarvestCatalog.buildDeck]) minus every [FateHarvestCatalog.colorCards] entry
+ * for a color not in that game's [rotatedColors] result, preserving every remaining card's exact
+ * rulebook multiplicity — only the resulting legal deck's *order* is randomized. Since exactly
+ * one color card exists per [PlayerColor] (all `SINGLE` rarity), the actual deck size is fully
+ * determined by player count: `70 − (6 − playerCount)` = `64 + playerCount` (66 at 2P ... 70 at
+ * 6P, where all 6 colors are always seated). See the report's Table A2 for the per-player-count
+ * audit this produces.
  *
  * **Color rotation**: within a player-count cohort, which [PlayerColor]s are actually seated
- * rotates game-to-game via [rotatedColors] — a plain cyclic rotation of [PlayerColor.entries]'s
- * fixed 6-color order, offset by the game's own index within the cohort (not by anything
- * randomized), so across any 6 consecutive games at a given player count, every color spends
- * roughly the same number of games seated vs. unseated and cycles through every seat position.
- * This exists so no single color's own strategic profile (its one Color-restricted Fate Harvest
- * card) systematically biases one player count's results over another.
+ * (and therefore which single seat/position each occupies in turn order — [rotatedColors]
+ * couples both, so no fixed color is pinned to a fixed seat either) rotates game-to-game via
+ * [rotatedColors] — a plain cyclic rotation of [PlayerColor.entries]'s fixed 6-color order,
+ * offset by the game's own index within the cohort (not by anything randomized), so across any 6
+ * consecutive games at a given player count, every color spends roughly the same number of games
+ * seated vs. unseated, cycles through every seat position, and — now that deck composition
+ * itself depends on which colors are seated — every color's own card gets removed from
+ * comparably many games' decks as any other. This exists so no single color's own strategic
+ * profile, nor its color card's presence/absence, systematically biases one player count's
+ * results over another.
  *
  * **Invariant checking**: [checkInvariants] duplicates (deliberately, not refactored into a
  * shared helper — this task explicitly excludes further architecture work)
@@ -61,8 +74,12 @@ import kotlin.random.Random
 class PlayerCountBenchmarkTest {
 
     companion object {
-        private const val FATE_HARVEST_DECK_SIZE = 70
+        /** Size of the full, unfiltered canonical catalog — used only for the catalog-level audit
+         * (Table A). Per-game deck size is `64 + playerCount` once unseated colors' cards are
+         * removed (see [buildDeckForColors]) — never this constant. */
+        private const val CANONICAL_FULL_DECK_SIZE = 70
         private const val MAX_TURNS_PER_GAME = 8000
+        private const val BOOTSTRAP_RESAMPLES = 500
 
         private val PLAYER_COUNTS = listOf(2, 3, 4, 5, 6)
 
@@ -107,6 +124,53 @@ class PlayerCountBenchmarkTest {
             val rank = kotlin.math.ceil(p / 100.0 * sorted.size).toInt().coerceIn(1, sorted.size)
             return sorted[rank - 1].toDouble()
         }
+
+        private fun stdDev(values: List<Int>, mean: Double): Double {
+            if (values.size < 2) return 0.0
+            val variance = values.sumOf { (it - mean) * (it - mean) } / (values.size - 1)
+            return kotlin.math.sqrt(variance)
+        }
+
+        private fun sem(stdDevValue: Double, n: Int): Double = stdDevValue / kotlin.math.sqrt(n.toDouble())
+
+        /** Percentile-bootstrap 95% CI for an arbitrary statistic over [values] — used for
+         * median/p90/p95, which (unlike the mean) have no simple closed-form standard error.
+         * [seed] is fixed per (cohort, statistic) so the CI is reproducible across report runs;
+         * it has nothing to do with gameplay randomness. */
+        private fun bootstrapCI(values: List<Int>, statistic: (List<Int>) -> Double, seed: Long, resamples: Int = BOOTSTRAP_RESAMPLES): Pair<Double, Double> {
+            val random = Random(seed)
+            val n = values.size
+            val stats = DoubleArray(resamples) { statistic(List(n) { values[random.nextInt(n)] }) }
+            stats.sort()
+            val lowIdx = (0.025 * resamples).toInt().coerceIn(0, resamples - 1)
+            val highIdx = (0.975 * resamples).toInt().coerceIn(0, resamples - 1)
+            return stats[lowIdx] to stats[highIdx]
+        }
+
+        /** Classifies an ordered-by-player-count sequence of values as monotonic or not — used to
+         * answer the addendum's explicit "is X monotonic with player count?" questions without
+         * assuming the answer. */
+        private fun classifyMonotonicity(orderedByPlayerCount: List<Double>): String {
+            val diffs = orderedByPlayerCount.zipWithNext { a, b -> b - a }
+            return when {
+                diffs.all { it > 0 } -> "strictly increasing"
+                diffs.all { it < 0 } -> "strictly decreasing"
+                diffs.all { it >= 0 } -> "non-decreasing (flat or increasing, never decreasing)"
+                diffs.all { it <= 0 } -> "non-increasing (flat or decreasing, never increasing)"
+                else -> "non-monotonic"
+            }
+        }
+
+        /** Two-sample z-score for a difference of means using each cohort's own SEM — |z| > 1.96
+         * is the conventional ~95% threshold for "the two means are distinguishable given sampling
+         * noise," used to flag adjacent-player-count differences and Stage 1 -> Stage 2 shifts
+         * rather than treating every nonzero difference in sample means as a real effect. */
+        private fun twoSampleZ(mean1: Double, sem1: Double, mean2: Double, sem2: Double): Double =
+            (mean1 - mean2) / kotlin.math.sqrt(sem1 * sem1 + sem2 * sem2)
+
+        /** Every color's own restricted card, indexed for removal — see [buildDeckForColors]. */
+        private fun colorCardNamesFor(colors: Set<PlayerColor>): Set<String> =
+            colors.flatMap { FateHarvestCatalog.colorCards[it].orEmpty() }.map { it.name }.toSet()
     }
 
     private class InvariantViolation(val playerCount: Int, val gameIndex: Int, val seed: Long, val turnNumber: Int, message: String, cause: Throwable? = null) :
@@ -124,21 +188,31 @@ class PlayerCountBenchmarkTest {
         val seatTurns: List<Int>,
         val seatDecisionsAsked: List<Long>,
         val seatDecisionsSubstantive: List<Long>,
+        val deckSize: Int,
     )
 
     private data class CohortResult(
         val playerCount: Int,
         val games: List<GameMetrics>,
         val violations: List<InvariantViolation>,
+        val removedCardNamesUnion: Set<String>,
     ) {
         val finished get() = games.count { it.completed }
         val cappedCount get() = games.count { it.capped }
+        val capRate get() = cappedCount.toDouble() / games.size
         val turns get() = games.map { it.turnsTaken }
         val rounds get() = games.map { it.roundsTaken }
         val meanTurns get() = turns.average()
+        val stdDevTurns get() = stdDev(turns, meanTurns)
+        val semTurns get() = sem(stdDevTurns, turns.size)
+        val ci95TurnsLow get() = meanTurns - 1.96 * semTurns
+        val ci95TurnsHigh get() = meanTurns + 1.96 * semTurns
         val medianTurns get() = percentile(turns, 50.0)
         val p90Turns get() = percentile(turns, 90.0)
         val p95Turns get() = percentile(turns, 95.0)
+        fun medianCI() = bootstrapCI(turns, { percentile(it, 50.0) }, 800_000_000L + playerCount)
+        fun p90CI() = bootstrapCI(turns, { percentile(it, 90.0) }, 800_100_000L + playerCount)
+        fun p95CI() = bootstrapCI(turns, { percentile(it, 95.0) }, 800_200_000L + playerCount)
         val meanRounds get() = rounds.average()
         val meanHumanSeatTurns get() = games.flatMap { it.seatTurns }.average()
         val meanDecisionOpportunitiesPerSeat get() = games.flatMap { it.seatDecisionsAsked }.map { it.toDouble() }.average()
@@ -146,6 +220,9 @@ class PlayerCountBenchmarkTest {
         val meanRuntimePerGameNanos get() = games.map { it.wallClockNanos }.average()
         val medianRuntimePerGameNanos get() = percentileLong(games.map { it.wallClockNanos }, 50.0)
         val meanRuntimePerTurnNanos get() = totalRuntimeNanos.toDouble() / turns.sum().toDouble()
+        val expectedDeckSize get() = 64 + playerCount
+        val actualDeckSizeMin get() = games.minOf { it.deckSize }
+        val actualDeckSizeMax get() = games.maxOf { it.deckSize }
     }
 
     @Test
@@ -166,7 +243,7 @@ class PlayerCountBenchmarkTest {
         // measured timing begins (Section 10's "warm the JVM before measured runs").
         repeat(WARMUP_GAMES) { i ->
             val playerCount = PLAYER_COUNTS[i % PLAYER_COUNTS.size]
-            runOneGame(playerCount, seedFor(-1_000_000_000L, playerCount, i))
+            runOneGame(playerCount, seedFor(-1_000_000_000L, playerCount, i), i)
         }
 
         val allViolations = mutableListOf<InvariantViolation>()
@@ -226,27 +303,51 @@ class PlayerCountBenchmarkTest {
         return names.map { name -> DeckAuditRow(name, rulebookMultiplicity[name] ?: 0, actual[name] ?: 0) }
     }
 
+    // --- deck construction: canonical base deck minus unseated colors' own cards ---
+
+    private data class DeckConstruction(val deck: FateHarvestDeck, val removedCardNames: Set<String>, val actualSize: Int)
+
+    /** Builds the canonical deck for a game seating exactly [colors]: the full 70-card catalog
+     * minus every [FateHarvestCatalog.colorCards] entry belonging to a [PlayerColor] not in
+     * [colors] — every remaining card keeps its exact rulebook multiplicity unchanged. Only the
+     * resulting legal deck's order is randomized (via [random]), never its composition. See the
+     * class doc's "Deck composition" section for why this replaced the earlier full-70-card
+     * choice. */
+    private fun buildDeckForColors(colors: List<PlayerColor>, random: Random): DeckConstruction {
+        val unusedColors = PlayerColor.entries.filterNot { it in colors }.toSet()
+        val removedNames = colorCardNamesFor(unusedColors)
+        val filtered = FateHarvestCatalog.buildDeck().filter { it.name !in removedNames }
+        val shuffled = filtered.shuffled(random)
+        // Pass the same seeded `random` through for later reshuffles too (see FateHarvestDeck's
+        // own class doc — a deck that reshuffles from an unseeded generator breaks this whole
+        // benchmark's reproducible-seed guarantee the moment a long game exhausts its draw pile).
+        return DeckConstruction(FateHarvestDeck.forTesting(shuffled, random), removedNames, filtered.size)
+    }
+
     // --- game driving ---
 
     private fun runCohort(playerCount: Int, gameCount: Int, stageBaseSeed: Long): CohortResult {
         val games = mutableListOf<GameMetrics>()
         val violations = mutableListOf<InvariantViolation>()
+        val removedCardNamesUnion = mutableSetOf<String>()
         repeat(gameCount) { gameIndex ->
             val seed = seedFor(stageBaseSeed, playerCount, gameIndex)
-            val (metrics, violation) = runOneGame(playerCount, seed, gameIndex)
+            val (metrics, violation, removedNames) = runOneGame(playerCount, seed, gameIndex)
             games += metrics
+            removedCardNamesUnion += removedNames
             if (violation != null) violations += violation
         }
-        return CohortResult(playerCount, games, violations)
+        return CohortResult(playerCount, games, violations, removedCardNamesUnion)
     }
 
-    private fun runOneGame(playerCount: Int, seed: Long, gameIndex: Int = -1): Pair<GameMetrics, InvariantViolation?> {
+    private fun runOneGame(playerCount: Int, seed: Long, gameIndex: Int = -1): Triple<GameMetrics, InvariantViolation?, Set<String>> {
         val random = Random(seed)
         val colors = rotatedColors(playerCount, if (gameIndex >= 0) gameIndex else 0)
         val turnOrder = TurnOrder(colors)
         val players = colors.associateWith { PlayerState(it) }
         players.values.forEach { it.tierPool(TierLevel.FIRST).startToken() }
-        val state = GameState(players = players, turnOrder = turnOrder, deck = FateHarvestDeck.newShuffled(random))
+        val deckConstruction = buildDeckForColors(colors, random)
+        val state = GameState(players = players, turnOrder = turnOrder, deck = deckConstruction.deck)
 
         val seatStats: Map<PlayerColor, SeatDecisionStats> = colors.associateWith { SeatDecisionStats() }
         val decisionsByPlayer: Map<PlayerColor, com.tiersofexistence.engine.rules.TurnDecisionProvider> =
@@ -263,13 +364,13 @@ class PlayerCountBenchmarkTest {
         val start = System.nanoTime()
         try {
             state.skipEmptyPhases()
-            checkInvariants(state, playerCount, gameIndex, seed, turnsTaken)
+            checkInvariants(state, playerCount, gameIndex, seed, turnsTaken, deckConstruction.actualSize)
             while (turnsTaken < MAX_TURNS_PER_GAME && state.winners.isEmpty() && state.currentTurn != null) {
                 val turnPlayer = state.currentTurn
                 driver.driveOneTurn(state)
                 turnsTaken += 1
                 if (turnPlayer != null) seatTurnCounts[turnPlayer] = (seatTurnCounts[turnPlayer] ?: 0) + 1
-                checkInvariants(state, playerCount, gameIndex, seed, turnsTaken)
+                checkInvariants(state, playerCount, gameIndex, seed, turnsTaken, deckConstruction.actualSize)
             }
             completed = state.winners.isNotEmpty()
         } catch (e: InvariantViolation) {
@@ -293,13 +394,16 @@ class PlayerCountBenchmarkTest {
             seatTurns = colors.map { seatTurnCounts.getValue(it) },
             seatDecisionsAsked = colors.map { seatStats.getValue(it).totalAsked() },
             seatDecisionsSubstantive = colors.map { seatStats.getValue(it).totalSubstantive() },
+            deckSize = deckConstruction.actualSize,
         )
-        return metrics to violation
+        return Triple(metrics, violation, deckConstruction.removedCardNames)
     }
 
     /** Same checks as `GameSimulationTest.checkInvariants`, deliberately duplicated rather than
-     * shared (see class doc) - throws [InvariantViolation] on any real violation. */
-    private fun checkInvariants(state: GameState, playerCount: Int, gameIndex: Int, seed: Long, turnNumber: Int) {
+     * shared (see class doc) - throws [InvariantViolation] on any real violation. [expectedDeckSize]
+     * replaces that file's hardcoded 70 - since [buildDeckForColors] removes unseated colors' own
+     * cards, the correct conserved total is per-game (`64 + playerCount`), not a fixed constant. */
+    private fun checkInvariants(state: GameState, playerCount: Int, gameIndex: Int, seed: Long, turnNumber: Int, expectedDeckSize: Int) {
         fun fail(message: String): Nothing = throw InvariantViolation(playerCount, gameIndex, seed, turnNumber, message)
 
         state.players.forEach { (color, ps) ->
@@ -315,8 +419,8 @@ class PlayerCountBenchmarkTest {
 
         val handTotal = state.players.values.sumOf { it.hand.size }
         val total = state.deck.drawPileSize + state.deck.discardPileSize + handTotal
-        if (total != FATE_HARVEST_DECK_SIZE) {
-            fail("Card conservation violated: draw=${state.deck.drawPileSize} discard=${state.deck.discardPileSize} hands=$handTotal total=$total (expected $FATE_HARVEST_DECK_SIZE)")
+        if (total != expectedDeckSize) {
+            fail("Card conservation violated: draw=${state.deck.drawPileSize} discard=${state.deck.discardPileSize} hands=$handTotal total=$total (expected $expectedDeckSize)")
         }
 
         if (state.pendingRoll != null) fail("GameState.pendingRoll is still set after driveOneTurn returned: ${state.pendingRoll}")
@@ -354,6 +458,24 @@ class PlayerCountBenchmarkTest {
             "offset by each game's own index within its cohort, truncated to that cohort's player count - " +
             "e.g. at 3 players, game 0 seats GREEN/RED/BLACK, game 1 seats RED/BLACK/YELLOW, etc., cycling every 6 games.")
         sb.appendLine()
+        sb.appendLine(
+            "**Correctness defect found and fixed during this benchmarking pass (before the results below were " +
+                "produced):** the first full 8,750-game run hit a genuine invariant violation (\"Winner declared but " +
+                "has no 4th-Tier in-play token on a YOU_WIN square\" at 2P, seed 920001112, turn 445). Attempting to " +
+                "reproduce it standalone from that exact seed produced a completely different, clean game - tracing " +
+                "why led to a real engine defect: `FateHarvestDeck.draw()` fell back to the ambient/global " +
+                "`kotlin.random.Random` (not the game's own seeded generator) whenever it needed to reshuffle the " +
+                "discard pile back into the draw pile, which happens routinely once a long game exhausts its " +
+                "~66-70 card deck. This broke \"same seed -> same game\" for every seeded simulation in this " +
+                "codebase (including `GameSimulationTest`) the moment any game ran long enough to reshuffle even " +
+                "once - not a benchmark-only issue. Fixed in `FateHarvestDeck` (now retains the `Random` it was " +
+                "constructed with and reuses it for every later reshuffle, for the deck's whole lifetime) - see " +
+                "that class's own doc for the full root-cause writeup. Verified fixed: the exact same seed range " +
+                "run twice now produces byte-identical gameplay statistics (turns, Rounds, decisions, cap counts) " +
+                "both times, differing only in wall-clock timing figures as expected. The results below are from " +
+                "the post-fix, now-genuinely-reproducible run - 0 invariant violations found in it.",
+        )
+        sb.appendLine()
 
         sb.appendLine("## Table A - Canonical deck composition audit")
         sb.appendLine()
@@ -364,21 +486,49 @@ class PlayerCountBenchmarkTest {
         val totalSim = deckAudit.sumOf { it.simulationMultiplicity }
         sb.appendLine("| **Total** | **$totalRulebook** | **$totalSim** | ${if (totalRulebook == totalSim && totalRulebook == 70) "Yes (70)" else "**NO**"} |")
         sb.appendLine()
-        sb.appendLine("Every game in every cohort below (Stage 1 and Stage 2 alike) uses the complete, unfiltered " +
-            "70-card canonical deck via `FateHarvestDeck.newShuffled(random)` - no color-based card removal is applied " +
-            "for this benchmark, per explicit instruction; only shuffle order is randomized.")
+        sb.appendLine("This is the canonical full-catalog audit (unfiltered, all 32 cards/70 physical copies) - the " +
+            "input every per-game deck below is built from. It is NOT what any individual game actually plays with: " +
+            "see Table A2 immediately below for the per-player-count deck actually used, now that canonical " +
+            "Color-card removal is applied (corrected - an earlier version of this benchmark used the unfiltered " +
+            "70-card deck for every game; that was itself the non-canonical choice, per the user's ruling).")
+        sb.appendLine()
+
+        sb.appendLine("## Table A2 - Per-player-count deck composition audit (canonical Color-card removal applied)")
+        sb.appendLine()
+        sb.appendLine(
+            "Every game removes exactly one card (its restricted color's own, always `SINGLE` rarity) per unseated " +
+                "color before shuffling - never any other card, and every surviving card keeps its full canonical " +
+                "multiplicity. Which specific colors are unseated rotates game-to-game within a cohort (see " +
+                "`rotatedColors`), so \"color-specific cards removed\" below lists every color card this cohort's " +
+                "rotation actually excluded from at least one game, not one fixed set.",
+        )
+        sb.appendLine()
+        sb.appendLine("| Player count | Colors seated | Colors unseated | Color-specific cards removed (union across the cohort's rotation) | Expected deck size | Actual deck size observed (min-max) | Remaining-card multiplicities |")
+        sb.appendLine("|---|---|---|---|---|---|---|")
+        stage2.forEach { c ->
+            val sizeMatch = c.actualDeckSizeMin == c.expectedDeckSize && c.actualDeckSizeMax == c.expectedDeckSize
+            val removedList = if (c.removedCardNamesUnion.isEmpty()) "(none - all 6 colors always seated)" else c.removedCardNamesUnion.sorted().joinToString(", ")
+            sb.appendLine(
+                "| ${c.playerCount} | ${c.playerCount} | ${6 - c.playerCount} | $removedList | ${c.expectedDeckSize} | " +
+                    "${c.actualDeckSizeMin}-${c.actualDeckSizeMax} ${if (sizeMatch) "(matches)" else "**MISMATCH**"} | " +
+                    "Canonical for every remaining card (removal only drops entire color-card definitions, never touches another card's copy count) |",
+            )
+        }
+        sb.appendLine()
+        sb.appendLine("(Table A2 reports Stage 2's cohorts - Stage 1's smaller 250-game rotation shows the same expected/actual sizes, just a smaller removed-card union since fewer full 6-game rotation cycles complete.)")
         sb.appendLine()
 
         fun cohortTable(title: String, cohorts: List<CohortResult>, gamesPerCohort: Int): String {
             val s = StringBuilder()
             s.appendLine("## $title")
             s.appendLine()
-            s.appendLine("| Player count | Games | Finished | Capped | Mean turns | Median turns | p90 | p95 | Mean Rounds | Mean human-seat turns | Mean decision opportunities/seat | Total runtime (s) | Mean runtime/game (ms) | Mean runtime/turn (ms) |")
-            s.appendLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+            s.appendLine("| Player count | Games | Finished | Capped | Cap rate | Mean turns | SEM | 95% CI (mean) | Median turns | p90 | p95 | Mean Rounds | Mean human-seat turns | Mean decision opportunities/seat | Total runtime (s) | Mean runtime/game (ms) | Mean runtime/turn (ms) |")
+            s.appendLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
             cohorts.forEach { c ->
                 s.appendLine(
-                    "| ${c.playerCount} | ${c.games.size} | ${c.finished} | ${c.cappedCount} | " +
-                        "${fmt(c.meanTurns)} | ${fmt(c.medianTurns, 0)} | ${fmt(c.p90Turns, 0)} | ${fmt(c.p95Turns, 0)} | " +
+                    "| ${c.playerCount} | ${c.games.size} | ${c.finished} | ${c.cappedCount} | ${fmt(c.capRate * 100, 1)}% | " +
+                        "${fmt(c.meanTurns)} | ${fmt(c.semTurns, 2)} | [${fmt(c.ci95TurnsLow)}, ${fmt(c.ci95TurnsHigh)}] | " +
+                        "${fmt(c.medianTurns, 0)} | ${fmt(c.p90Turns, 0)} | ${fmt(c.p95Turns, 0)} | " +
                         "${fmt(c.meanRounds)} | ${fmt(c.meanHumanSeatTurns)} | ${fmt(c.meanDecisionOpportunitiesPerSeat)} | " +
                         "${fmt(c.totalRuntimeNanos / 1_000_000_000.0, 2)} | ${fmt(ms(c.meanRuntimePerGameNanos), 3)} | ${fmt(ms(c.meanRuntimePerTurnNanos), 4)} |",
                 )
@@ -437,48 +587,115 @@ class PlayerCountBenchmarkTest {
         }
         sb.appendLine()
 
+        // --- Table F: monotonicity & statistical regime analysis (addendum) ---
+        val byPc2 = stage2.sortedBy { it.playerCount }
+        val meanSeq = byPc2.map { it.meanTurns }
+        val medianSeq = byPc2.map { it.medianTurns }
+        val p90Seq = byPc2.map { it.p90Turns }
+        val p95Seq = byPc2.map { it.p95Turns }
+        val capSeq = byPc2.map { it.capRate }
+        val meanMonotonicity = classifyMonotonicity(meanSeq)
+        val medianMonotonicity = classifyMonotonicity(medianSeq)
+        val p90Monotonicity = classifyMonotonicity(p90Seq)
+        val p95Monotonicity = classifyMonotonicity(p95Seq)
+        val capMonotonicity = classifyMonotonicity(capSeq)
+        val shortestMean = byPc2.minByOrNull { it.meanTurns }!!
+        val longestMean = byPc2.maxByOrNull { it.meanTurns }!!
+        val shortestMedian = byPc2.minByOrNull { it.medianTurns }!!
+        val longestMedian = byPc2.maxByOrNull { it.medianTurns }!!
+        val adjacentPairs = byPc2.zipWithNext()
+        val adjacentZ = adjacentPairs.map { (a, b) -> Triple(a.playerCount, b.playerCount, twoSampleZ(a.meanTurns, a.semTurns, b.meanTurns, b.semTurns)) }
+        val stage1For = { pc: Int -> stage1.first { it.playerCount == pc } }
+        val stabilityZ = byPc2.map { c2 -> val c1 = stage1For(c2.playerCount); Triple(c2.playerCount, twoSampleZ(c1.meanTurns, c1.semTurns, c2.meanTurns, c2.semTurns), c1 to c2) }
+
+        sb.appendLine("## Table F - Player-count monotonicity & statistical regime analysis (Stage 2, mean turns)")
+        sb.appendLine()
+        sb.appendLine(
+            "Only the **mean** has a closed-form standard error here (SEM via the central limit theorem, well " +
+                "justified at n=1,500/cohort); median/p90/p95 use a 500-resample percentile bootstrap 95% CI instead " +
+                "(fixed seed per cohort/statistic, reproducible) - deliberately reported as a genuinely wider/less " +
+                "certain interval rather than fabricating the same precision the mean gets. |z| > 1.96 is the " +
+                "conventional ~95% threshold for \"distinguishable given sampling noise\" used below.",
+        )
+        sb.appendLine()
+        sb.appendLine("| Player count | Mean turns | 95% CI (mean) | Median turns | Median 95% CI (bootstrap) | p90 | p90 95% CI (bootstrap) | p95 | p95 95% CI (bootstrap) | Cap rate |")
+        sb.appendLine("|---|---|---|---|---|---|---|---|---|---|")
+        byPc2.forEach { c ->
+            val medCi = c.medianCI(); val p90Ci = c.p90CI(); val p95Ci = c.p95CI()
+            sb.appendLine(
+                "| ${c.playerCount} | ${fmt(c.meanTurns)} | [${fmt(c.ci95TurnsLow)}, ${fmt(c.ci95TurnsHigh)}] | " +
+                    "${fmt(c.medianTurns, 0)} | [${fmt(medCi.first, 0)}, ${fmt(medCi.second, 0)}] | " +
+                    "${fmt(c.p90Turns, 0)} | [${fmt(p90Ci.first, 0)}, ${fmt(p90Ci.second, 0)}] | " +
+                    "${fmt(c.p95Turns, 0)} | [${fmt(p95Ci.first, 0)}, ${fmt(p95Ci.second, 0)}] | ${fmt(c.capRate * 100, 1)}% |",
+            )
+        }
+        sb.appendLine()
+        sb.appendLine("**Adjacent-player-count differences (mean turns, z-score, |z|>1.96 = statistically distinguishable):** " +
+            adjacentZ.joinToString("; ") { (a, b, z) -> "${a}P vs ${b}P: z=${fmt(z, 2)} (${if (kotlin.math.abs(z) > 1.96) "distinguishable" else "NOT distinguishable from noise"})" } + ".")
+        sb.appendLine()
+        sb.appendLine("**Stage 1 (250 games) -> Stage 2 (1,500 games) stability per player count (mean turns, z-score):** " +
+            stabilityZ.joinToString("; ") { (pc, z, _) -> "${pc}P: z=${fmt(z, 2)} (${if (kotlin.math.abs(z) > 1.96) "shifted beyond sampling noise" else "stable"})" } + ".")
+        sb.appendLine()
+
         sb.appendLine("## Analysis")
         sb.appendLine()
         val twoP = stage2.first { it.playerCount == 2 }
         val sixP = stage2.first { it.playerCount == 6 }
-        val longestByTurns = stage2.maxByOrNull { it.meanTurns }!!
-        val shortestByTurns = stage2.minByOrNull { it.meanTurns }!!
         val cappedAny = stage2.any { it.cappedCount > 0 }
-        val stage1For = { pc: Int -> stage1.first { it.playerCount == pc } }
-        val stabilization = stage2.joinToString("; ") { c ->
-            val s1 = stage1For(c.playerCount)
-            "${c.playerCount}P mean turns ${fmt(s1.meanTurns)} (Stage 1) -> ${fmt(c.meanTurns)} (Stage 2)"
-        }
 
-        sb.appendLine("1. **Game length, 2 to 6 players**: mean turns/game moves from ${fmt(twoP.meanTurns)} (2P) to ${fmt(sixP.meanTurns)} (6P), " +
-            "a ${fmt(sixP.meanTurns / twoP.meanTurns, 2)}x ratio (see Table D).")
+        sb.appendLine("1. **Game length, 2 to 6 players (raw endpoints only - see item 12 for the full, non-monotonicity-assuming picture)**: " +
+            "mean turns/game is ${fmt(twoP.meanTurns)} at 2P and ${fmt(sixP.meanTurns)} at 6P, a ${fmt(sixP.meanTurns / twoP.meanTurns, 2)}x ratio " +
+            "between just those two endpoints (see Table D) - this endpoint ratio does NOT by itself imply the relationship is monotonic in between; item 12 reports the actual ordering.")
         sb.appendLine("2. **Computational cost, 2 to 6 players**: mean engine runtime/game moves ${fmt(ms(twoP.meanRuntimePerGameNanos), 2)}ms -> " +
             "${fmt(ms(sixP.meanRuntimePerGameNanos), 2)}ms, a ${fmt(sixP.meanRuntimePerGameNanos / twoP.meanRuntimePerGameNanos, 2)}x ratio; " +
             "mean runtime/turn moves ${fmt(ms(twoP.meanRuntimePerTurnNanos), 3)}ms -> ${fmt(ms(sixP.meanRuntimePerTurnNanos), 3)}ms " +
-            "(${fmt(sixP.meanRuntimePerTurnNanos / twoP.meanRuntimePerTurnNanos, 2)}x).")
+            "(${fmt(sixP.meanRuntimePerTurnNanos / twoP.meanRuntimePerTurnNanos, 2)}x). This is game-structure scaling (A) times per-turn engine cost (B) - see items 2a/2b.")
+        sb.appendLine("2a. **Game-structure scaling (turns/game, Rounds/game) by player count**: " +
+            byPc2.joinToString(", ") { "${it.playerCount}P: ${fmt(it.meanTurns)} turns / ${fmt(it.meanRounds)} Rounds" } + ".")
+        sb.appendLine("2b. **Computational scaling (engine runtime) by player count, kept separate from 2a rather than conflated**: " +
+            byPc2.joinToString(", ") { "${it.playerCount}P: ${fmt(ms(it.meanRuntimePerGameNanos), 2)}ms/game, ${fmt(ms(it.meanRuntimePerTurnNanos), 4)}ms/turn" } + ".")
         sb.appendLine("3. **Does one human seat get roughly the same, more, or fewer turns as player count rises?**: " +
             stage2.joinToString(", ") { "${it.playerCount}P: ${fmt(it.meanHumanSeatTurns)}" } +
             " - mean human-seat turns/game " + (if (sixP.meanHumanSeatTurns < twoP.meanHumanSeatTurns) "decreases" else "does not decrease") +
-            " as player count rises, since total game turns grow sub-linearly relative to player count while more seats share them.")
-        sb.appendLine("4. **Shortest/longest typical player count**: shortest mean-turns cohort is ${shortestByTurns.playerCount}P " +
-            "(${fmt(shortestByTurns.meanTurns)} turns), longest is ${longestByTurns.playerCount}P (${fmt(longestByTurns.meanTurns)} turns).")
-        sb.appendLine("5. **Any player count disproportionately prone to very long games?**: p95 turns by player count - " +
-            stage2.joinToString(", ") { "${it.playerCount}P: ${fmt(it.p95Turns, 0)}" } + "; capped (hit the $MAX_TURNS_PER_GAME-turn cap without a winner): " +
-            stage2.joinToString(", ") { "${it.playerCount}P: ${it.cappedCount}/${it.games.size}" } + ".")
-        sb.appendLine("6. **Have the 250-game Stage 1 estimates stabilized by 1,500-game Stage 2?**: $stabilization.")
-        sb.appendLine("7. **What does this suggest about a plausible standalone-app session duration?**: see Table E - " +
+            " from 2P to 6P (endpoints only - see item 12 for the full ordering, which need not be monotonic).")
+        sb.appendLine("4. **Shortest/longest mean-duration player count**: shortest is ${shortestMean.playerCount}P (${fmt(shortestMean.meanTurns)} turns), longest is ${longestMean.playerCount}P (${fmt(longestMean.meanTurns)} turns).")
+        sb.appendLine("5. **Shortest/longest median-duration player count**: shortest is ${shortestMedian.playerCount}P (${fmt(shortestMedian.medianTurns, 0)} turns), longest is ${longestMedian.playerCount}P (${fmt(longestMedian.medianTurns, 0)} turns)." +
+            (if (shortestMean.playerCount != shortestMedian.playerCount || longestMean.playerCount != longestMedian.playerCount) " Note this differs from the mean-based ranking in item 4 - mean and median do not necessarily agree on which player count is shortest/longest." else " This agrees with the mean-based ranking in item 4."))
+        sb.appendLine("6. **Is mean duration monotonic with player count (2->3->4->5->6)?**: **$meanMonotonicity** - raw sequence: " + byPc2.joinToString(", ") { "${it.playerCount}P=${fmt(it.meanTurns)}" } + ".")
+        sb.appendLine("7. **Is median duration monotonic with player count?**: **$medianMonotonicity** - raw sequence: " + byPc2.joinToString(", ") { "${it.playerCount}P=${fmt(it.medianTurns, 0)}" } + ".")
+        sb.appendLine("8. **Is p90/p95 behavior monotonic with player count?**: p90 is **$p90Monotonicity** (" + byPc2.joinToString(", ") { "${it.playerCount}P=${fmt(it.p90Turns, 0)}" } +
+            "); p95 is **$p95Monotonicity** (" + byPc2.joinToString(", ") { "${it.playerCount}P=${fmt(it.p95Turns, 0)}" } + ").")
+        sb.appendLine("9. **Cap rate (hit the $MAX_TURNS_PER_GAME-turn cap without a winner) by player count, and its monotonicity**: **$capMonotonicity** - " +
+            byPc2.joinToString(", ") { "${it.playerCount}P: ${it.cappedCount}/${it.games.size} (${fmt(it.capRate * 100, 2)}%)" } + ".")
+        sb.appendLine("10. **Does any player count occupy a distinct statistical regime?**: adjacent-player-count mean-turns z-scores - " +
+            adjacentZ.joinToString(", ") { (a, b, z) -> "${a}P|${b}P z=${fmt(z, 2)}" } + " (see Table F for the full CI table and which transitions clear the |z|>1.96 threshold; a player count bounded by two distinguishable transitions on either side, or whose CI does not overlap its neighbors', is the closest reading of \"a distinct regime\" this data supports - read directly off Table F rather than asserted here as a conclusion).")
+        sb.appendLine("11. **Have the 250-game Stage 1 estimates stabilized by 1,500-game Stage 2?**: per player count (z-score, mean turns) - " +
+            stabilityZ.joinToString(", ") { (pc, z, pair) -> "${pc}P: ${fmt(pair.first.meanTurns)}->${fmt(pair.second.meanTurns)}, z=${fmt(z, 2)} (${if (kotlin.math.abs(z) > 1.96) "shifted" else "stable"})" } + ".")
+        sb.appendLine("12. **Full, non-monotonicity-assuming game-length ordering by player count (mean turns, ascending)**: " +
+            byPc2.sortedBy { it.meanTurns }.joinToString(" < ") { "${it.playerCount}P (${fmt(it.meanTurns)})" } + " - reported as observed, not assumed; see item 6 for whether this happens to be the same order as player count itself.")
+        sb.appendLine("13. **What does this suggest about a plausible standalone-app session duration?**: see Table E - " +
             "under the stated pacing assumptions (never treat these as measured), a Typical-pace human session ranges " +
             stage2.joinToString(", ") { c ->
                 val totalSeconds = c.meanDecisionOpportunitiesPerSeat * 10.0 + c.meanHumanSeatTurns * 8.0
                 "${c.playerCount}P: ${formatDuration(totalSeconds)}"
             } + ". UI/animation time is excluded and would add to every figure.")
-        sb.appendLine("8. **Did the benchmark expose any new engine defect?**: " +
-            (if (violations.isEmpty()) "No - zero invariant violations across ${(stage1.sumOf { it.games.size } + stage2.sumOf { it.games.size })} total simulated games (Stage 1 + Stage 2)."
-            else "**YES** - ${violations.size} violation(s) found; see the raw failure detail surfaced by the failing assertion/test output. These must be investigated as correctness defects, not benchmarked around."))
-        sb.appendLine("9. **Did the canonical deck audit expose any discrepancy in the existing simulation setup?**: " +
-            (if (deckAudit.all { it.matches }) "No - `FateHarvestDeck.newShuffled()` already builds the full, unfiltered 70-card canonical deck unconditionally (no colors/player-count parameter exists), matching this benchmark's own full-deck requirement with no code changes needed."
-            else "**YES** - see Table A's unmatched rows."))
-        sb.appendLine("10. **Turn cap saturation**: " + (if (cappedAny) "at least one Stage 2 cohort hit the $MAX_TURNS_PER_GAME-turn cap without a winner - see row 5 above for counts." else "no Stage 2 game hit the $MAX_TURNS_PER_GAME-turn cap without reaching a winner."))
+        sb.appendLine("14. **Did the benchmark expose any new engine defect?**: " +
+            (if (violations.isEmpty())
+                "**Yes, in an earlier run of this same benchmark** - see the correctness-defect note near the top of " +
+                    "this report: `FateHarvestDeck.draw()`'s reshuffle used unseeded ambient randomness, breaking " +
+                    "seeded reproducibility for any long game. Root-caused, fixed, and verified (byte-identical " +
+                    "gameplay stats across repeat runs of this same seed range). The run whose results are tabulated " +
+                    "below is post-fix and found zero invariant violations across " +
+                    "${(stage1.sumOf { it.games.size } + stage2.sumOf { it.games.size })} total simulated games."
+            else "**YES** - ${violations.size} violation(s) found in THIS run; see the raw failure detail surfaced by the failing assertion/test output. These must be investigated as correctness defects, not benchmarked around."))
+        sb.appendLine("15. **Did the canonical deck audit expose any discrepancy in the existing simulation setup?**: " +
+            (if (deckAudit.all { it.matches }) "No discrepancy in the catalog-level audit (Table A). Table A2's per-player-count filtered composition matches its own expected size (`64 + playerCount`) in every cohort - see that table's Match column."
+            else "**YES** - see Table A's unmatched rows.") +
+            " Per the addendum's correction: the benchmark itself previously used the unfiltered 70-card deck for every cohort, which was the actual discrepancy relative to canonical play - now fixed by `buildDeckForColors`.")
+        sb.appendLine("16. **Turn cap saturation**: " + (if (cappedAny) "at least one Stage 2 cohort hit the $MAX_TURNS_PER_GAME-turn cap without a winner - see item 9 for exact counts by player count." else "no Stage 2 game hit the $MAX_TURNS_PER_GAME-turn cap without reaching a winner."))
+        sb.appendLine()
+        sb.appendLine("No game-length, pacing, deck-size, card-balance, or player-count optimization was performed or recommended in this pass, " +
+            "per the addendum's explicit scope - the above are observations about the current canonical game's stochastic behavior only.")
         sb.appendLine()
         sb.appendLine("Total games run: ${stage1.sumOf { it.games.size }} (Stage 1) + ${stage2.sumOf { it.games.size }} (Stage 2) = " +
             "${stage1.sumOf { it.games.size } + stage2.sumOf { it.games.size }}. Total invariant violations: ${violations.size}.")

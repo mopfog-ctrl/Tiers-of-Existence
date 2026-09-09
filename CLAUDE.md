@@ -1208,15 +1208,20 @@ total across this pass with no regression; the historical multi-class `--tests` 
 sample stayed green across 3 repeated runs. No behavioral discrepancy found — this was a pure
 structural move plus one additively-named, side-effect-free query.
 
-## Optional rule (documented, not implemented): color-specific cards and player-count deck size
+## Color-specific cards and player-count deck size
 
-**Not implemented anywhere in the engine today** — `FateHarvestCatalog.buildDeck()`/
-`FateHarvestDeck.newShuffled()` always build/shuffle the complete, unfiltered 70-card deck
-regardless of player count or which `PlayerColor`s are actually seated; neither takes a
-colors/player-count parameter. This section documents an optional variant of that construction
-the user has described as correct for a future mode, kept here as forward-looking documentation
-only — no code implements it yet, and nothing should invent it without a further explicit
-instruction to actually build it.
+**Corrected — this is canonical, not merely optional, and `PlayerCountBenchmarkTest` now
+implements it (see below).** An earlier pass through this section treated Color-card removal as
+an optional future variant the engine's own `FateHarvestCatalog.buildDeck()`/`FateHarvestDeck
+.newShuffled()` deliberately don't apply (neither takes a colors/player-count parameter — that
+part is still true, and still correct: the general-purpose deck-construction API stays
+unconditional, full-70-card, colors-agnostic). What changed: the user's own addendum ruled that
+*for a real/simulated game seating fewer than 6 colors*, the canonical deck already excludes the
+unseated colors' own cards — using the unfiltered 70-card deck regardless of player count was
+itself the non-canonical choice, not the other way around. `PlayerCountBenchmarkTest
+.buildDeckForColors` now implements exactly this (see that benchmark's own section below); the
+description immediately following is the same rule as before, now actually built rather than
+only documented.
 
 The rule, as described: use the canonical rulebook multiplicities for every Fate Harvest card,
 but remove any color-specific card whose associated `PlayerColor` isn't participating in that
@@ -1231,17 +1236,16 @@ Rift, YELLOW→Corpuscle Rot, WHITE→Dwarf Star, BLUE→Fluidic Wave, all `SING
   required color-card removals.
 
 Under this rule a smaller-than-70-card deck is expected and correct whenever fewer than all 6
-colors are seated (a 2-player game could legally play with as few as 68 cards, a 5-player game
-with as few as 69) — this is NOT a bug or drift if a future mode implements it; the deck-audit
-invariant for that mode would be `actual deck composition = canonical full deck − color-specific
-cards for unused colors`, not an unconditional 70-card assertion. **This is explicitly NOT what
-the current engine does, and NOT what `docs/benchmarks/player-count-benchmark.md` measures** —
-that benchmark deliberately uses the full unconditional 70-card deck in every cohort regardless
-of player count, specifically to avoid conflating a player-count effect with the strategic effect
-of which Color cards happen to be in the deck (see that report's own note). If a future mode
-does implement optional Color-card removal, it should rotate which colors are seated across
-repeated games/benchmarks the same way `PlayerCountBenchmarkTest.rotatedColors` already does, so
-no specific color is systematically present or absent from the analysis.
+colors are seated (a 2-player game legally plays with 66 cards, a 5-player game with 69 — exactly
+`64 + playerCount`, since each of the 6 colors has exactly one `SINGLE`-rarity card of its own) —
+this is NOT a bug or drift; the deck-audit invariant is `actual deck composition = canonical full
+deck − color-specific cards for unused colors`, not an unconditional 70-card assertion. **This IS
+now what `docs/benchmarks/player-count-benchmark.md` measures** (corrected from an earlier version
+of that benchmark, which used the full unconditional 70-card deck in every cohort — see that
+report's own note and the benchmark section below for the correction and why). Which colors are
+seated rotates game-to-game across a cohort via `PlayerCountBenchmarkTest.rotatedColors`, so no
+specific color is systematically present or absent from the analysis — any future non-benchmark
+use of this rule (a real game session, say) should do the same.
 
 ## T.O.E. Player-Count Gameplay-Length and Performance Benchmark
 
@@ -1256,15 +1260,45 @@ duration with one human seat plus AI opponents. Run explicitly via:
 "com.tiersofexistence.engine.benchmark.PlayerCountBenchmarkTest"` (the `systemProperty` forwarding
 this needs into the forked test JVM lives in `engine/build.gradle.kts`'s `tasks.test` block).
 
-**Deck composition for this benchmark**: the complete, unfiltered canonical 70-card deck in every
-cohort, every game — deliberately NOT the optional Color-card-removal rule documented above, per
-explicit instruction, so player count stays the only varying factor between cohorts. Verified via
-`buildReport`'s Table A (also independently pinned by
-`engine/src/test/kotlin/com/tiersofexistence/engine/cards/FateHarvestDeckCompositionAuditTest.kt`,
-a new permanent regression guard checking every one of the 32 cards' exact rulebook multiplicity,
-not just the aggregate rarity-bucket counts `FateHarvestCatalogTest` already had) — no discrepancy
-found: `FateHarvestDeck.newShuffled()` already had no player-count/colors parameter at all, so no
-code change was needed to satisfy the benchmark's own full-deck requirement.
+**Deck composition for this benchmark — corrected: canonical Color-card removal now applied.** An
+earlier version of this benchmark used the complete, unfiltered 70-card deck in every cohort,
+deliberately, to avoid conflating a player-count effect with which Color cards happened to be in
+play. The user's own addendum ruled that backwards: the *canonical* deck for a game seating fewer
+than 6 colors already excludes the unseated colors' own cards, so using the full 70-card deck
+regardless of player count was itself the non-canonical choice. `PlayerCountBenchmarkTest
+.buildDeckForColors` now builds, per game, the canonical catalog minus every `FateHarvestCatalog
+.colorCards` entry for a color not seated that game — every surviving card keeps its exact
+rulebook multiplicity, only deck *order* is randomized. Since each color has exactly one `SINGLE`
+card, deck size is fully determined by player count: `64 + playerCount` (66 at 2P ... 70 at 6P).
+The report's Table A (catalog-level, unfiltered 32-card/70-copy audit — still independently
+pinned by `engine/src/test/kotlin/com/tiersofexistence/engine/cards
+/FateHarvestDeckCompositionAuditTest.kt`) and new Table A2 (per-player-count filtered composition:
+participating/unseated colors, cards removed, expected vs. actual deck size, remaining-card
+multiplicity confirmation) both pass with no discrepancy.
+
+**A real, previously-unknown determinism defect was found and fixed while investigating this
+correction.** The first full 8,750-game run under the newly-filtered deck hit a genuine invariant
+violation (a declared winner whose token was no longer on its `YOU_WIN` square) — but the exact
+reported seed didn't reproduce it standalone, which was itself the tell. Root cause:
+`FateHarvestDeck.draw()` fell back to the ambient/global `kotlin.random.Random` (not the game's
+own seeded generator) whenever it needed to reshuffle the discard pile back into the draw pile —
+`TurnEngine`'s two `draw()` call sites never pass a `random` argument. This is routine, not rare:
+any game running into the hundreds/thousands of turns exhausts a ~66-70 card deck and reshuffles
+repeatedly. The practical effect: **"same seed → same game" was never actually true for any
+seeded simulation in this codebase** (`GameSimulationTest` included) past a game's first
+reshuffle — a foundational assumption this whole testing philosophy depends on, silently broken.
+**Fixed** in `FateHarvestDeck` itself (`engine/src/main/kotlin/com/tiersofexistence/engine/cards
+/FateHarvestDeck.kt`): the deck now retains the `Random` instance it was constructed with
+(`newShuffled`/`forTesting`, both already accepted one) and reuses it for every later reshuffle,
+for the deck's whole lifetime — `draw()` no longer takes a `random` parameter at all (the one
+existing caller passing an explicit one, `FateHarvestDeckTest`, updated to rely on the deck's own
+retained generator instead). Zero changes needed to `TurnEngine`/`TurnDriver`/any resolver — both
+`draw()` call sites already read as `state.deck.draw()`, now correctly deterministic by
+construction. **Verified**: the same seed range run twice now produces byte-identical gameplay
+statistics (turns, Rounds, decision counts, cap counts — every figure derived from actual
+gameplay) across both runs, differing only in wall-clock timing figures as expected; the full 325-
+test engine suite (including the permanent 2000-game `GameSimulationTest`) stayed green. The
+results below are from the post-fix, now-genuinely-reproducible run.
 
 **Color rotation**: `rotatedColors(playerCount, gameIndex)` cyclically rotates the fixed 6-color
 `PlayerColor.entries` order, offset by the game's own index within its cohort, truncated to that
@@ -1292,24 +1326,123 @@ throughout, per explicit instruction: any real violation would have aborted that
 Stage 2 from running at all, reported with full player-count/seed/turn repro context exactly like
 the prior 9 `GameSimulationTest`-found defects, never papered over.
 
-**Results (commit baseline `ba2448d`, this benchmark's own commit reported separately)**: Stage 1
-(250 games × 5 cohorts = 1,250 games) and Stage 2 (1,500 games × 5 cohorts = 7,500 games) both ran
-clean — **0 invariant violations across all 8,750 simulated games**, confirming no new defect at
-this scale beyond the 9 already found and fixed by the earlier `GameSimulationTest` campaign. Full
-results, all 5 required tables (deck audit, Stage 1 baseline, Stage 2 scaling sample, scaling
-comparison, one-human duration model), and the 10-question analysis live in the generated report:
+**Results (commit baseline `ba2448d`, this benchmark's own commit reported separately)**: post-fix,
+Stage 1 (250 games × 5 cohorts = 1,250 games) and Stage 2 (1,500 games × 5 cohorts = 7,500 games)
+both ran clean — **0 invariant violations across all 8,750 simulated games**, using the
+color-filtered canonical deck throughout. Full results, all required tables (deck audit, per-
+player-count filtered deck audit, Stage 1 baseline, Stage 2 scaling sample, scaling comparison,
+one-human duration model, and a new monotonicity/statistical-regime table answering the addendum's
+explicit questions), and the full analysis live in the generated report:
 `docs/benchmarks/player-count-benchmark.md` (regenerated by re-running the test above — it
 overwrites that file with fresh data and also prints the same report to stdout). Headline
-findings: mean turns/game scales roughly ~4x from 2 to 6 players (sub-linear relative to the
-player-count increase itself); mean engine runtime/game grows faster (~6x, 2P→6P) since more
-seats means more `driveOneTurn` calls per game even though per-turn engine cost stays essentially
-flat (low-single-digit milliseconds to sub-millisecond) regardless of player count; a small tail
-of 5- and 6-player games hit the 8,000-turn simulation cap without a winner (10/1500 at 5P,
-47/1500 at 6P) — an expected slow-game tail under fully randomized-but-legal play, not a
-violation; Stage 1's 250-game-per-cohort estimates were already reasonably close to Stage 2's
-1,500-game figures, though tail percentiles (p95) shifted somewhat with the larger sample, as
-expected. Table E's one-human-seat duration estimates are explicitly built on stated, adjustable
-pacing assumptions (seconds/decision, seconds/turn-mechanical-overhead for Fast/Typical/Deliberate
-play styles) — never treated as measured quantities — and explicitly exclude UI/animation time,
-which remains unknown and would add to every figure; AI-seat compute time is separately shown to
-be negligible (the measured mean engine runtime/turn) next to any human pacing tier.
+findings, now with quantified uncertainty rather than raw-number impressions: **mean, median, p90,
+and p95 turns-per-game are all strictly increasing with player count** (2P through 6P), and every
+adjacent player-count pair's mean-turns difference is statistically distinguishable at |z| > 10
+(far past the ~1.96 threshold for "distinguishable from sampling noise") — this specific game's
+duration IS monotonic in player count, addressing the addendum's explicit "don't assume
+monotonicity" instruction by actually checking rather than asserting it. Cap rate (hitting the
+8,000-turn simulation cap without a winner) also rises monotonically with player count, from 0% at
+2-3P to 2.7% at 6P — an expected slow-game tail under fully randomized-but-legal play, not a
+violation. Stage 1's 250-game-per-cohort mean-turns estimates were already statistically stable
+relative to Stage 2's 1,500-game figures at every player count (|z| < 2 for all 5). Mean engine
+runtime/game grows faster than turns/game alone (~6.6x vs. ~3.8x, 2P→6P) since more seats means
+more `driveOneTurn` calls per game even though per-turn engine cost stays essentially flat
+(sub-millisecond, ~2-3µs) regardless of player count. Table E's one-human-seat duration estimates
+are explicitly built on stated, adjustable pacing assumptions (seconds/decision, seconds/turn-
+mechanical-overhead for Fast/Typical/Deliberate play styles) — never treated as measured
+quantities — and explicitly exclude UI/animation time, which remains unknown and would add to
+every figure; AI-seat compute time is separately shown to be negligible next to any human pacing
+tier. No game-length, pacing, deck-size, card-balance, or player-count optimization was performed
+or recommended — per the addendum's explicit scope, this pass is observational only.
+
+## Deferred — post-baseline simulation/design questions (retained, not acted upon)
+
+The user has explicitly deferred the items below until after the canonical 2-6-player probability
+study (above) was complete — it now is, so these become the candidate next work, but **nothing
+below has been started**; this is documentation only, kept verbatim (not summarized/reinterpreted)
+so the original framing stays available when this work is actually picked up. See "Phased plan for
+deferred next steps" immediately below for how these might be sequenced once someone does.
+
+- **Game length**: determine whether average/median session length should be shortened and, if
+  so, by how much. Optimize distributions rather than mean alone; p90/p95 and extreme-game
+  frequency matter.
+- **Player-count optimum**: if T.O.E. has a non-monotonic duration curve (e.g. 3 players faster
+  than 2), evaluate whether that should influence default modes, AI-player recommendations,
+  matchmaking, and product messaging, rather than assuming fewer players means faster play. (The
+  benchmark above found duration IS monotonic for this canonical game — see its own analysis — so
+  this specific hypothetical didn't materialize, but the general principle "don't assume, verify"
+  stands for future changes.)
+- **Deck size**: the original 70-card limit was designed for a group of human tabletop players —
+  not necessarily a permanent digital maximum. AI-heavy configurations may support larger decks.
+- **Deck variants**: future controlled experiments may vary card inclusion/exclusion,
+  canonical/variant multiplicities, and total deck size — these must be explicit, named variants
+  rather than accidental simulation randomness.
+- **Human/AI composition**: eventually test whether optimal deck size or composition should depend
+  not merely on total player count but on the number of human vs. AI players.
+- **Pacing**: game length and perceived pace are separate — a long game with little dead time may
+  feel faster than a shorter game with long waits.
+- **Audience pacing**: different audiences may prefer different presentation speeds; do not encode
+  generational assumptions directly into rules. Later consider presentation profiles such as
+  Measured / Brisk / Rapid and validate preferences empirically.
+- **Digital pacing controls**: future tuning may include AI resolution speed, animation duration,
+  compression of routine/repeated events, and preservation of longer presentation for
+  strategically important events.
+- **Optimization hierarchy**: first establish canonical probability behavior (done, above). Then
+  experiment with presentation pacing. Only after that determine whether underlying game
+  mechanics/deck composition actually need modification to achieve desirable session lengths.
+
+## Phased plan for deferred next steps
+
+A tracked, ordered breakdown of the deferred items above, following the user's own stated
+optimization hierarchy (canonical probability → presentation pacing → mechanics/deck changes, in
+that order, never skipping ahead) — added because the user asked for the already-specified next
+steps to be organized into phases, matching this file's existing convention of naming and tracking
+discrete pieces of work (see e.g. "Phase A" through "Phase J" and "Phase 2" through "Phase 11"
+elsewhere in this document's history). **None of these phases has been started** — this is a plan
+for future work, not a report of work done, and starting any phase needs its own explicit
+go-ahead, same as every other major piece of work in this file.
+
+- **Phase 1 — Canonical probability baseline (COMPLETE).** The 2-6-player stochastic/performance
+  benchmark above: game-length distribution, monotonicity, statistical significance, engine cost,
+  seat-level decision load, one-human duration modeling under stated pacing assumptions. This is
+  the prerequisite every later phase depends on, per the user's own "first establish canonical
+  probability behavior" ordering — done.
+- **Phase 2 — Presentation-pacing research (not started).** Before touching any mechanic: study how
+  perceived pace differs from raw game length (the "Pacing" deferred item) — what makes a long game
+  feel short and vice versa. Define candidate presentation profiles (Measured / Brisk / Rapid) as a
+  hypothesis, not yet implemented or validated. Identify what digital pacing controls would even be
+  measurable (AI resolution speed, animation duration, event compression, preserved presentation
+  time for strategically important events) — this is design/UX research, not engine work, and
+  doesn't touch `engine/` at all.
+- **Phase 3 — Pacing-control implementation, gated on Phase 2 (not started).** Only once Phase 2
+  has actual hypotheses worth testing: implement the pacing controls it identified (in `app/`,
+  since these are UI/animation-layer concerns per this file's own "Assumptions" section on Compose
+  UI, not `engine/` — the engine's own mean-runtime/turn figures from Phase 1 already show AI
+  compute time is negligible, so pacing is a presentation problem, not an engine-performance one).
+- **Phase 4 — Empirical pacing validation (not started, gated on Phase 3).** Validate the
+  audience-pacing hypothesis empirically (the "Audience pacing" deferred item) — do NOT encode
+  generational or other demographic assumptions into rules directly; treat presentation-profile
+  preference as something to observe, not assume.
+- **Phase 5 — Mechanics/deck-composition reconsideration, gated on Phases 2-4 (not started).** Only
+  after presentation pacing has been explored and found insufficient on its own: reconsider whether
+  game length itself (not just perceived pace) should change, and by how much — targeting
+  distribution shape (p90/p95, extreme-game frequency) rather than the mean alone (the "Game
+  length" deferred item). This is the ONLY phase that would touch actual gameplay mechanics, and
+  per the user's own hierarchy it comes last, not first.
+- **Phase 6 — Deck size/variant experiments, gated on Phase 5's own findings if any changes are
+  actually warranted (not started).** If Phase 5 concludes a deck-composition change is warranted:
+  treat every variant as an explicit, named configuration (never accidental simulation randomness)
+  — canonical 70-card, canonical-minus-unseated-colors (already implemented, see the benchmark
+  above), and any larger/alternate deck size hypothesis for AI-heavy configurations, each run
+  through the same rigor Phase 1 established (fixed cohorts, rotated colors/seats, quantified
+  uncertainty, correctness-invariant checking never weakened to make a result look better).
+- **Phase 7 — Human/AI composition sensitivity, gated on Phase 6 (not started).** Test whether the
+  optimal deck size/composition depends on the number of human vs. AI players specifically, not
+  just total player count — the one deferred item that's genuinely orthogonal to the others and
+  could in principle run in parallel with Phase 6 rather than strictly after it, but is listed last
+  because it depends on Phase 6 having established what "deck size/composition" variants are even
+  worth comparing.
+
+Each phase should get its own explicit go-ahead before starting, consistent with how every other
+major piece of work in this codebase has been sequenced — this list exists so that go-ahead can
+reference a specific, already-scoped phase rather than re-deriving the plan from scratch.
