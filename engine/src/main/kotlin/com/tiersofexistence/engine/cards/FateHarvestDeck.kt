@@ -20,11 +20,26 @@ import kotlin.random.Random
  * own reported seed, tracing back to exactly this. Fixed by having the deck itself retain the
  * [Random] instance it was constructed with and reuse it for every later reshuffle — a seeded
  * deck is now deterministic for its whole lifetime, not just its first shuffle.
+ *
+ * **[ReshuffleStrategy] — additive, behavior-preserving.** What happens to the discard pile the
+ * moment the draw pile empties is pluggable, defaulting to [ReshuffleStrategy.PlainShuffle] (a
+ * bare `discardPile.shuffled(random)` — byte-for-byte the deck's own original, canonical
+ * behavior; every existing caller of [newShuffled]/[forTesting] gets exactly this, unchanged).
+ * This exists so an experimental, test-only mode (`PlayerCountDynamicReincarnationBenchmarkTest`
+ * — a probabilistic per-card-type multiplicity evolution at each reshuffle, explicitly NOT
+ * canonical, benchmarked only to characterize its effect before any decision to adopt it) can
+ * drive the exact same `TurnEngine`/`TurnDriver`/`GameState` path real gameplay does, without
+ * `GameState.deck` (an immutable `val` fixed for a game's whole lifetime) needing to become
+ * swappable or `FateHarvestDeck` needing a second implementation. [draw] enforces the one
+ * invariant every strategy must uphold regardless of what it does to *composition*: the
+ * regenerated pile is always exactly the same *size* as the discard pile it was given — no
+ * strategy may create or destroy a physical card, only decide which type each one becomes.
  */
 class FateHarvestDeck private constructor(
     private val drawPile: ArrayDeque<FateHarvestCard>,
     private val discardPile: MutableList<FateHarvestCard> = mutableListOf(),
     private val random: Random = Random,
+    private val reshuffleStrategy: ReshuffleStrategy = ReshuffleStrategy.PlainShuffle,
 ) {
     val drawPileSize: Int get() = drawPile.size
     val discardPileSize: Int get() = discardPile.size
@@ -41,11 +56,19 @@ class FateHarvestDeck private constructor(
     val discardPileCards: List<FateHarvestCard> get() = discardPile.toList()
 
     /** Draws the top card, reshuffling the discard pile into a fresh draw pile first if needed,
-     * using this deck's own [random] (see class doc) rather than a caller-supplied one. */
+     * using this deck's own [random] (see class doc) rather than a caller-supplied one, and
+     * [reshuffleStrategy] to decide the regenerated pile's composition (defaulting to a plain
+     * shuffle — the only behavior any canonical deck ever exhibits). */
     fun draw(): FateHarvestCard {
         if (drawPile.isEmpty()) {
             require(discardPile.isNotEmpty()) { "Fate Harvest deck and discard pile are both empty" }
-            drawPile.addAll(discardPile.shuffled(random))
+            val regenerated = reshuffleStrategy.regenerate(discardPile, random)
+            require(regenerated.size == discardPile.size) {
+                "ReshuffleStrategy must return exactly as many cards as it was given " +
+                    "(got ${regenerated.size}, expected ${discardPile.size}) - a strategy may change " +
+                    "composition, never the physical card count"
+            }
+            drawPile.addAll(regenerated)
             discardPile.clear()
         }
         return drawPile.removeFirst()
@@ -54,6 +77,20 @@ class FateHarvestDeck private constructor(
     /** A played card always goes to the discard pile (Fate Harvest Card Rules #5). */
     fun discard(card: FateHarvestCard) {
         discardPile += card
+    }
+
+    /** What the discard pile becomes when [draw] needs to reshuffle it back into a draw pile —
+     * see this class's own doc for why this is pluggable at all. Implementations must return a
+     * list of exactly [discardPile]'s own size (enforced by [draw]); composition is otherwise
+     * entirely up to the strategy. */
+    fun interface ReshuffleStrategy {
+        fun regenerate(discardPile: List<FateHarvestCard>, random: Random): List<FateHarvestCard>
+
+        companion object {
+            /** The canonical, only-ever-used-by-baseline-play behavior: the recycled cards,
+             * shuffled, nothing else — composition never changes. */
+            val PlainShuffle = ReshuffleStrategy { pile, random -> pile.shuffled(random) }
+        }
     }
 
     companion object {
@@ -65,8 +102,13 @@ class FateHarvestDeck private constructor(
          * default shuffled 70-card deck. [random] governs only later reshuffles (once this
          * explicit draw order is exhausted and cards have been discarded back into it) — pass a
          * seeded instance for a fully reproducible long-running game built on a specific starting
-         * order. */
-        fun forTesting(cards: List<FateHarvestCard>, random: Random = Random): FateHarvestDeck =
-            FateHarvestDeck(ArrayDeque(cards), random = random)
+         * order. [reshuffleStrategy] defaults to [ReshuffleStrategy.PlainShuffle] (canonical,
+         * unchanged behavior); pass a different one only for an explicitly experimental mode. */
+        fun forTesting(
+            cards: List<FateHarvestCard>,
+            random: Random = Random,
+            reshuffleStrategy: ReshuffleStrategy = ReshuffleStrategy.PlainShuffle,
+        ): FateHarvestDeck =
+            FateHarvestDeck(ArrayDeque(cards), random = random, reshuffleStrategy = reshuffleStrategy)
     }
 }

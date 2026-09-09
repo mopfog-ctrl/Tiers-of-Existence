@@ -1417,6 +1417,96 @@ the reshuffle boundary explicitly tested, both at the deck level and at the real
 `TurnEngine`/`TurnDriver` integration point. Phase 2 (presentation-pacing research — see "Phased
 plan for deferred next steps" below) has not been started and needs its own explicit go-ahead.
 
+## Phase 1B: experimental dynamic Fate Harvest reincarnation benchmark — measured, not canonized
+
+**Experimental, not canonical, and not a Phase 2+ activity** — this is a candidate-mechanic
+*characterization*, run alongside (never in place of) Baseline A. Whether dynamic reincarnation
+should ever become canonical is a separate, later decision this pass explicitly does not make or
+recommend either way — see `docs/benchmarks/dynamic-reincarnation-benchmark.md` for the full
+report; only the headline structure and findings are summarized here.
+
+**The mechanism**: `FateHarvestDeck` gained one purely additive, default-preserving seam —
+`ReshuffleStrategy` (a `fun interface`, `regenerate(discardPile, random): List<FateHarvestCard>`),
+defaulting to `PlainShuffle` (a bare `discardPile.shuffled(random)`, byte-for-byte the deck's
+original, only-ever-canonical behavior). `draw()` enforces one hard invariant on any strategy:
+the regenerated pile must be exactly the same *size* as the discard pile it was given — composition
+is a strategy's to decide, physical card count never is. Baseline A (`PlayerCountBenchmarkTest`,
+implicitly using `PlainShuffle`) is untouched by this seam's existence — verified: the complete
+pre-existing 332-test suite, including the permanent 2000-game `GameSimulationTest` and the full
+8,750-game `PlayerCountBenchmarkTest`, stayed green and numerically byte-identical after this
+change (the only design-viable way to plug in an experimental mode at all, since `GameState.deck`
+is an immutable `val FateHarvestDeck` for a game's whole lifetime — no second implementation or
+swappable-field redesign was possible without this).
+
+**The experimental rule** (`DynamicReincarnationRules`, `engine/src/test/kotlin/com
+/tiersofexistence/engine/benchmark/`): at every reshuffle, every card type *currently present in
+the discard pile about to regenerate* (its count there, not a separately-tracked persistent
+counter — see that file's own class doc for why) independently samples a transition:
+- 4 copies: 50% → 3, 50% → remain 4 (generalized to every count ≥4, not just exactly 4 — see
+  below).
+- 3 copies: 33% → 4, 33% → 2, 34% → remain 3.
+- 2 copies: 25% → 3, 25% → 1, 7% → 4, 43% → remain 2.
+- 1 copy: 33% → 2, 33% → 0, 34% → remain 1 (the user's own corrected rule — the originally-stated
+  version had a duplicated outcome).
+
+Then, resolved only after every type's own transition (never mid-sequence, so no type gets a
+structural ordering advantage): if the provisional pool exceeds the discard pile's own size
+(never the game's global deck total — cards in hands aren't touched by a regeneration event, so
+targeting the discard pile's own size is what keeps the whole-game total exactly conserved), cull
+uniformly at random *without replacement across individual physical cards* (an abundant type gets
+proportionately more removal exposure, never protected); if short, refill one slot at a time, each
+an independent uniform random pick *with replacement* across every color-legal type (never
+weighted by canonical rarity — a type at 0 copies is exactly as eligible as any other).
+
+**A real defect found and fixed by this pass's own testing, before any full-scale run**: the
+transition table as specified only covers counts 1-4, but refill (uniform, unrestricted,
+with-replacement) can independently push a single type's count *above* 4 in one regeneration —
+e.g. a type at 3 post-transition gets picked twice more during refill, landing at 5 — which then
+crashed the *next* regeneration's `transition()` call. Found by
+`DynamicReincarnationDeterminismTest` (not the large benchmark) before it ever ran at scale.
+Fixed by generalizing the "4 copies" bucket's own rule (50% drop by one, 50% hold) to every count
+≥4, rather than inventing a new bucket per count refill might reach — the smallest, most
+conservative fix, and one that leaves refill's own specified uniformity completely untouched. See
+`DynamicReincarnationRulesTest`'s regression coverage for this exact scenario.
+
+**Testing, mirroring the rigor Phase 1 established for Baseline A**: `DynamicReincarnationRulesTest`
+(pure transition/regeneration logic — empirical probability-frequency checks against the specified
+percentages, total-size conservation, no card type invented outside the eligible set, 0-copy
+reintroduction via refill, uniform-per-card culling fairness, same-seed reproducibility, and the
+above >4 regression) and `DynamicReincarnationDeterminismTest` (the experimental-invariant
+equivalent of `TurnEngineDeckReshuffleDeterminismTest` — proves "same seed → same regeneration
+outcomes and gameplay" through the real `TurnEngine`/`TurnDriver` path specifically, using a small
+4-type deck of unrestricted `IMMEDIATE` cards spanning all 4 rarity buckets).
+
+**`PlayerCountDynamicReincarnationBenchmarkTest`**: 1,000 games/cohort × 5 player counts = 5,000
+games, single stage (deliberately smaller than Baseline A's 8,750-game two-stage rigor — a
+screening characterization carrying substantially more per-game instrumentation, not a canonical
+baseline needing that same bar), its own independent seed range, gated behind
+`toe.benchmark.dynamic` (same forwarding mechanism as `toe.benchmark`). Its own invariant checking
+is deliberately weaker than Baseline A's by explicit design — total physical card conservation,
+token conservation, Phase validity, winner-square correctness, all held — but *not* the
+fixed-composition per-card-name invariant, since per-type multiplicity evolving is the whole
+point of this experimental mode. Compares against Baseline A's own already-validated Stage 2
+figures (commit `d530a21`) rather than re-running Baseline A (unchanged, already validated).
+
+**Result: 0 invariant violations across the full 5,000-game run.** Headline findings (full detail,
+all 5 tables, and the per-question analysis in `docs/benchmarks/dynamic-reincarnation-benchmark
+.md`): dynamic reincarnation **consistently lengthens games at every player count** (2P +3.0% to
+4P +22.2%, all 5 cohorts longer, never shorter) and is **statistically distinguishable from
+Baseline A at 4P/5P/6P** (|z| > 1.96) though not yet at 2P/3P at this sample size; the effect is
+**substantially larger in the tail than in the middle** (p95 shifts of hundreds to low thousands
+of turns vs. much smaller or even negative median shifts at the same player count), consistent
+with a recycle-boundary mechanic having more opportunity to act the longer a game already runs;
+cap rate (hitting the 8,000-turn simulation cap without a winner) rises at every player count
+(up to +7.7 percentage points at 6P); mean regenerations/game scales from 1.0 (2P) to 6.5 (6P),
+tracking game length as expected. A pooled (not player-count-separated) correlation pass flags
+which card types' final multiplicity most associates with longer/shorter games — reported
+explicitly as correlational, not causal, and explicitly confounded with player count in this pass.
+
+**No balance change, canon decision, or recommendation was made based on any of the above** — per
+the task's own explicit scope, this is a measurement for a later, separate decision, not an
+argument for or against adopting the mechanic.
+
 ## Deferred — post-baseline simulation/design questions (retained, not acted upon)
 
 The user has explicitly deferred the items below until after the canonical 2-6-player probability

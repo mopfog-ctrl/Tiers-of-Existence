@@ -17,4 +17,6 @@ tasks.test {
     // actually reaches PlayerCountBenchmarkTest's own assumeTrue gate (Gradle does not forward
     // arbitrary -D system properties to a forked test process by default).
     systemProperty("toe.benchmark", System.getProperty("toe.benchmark", "false"))
+    // Same mechanism for the experimental Phase 1B dynamic-reincarnation benchmark.
+    systemProperty("toe.benchmark.dynamic", System.getProperty("toe.benchmark.dynamic", "false"))
 }
