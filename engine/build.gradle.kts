@@ -23,4 +23,6 @@ tasks.test {
     systemProperty("toe.benchmark.antistagnation", System.getProperty("toe.benchmark.antistagnation", "false"))
     // Same mechanism for the corrected-model (whole-game rarity-ceiling) dynamic-reincarnation baseline.
     systemProperty("toe.benchmark.dynamic.corrected", System.getProperty("toe.benchmark.dynamic.corrected", "false"))
+    // Same mechanism for the Phase 1C refined per-regeneration-event evidence analysis.
+    systemProperty("toe.benchmark.eventanalysis", System.getProperty("toe.benchmark.eventanalysis", "false"))
 }
