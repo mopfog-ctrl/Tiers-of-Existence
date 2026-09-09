@@ -434,6 +434,15 @@ class PlayerCountFateHarvestRegenerationCorrectedBenchmarkTest {
         sb.appendLine("|---|---|")
         correlations.takeLast(5).reversed().forEach { (name, r) -> sb.appendLine("| $name | ${fmt(r, 3)} |") }
         sb.appendLine()
+        sb.appendLine("**Full per-card-type correlation table (all ${correlations.size} types with a measured final " +
+            "multiplicity, sorted descending by r)** - the top/bottom-5 tables above are excerpts of this one; this full " +
+            "table, not just the excerpts, is what `StagnationPressureConfig.CORRECTED_BASELINE_STAGNATION_WEIGHTS`'s " +
+            "own positive-correlation subset is actually derived from:")
+        sb.appendLine()
+        sb.appendLine("| Card | r |")
+        sb.appendLine("|---|---|")
+        correlations.forEach { (name, r) -> sb.appendLine("| $name | ${fmt(r, 3)} |") }
+        sb.appendLine()
 
         sb.appendLine("## Analysis")
         sb.appendLine()
