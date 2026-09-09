@@ -1145,3 +1145,65 @@ the instant `state.winners` becomes non-empty. Re-verified: the batch that found
 now runs clean at 0/2000, plus 2 more independent 2000-game batches (including the original)
 also clean — 6000 total games, 0 violations, after this fix. Full suite and NPE-trigger sample
 stayed green throughout.
+
+## Post-simulation architecture review: Precedence extracted, `GameState.isOver` added
+
+After the whole-game simulation campaign above, a dedicated architecture review of
+`TurnDriver`/`TurnEngine`/`GameState` (prompted specifically by bug #9's fix) asked whether any
+of the three now bundle multiple coherent responsibilities worth separating. Two high-confidence
+findings were implemented, behavior-preserving; everything else reviewed (movement vs. landing-
+effect resolution inside `TurnEngine`, held/immediate-card windows, pending-decision routing, the
+phase/turn-scheduler split inside `GameState`, unifying card-driven and dice-driven landing
+resolution) was deliberately left alone — either already coherent as one responsibility, or a
+lower-confidence/discretionary call not worth the churn without a clearer need. See the review's
+own findings for the full reasoning on each; only the two acted on are summarized here.
+
+**Precedence orchestration extracted into `rules/precedence/PrecedenceOrchestrator`.** The
+Precedence-window mechanics (`resolvePrecedenceWindow`/`offerResponseRounds`, ~150 of
+`TurnDriver`'s then-479 lines) were a genuinely self-contained algorithm: given a
+`SuspendedAction` and a way to ask players questions, run rules 20-23 to completion — including
+the three-way hand/discard bookkeeping rule (a `Resolved` entry self-discards; every other
+non-resolved chain entry, cancelled or Annulment-own, needs an explicit discard) — none of which
+needs to know about dice, held-card windows, or movement at all. Moved verbatim (same logic,
+relocated, not rewritten) into `PrecedenceOrchestrator(decisionsFor)`, exposing one public entry
+point, `openWindow(state, suspendedAction): InteractionChain`. `TurnDriver` still decides WHEN a
+window opens (both call sites — the pending-card-resolution window in `playWithPrecedenceWindow`,
+and the pending-move window in `driveOneTurn`, rule 23's own checkpoint) by calling into a
+`private val precedence = PrecedenceOrchestrator(decisionsFor)` it constructs once per driver
+instance; `PrecedenceOrchestrator` owns HOW it executes. `TurnDriver` dropped from 479 to 424
+lines; the new file is 107 lines. New test coverage: `PrecedenceOrchestratorTest` (4 tests)
+exercises `openWindow` directly — with real hands, no `TurnDriver`/full-turn machinery around it —
+covering the empty-window case, a response that resolves and is discarded, a response that
+rejects at resolution time (stale target) and is discarded rather than returned (mirroring
+`TurnDriverCardIntegrationTest`'s existing end-to-end version of this same case), and Annulment
+cancelling the suspended action while also being discarded itself. This is new-value coverage the
+extraction enables, not just a restatement — before it, this bookkeeping was only reachable by
+driving a full turn through `driveOneTurn`, since the logic lived as private methods with no seam
+of their own.
+
+**`GameState.isOver: Boolean`** — the explicit, named domain query for "has a winner been
+declared" (`= winners.isNotEmpty()`), added specifically because bug #9's fix
+(`TurnDriver.endTurnIfGameWon`) only covers `TurnDriver`'s own `TurnDecisionProvider`-driven
+turns; this class's own doc has always said a human player's turn will be driven some other way
+(direct UI input, not `driveOneTurn`), and whatever that turn-out to look like will face the
+exact same "stop taking any further steps the instant the game is won" requirement `TurnDriver`
+now handles. `isOver` gives that future orchestrator (or any other) a discoverable, named
+convention to follow instead of needing to reinvent — or forget — `winners.isNotEmpty()` on its
+own. `TurnDriver.endTurnIfGameWon` now checks `!state.isOver` instead of
+`state.winners.isEmpty()` (identical behavior, just named). **Deliberately NOT an enforcement
+mechanism**: nothing in `GameState`, `TurnEngine`, a token pool, or a card resolver refuses a
+mutation because this is true, and per the review's own conclusion, nothing should — those stay
+pure, turn-agnostic mechanical primitives on purpose (see `TurnEngine`'s own class doc), a hard
+refusal down there would trade a harmless-if-pointless post-win mutation for a brand-new crash
+risk on a state those layers have no way to reason about, and "stop mid-sequence" is inherently
+the responsibility of whatever is sequencing a turn's discrete steps — nothing below that layer
+can see where one logical turn's steps end. See `isOver`'s own doc comment for the full
+reasoning, kept there (not just in this file) since that's where a future orchestrator's author
+is most likely to actually read it.
+
+**Verification**: 321 tests total (317 + 4 new `PrecedenceOrchestratorTest` cases), full suite
+green; the permanent 2000-game simulation (original base seed) clean, 0 violations; two more
+independent 2000-game batches at different base seeds also clean, 0 violations each — 6000 games
+total across this pass with no regression; the historical multi-class `--tests` NPE-trigger
+sample stayed green across 3 repeated runs. No behavioral discrepancy found — this was a pure
+structural move plus one additively-named, side-effect-free query.

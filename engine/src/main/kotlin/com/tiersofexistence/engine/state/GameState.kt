@@ -52,6 +52,42 @@ class GameState(
      * see [winners] for the full, tie-aware set. */
     val winner: PlayerColor? get() = _winners.firstOrNull()
 
+    /**
+     * True once any winner has been declared ([declareWinner]/[declareSimultaneousWinners]) —
+     * the explicit, named domain check for "is this game over," so a caller doesn't need to spell
+     * out `winners.isNotEmpty()` itself at every checkpoint.
+     *
+     * **This is a query, not an enforcement mechanism.** Nothing in [GameState], `TurnEngine`, a
+     * token pool, or a card resolver refuses a mutation just because this is true, and none of
+     * them ever will — those stay pure, turn-agnostic mechanical primitives on purpose (see
+     * `TurnEngine`'s own class doc), and a hard refusal down there would trade a harmless-if-
+     * pointless post-win mutation for a brand new crash risk on a state those layers have no way
+     * to reason about (a card resolver, for instance, has no notion of "whose turn's own
+     * remaining steps this mutation belongs to"). "The first player to land on You Win! wins the
+     * game" (rulebook p.1) means the game ends the instant that happens, not "once whatever else
+     * was already in progress finishes" — but enforcing that is inherently the job of whatever is
+     * sequencing a turn's discrete steps (roll, offer a card, move, ...), since nothing below that
+     * orchestration layer can see where one logical turn's steps end.
+     *
+     * **Every orchestrator that drives a turn as a sequence of discrete steps is responsible for
+     * checking this between steps and stopping immediately once it becomes true** — not just
+     * before the next full turn, but before continuing the CURRENT one. [com.tiersofexistence
+     * .engine.rules.TurnDriver.driveOneTurn] is the reference implementation (see its private
+     * `endTurnIfGameWon`, checked after every point in a turn that could newly produce a winner
+     * before its own turn-ending move) and the reason this property exists: an earlier version had
+     * no named way to ask this and simply never checked mid-turn, so a win declared partway
+     * through a turn (e.g. by an early held-card play) didn't stop that same turn from going on to
+     * roll and move another token anyway, sometimes moving the very token that just won off its
+     * own `YOU_WIN` square — found by `GameSimulationTest`'s randomized-play harness across
+     * ~4000 simulated games. `TurnDriver`'s own `TurnDecisionProvider`-driven turns are the only
+     * orchestrator that exists today, but this class's own doc already anticipates a second one
+     * (a human player's turn, driven by direct UI input rather than `driveOneTurn`) — whatever
+     * that turns out to look like, it owns this exact same responsibility, and this property is
+     * what lets it discover and follow the same convention `TurnDriver` already does, rather than
+     * needing to independently reinvent (or forget) it.
+     */
+    val isOver: Boolean get() = _winners.isNotEmpty()
+
     val currentPhase: Phase get() = Phase.ROUND_ORDER[phaseIndex]
 
     /** Players still owed a turn in [currentPhase], in the order they'll take it. */

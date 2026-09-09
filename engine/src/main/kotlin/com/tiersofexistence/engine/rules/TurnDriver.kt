@@ -14,6 +14,7 @@ import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
 import com.tiersofexistence.engine.model.TokenKind
 import com.tiersofexistence.engine.rules.precedence.InteractionChain
+import com.tiersofexistence.engine.rules.precedence.PrecedenceOrchestrator
 import com.tiersofexistence.engine.rules.precedence.SuspendedAction
 import com.tiersofexistence.engine.state.GameState
 import com.tiersofexistence.engine.state.TokenId
@@ -48,17 +49,20 @@ import com.tiersofexistence.engine.state.TokenId
  *   timing genuinely fits this exact window — this driver doesn't hardcode "only Delayed
  *   Motion"); [GameState.pendingRoll]'s final total is read back out via [PendingRoll.total]
  *   exactly as before, then [GameState.clearPendingRoll] runs at the end of the turn as before.
- * - **Precedence** (rules 20-23): [resolvePrecedenceWindow] opens a real
+ * - **Precedence** (rules 20-23): [precedence] (a [PrecedenceOrchestrator]) opens a real
  *   [InteractionChain] around every point this driver suspends something a Precedence card could
  *   respond to — a pending card resolution (any Immediate/Held play, wrapped by
  *   [playWithPrecedenceWindow]) or a pending token move (right after a token is chosen, before
- *   [moveAndResolve] actually moves it) — offers every seated player a response round via
- *   [offerResponseRounds] (repeating the round whenever a new entry reopens it, per
- *   [InteractionChain]'s own rules), then dispatches whatever survives in reverse play order
- *   (rule 22) before letting the suspended action itself proceed. See the two private helpers'
- *   own docs for exactly how a chain-response card's hand/discard bookkeeping works — this is new
- *   bookkeeping this integration needed, since [InteractionChain]/[CardEffectDispatcher]
- *   themselves only sequence/apply plays, they never touch a hand or the deck's discard pile.
+ *   [moveAndResolve] actually moves it) — offers every seated player a response round (repeating
+ *   it whenever a new entry reopens the window, per [InteractionChain]'s own rules), then
+ *   dispatches whatever survives in reverse play order (rule 22) before letting the suspended
+ *   action itself proceed. This driver still decides WHEN a window opens (the two call sites
+ *   above); [PrecedenceOrchestrator] owns HOW it executes, including the hand/discard bookkeeping
+ *   a chain-response card needs — new bookkeeping this integration needed, since
+ *   [InteractionChain]/[CardEffectDispatcher] themselves only sequence/apply plays, they never
+ *   touch a hand or the deck's discard pile. See that class's own doc for the full detail — it
+ *   used to live directly on this class as private methods, extracted once it was clear the
+ *   window-execution algorithm needs nothing about dice, held-card windows, or movement to run.
  *
  * Time Wrinkle squares remain fully handled as before: "Lose next turn on this Tier" and "Take an
  * extra turn, First Tier" auto-apply inside [TurnEngine] itself; "Go again"
@@ -97,6 +101,11 @@ class TurnDriver(
      * turn should never have reached this driver in the first place — see the class doc). */
     constructor(decisionsByPlayer: Map<PlayerColor, TurnDecisionProvider>, rollForPhase: (Phase) -> Int = { Dice.rollForPhase(it) }) :
         this({ color -> decisionsByPlayer.getValue(color) }, rollForPhase)
+
+    /** Runs every Precedence window this driver opens — see the class doc's Precedence bullet
+     * and [PrecedenceOrchestrator]'s own doc for the responsibility split. Constructed once per
+     * [TurnDriver] (not per turn/window), sharing this driver's own [decisionsFor]. */
+    private val precedence = PrecedenceOrchestrator(decisionsFor)
 
     /**
      * Drives exactly one player's turn to completion: offers a pre-roll Held-card opportunity,
@@ -151,7 +160,7 @@ class TurnDriver(
         // used to move a token. isSuspendedActionCancelled is meaningless for a PendingMove (an
         // Annulment with no preceding chain entry has nothing to cancel here — see
         // InteractionChain's own class doc), so the move always proceeds afterward.
-        resolvePrecedenceWindow(state, SuspendedAction.PendingMove(player))
+        precedence.openWindow(state, SuspendedAction.PendingMove(player))
         if (endTurnIfGameWon(state)) return true
 
         val grantAnotherTurn = moveAndResolve(state, decisions, player, chosen, roll.total)
@@ -180,9 +189,15 @@ class TurnDriver(
      * checking after the move itself, since that's already the last thing [driveOneTurn] does.
      * Returns true (turn handled) if the game is now won, ending the turn immediately without
      * doing anything further.
+     *
+     * Checks [GameState.isOver] — the explicit, named domain query for exactly this — rather than
+     * spelling out `state.winners.isNotEmpty()` here, so this reads as "is the game over," and so
+     * any future second orchestrator (see [GameState.isOver]'s own doc — a human player's turn,
+     * driven some other way than [driveOneTurn]) has an obvious, discoverable thing to check for
+     * the same responsibility, rather than needing to independently reinvent this convention.
      */
     private fun endTurnIfGameWon(state: GameState): Boolean {
-        if (state.winners.isEmpty()) return false
+        if (!state.isOver) return false
         state.clearPendingRoll()
         state.endTurn()
         return true
@@ -357,18 +372,17 @@ class TurnDriver(
 
     /**
      * Opens a Precedence-response window (rules 20-23) around [request] before it actually
-     * resolves, offers every seated player one or more response rounds via
-     * [resolvePrecedenceWindow], then either resolves [request] itself or, if an Annulment
+     * resolves, via [precedence], then either resolves [request] itself or, if an Annulment
      * cancelled it (see [InteractionChain.isSuspendedActionCancelled] — only meaningful for a
      * [SuspendedAction.PendingCardResolution]), discards [request]'s own card without resolving
      * it and returns null. A cancelled play is NOT a [CardPlayResult.Rejected] — it was
      * legitimately played and would have resolved, its effect was specifically annulled — so it's
      * never returned to a hand, matching how a cancelled [com.tiersofexistence.engine.rules
      * .precedence.ChainEntry] already never gets its own card back either (see
-     * [resolvePrecedenceWindow]'s doc).
+     * [PrecedenceOrchestrator.openWindow]'s doc).
      */
     private fun playWithPrecedenceWindow(state: GameState, request: CardPlayRequest): CardPlayResult? {
-        val chain = resolvePrecedenceWindow(state, SuspendedAction.PendingCardResolution(request))
+        val chain = precedence.openWindow(state, SuspendedAction.PendingCardResolution(request))
         if (chain.isSuspendedActionCancelled) {
             state.deck.discard(request.card)
             return null
@@ -381,9 +395,9 @@ class TurnDriver(
     /**
      * If [result] is [CardPlayResult.AwaitingDecision], resolves the pending decision right
      * away — currently only ever [PendingDecision.OpponentDiscardChoice] (Cleansing; no resolver
-     * produces [PendingDecision.PrecedenceWindowOpen] today, since this class's own
-     * [resolvePrecedenceWindow] handles every Precedence window directly rather than routing
-     * through this pending-decision vocabulary). For anything else, this is a no-op.
+     * produces [PendingDecision.PrecedenceWindowOpen] today, since [precedence] handles every
+     * Precedence window directly rather than routing through this pending-decision vocabulary).
+     * For anything else, this is a no-op.
      *
      * Cleansing's own text is explicit that the *targeted opponent* — never the player who
      * played Cleansing — chooses which of their own held cards to discard, so this always asks
@@ -405,75 +419,6 @@ class TurnDriver(
                 CleansingResolver.completeDiscard(state, decidingPlayer, chosen)
             }
             is PendingDecision.PrecedenceWindowOpen -> Unit
-        }
-    }
-
-    /**
-     * Opens an [InteractionChain] around [suspendedAction], offers every seated player
-     * (`state.turnOrder.order`, matching the class's own "response order" convention) one or more
-     * rounds of Precedence-response opportunity via [offerResponseRounds], then resolves the
-     * chain and dispatches every surviving entry in reverse play order (rule 22).
-     *
-     * Every chain-response card was removed from its player's hand the moment it was played into
-     * the chain (see [offerResponseRounds]) and is never returned there regardless of how it
-     * resolves — **confirmed canon**: once played, a card is expended; Annulment (or a stale
-     * target) nullifies what it *does*, not the historical fact that it was played. A
-     * [CardPlayResult.Resolved] entry already discarded its own card via
-     * [com.tiersofexistence.engine.cards.play.CardLifecycle.attemptPlay]; every other entry in
-     * [InteractionChain.entriesSnapshot] needs an explicit discard here, not just the ones
-     * [InteractionChain.resolutionOrder]/[CardEffectDispatcher.dispatchAll] actually saw —
-     * that excludes cancelled entries AND Annulment entries themselves (an Annulment never has
-     * an effect of its own to resolve), both of which still need their own card discarded per
-     * the same confirmed canon, even though [CardEffectDispatcher] never touches them. (Every
-     * Precedence card is [CardTiming.HELD] — see `FateHarvestCatalog` — so none can produce
-     * [CardPlayResult.EnteredHand], and none of the 6 currently trigger
-     * [CardPlayResult.AwaitingDecision].)
-     *
-     * Returns the finished (RESOLVED-state) chain so callers that need
-     * [InteractionChain.isSuspendedActionCancelled] can check it — meaningless for anything but a
-     * [SuspendedAction.PendingCardResolution].
-     */
-    private fun resolvePrecedenceWindow(state: GameState, suspendedAction: SuspendedAction): InteractionChain {
-        val chain = InteractionChain.open(suspendedAction, eligiblePlayers = state.turnOrder.order)
-        offerResponseRounds(state, chain)
-        val order = chain.resolve()
-        val results = CardEffectDispatcher.dispatchAll(state, order)
-        chain.finishResolving()
-        val resolvedEntryIds = order.zip(results).filter { (_, result) -> result is CardPlayResult.Resolved }.map { it.first.id }.toSet()
-        chain.entriesSnapshot().forEach { entry ->
-            if (entry.id !in resolvedEntryIds) state.deck.discard(entry.request.card)
-        }
-        return chain
-    }
-
-    /**
-     * Repeatedly offers every currently-eligible player (per [InteractionChain.currentlyEligibleToAct])
-     * a chance to respond via [TurnDecisionProvider.choosePrecedenceResponse] (resolved per-player
-     * through [decisionsFor], since a response can come from any seated player, not just the one
-     * whose turn it is) or pass, until the window closes on its own. A player who chooses to
-     * respond has that card removed from their hand right here, before [chain.respond] adds the
-     * entry — see [resolvePrecedenceWindow]'s doc for what happens to it from there.
-     */
-    private fun offerResponseRounds(state: GameState, chain: InteractionChain) {
-        while (chain.isOpen) {
-            val eligible = chain.currentlyEligibleToAct()
-            if (eligible.isEmpty()) break // defensive: isOpen should already guarantee this is non-empty
-            for (player in eligible) {
-                if (!chain.isOpen) break
-                val choice = decisionsFor(player).choosePrecedenceResponse(state, player, chain)
-                if (choice == null) {
-                    chain.pass(player)
-                    continue
-                }
-                require(choice.card.hasPrecedence) {
-                    "choosePrecedenceResponse must return a Precedence card, got ${choice.card.name}"
-                }
-                val hand = state.players.getValue(player).hand
-                require(hand.remove(choice.card)) {
-                    "$player chose to respond with ${choice.card.name}, but doesn't have it in hand"
-                }
-                chain.respond(player, CardPlayRequest(player, choice.card, choice.targets, TriggeringEvent.RespondingInChain(chain.id)))
-            }
         }
     }
 }
