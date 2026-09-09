@@ -27,4 +27,6 @@ tasks.test {
     systemProperty("toe.benchmark.eventanalysis", System.getProperty("toe.benchmark.eventanalysis", "false"))
     // Same mechanism for the Phase 1C structural stagnation-characterization benchmark.
     systemProperty("toe.benchmark.structural", System.getProperty("toe.benchmark.structural", "false"))
+    // Same mechanism for the Phase 1C resolution-state and turn-debt validation benchmark.
+    systemProperty("toe.benchmark.resolutionstate", System.getProperty("toe.benchmark.resolutionstate", "false"))
 }

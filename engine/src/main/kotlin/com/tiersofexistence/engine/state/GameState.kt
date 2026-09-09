@@ -209,6 +209,16 @@ class GameState(
      * [deferredModifiers]'s own size, not filtered by type. */
     val totalPendingExtraTierTurns: Int get() = deferredModifiers.size
 
+    /** [deferredModifiers]'s own `ExtraTierTurn` entries, grouped to a per-(player, Tier) count —
+     * added for the same read-only observability reason as [totalPendingExtraTierTurns] (see
+     * `com.tiersofexistence.engine.benchmark.PlayerCountResolutionStateValidationTest`, which
+     * needs the *distribution* of outstanding extra-tier-turn debt across players/Tiers, not
+     * just its sum). Mutates nothing; only entries actually present in [deferredModifiers] are
+     * ever counted, so every value here is already nonzero. */
+    fun pendingExtraTierTurnsByPlayerAndTier(): Map<Pair<PlayerColor, TierLevel>, Int> =
+        deferredModifiers.filterIsInstance<DeferredTurnModifier.ExtraTierTurn>()
+            .groupingBy { it.player to it.tier }.eachCount()
+
     init {
         turnQueue = buildTurnQueue()
     }

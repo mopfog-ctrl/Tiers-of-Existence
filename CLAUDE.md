@@ -1795,6 +1795,117 @@ different one — reran, and both figures now agree (0.336). Full report:
 identity was retained in the recorded dataset (per-card multiplicity at each regeneration) for future
 comparison but not reweighted or reanalyzed in this pass, per the task's own explicit instruction.
 
+## Phase 1C: resolution-state and turn-debt validation — upper-Tier family classifies A, debt family classifies B, tail finding confirmed as exposure artifact
+
+**Validates, rather than acts on, the two signal families the structural-predictor pass above
+surfaced** — explicitly *not* a step toward anti-stagnation mechanism design on its own; the task's
+own stop condition ruled that out. Two questions: (A) are the 6 sign-consistent upper-Tier predictors
+six independent findings or largely one condition, and does their turns-remaining relationship survive
+controlling for elapsed turns; (B) does `totalPendingExtraTierTurns` predict duration independently of
+elapsed turns, or is its r=0.336 tail finding explained by longer games simply having more opportunity
+to accumulate debt (the stated exposure hypothesis).
+
+**One further small, additive, read-only engine change: `GameState.pendingExtraTierTurnsByPlayerAndTier()`.**
+A grouping of `deferredModifiers`'s `ExtraTierTurn` entries to a per-(player, Tier) count, needed
+because the task explicitly asked for debt's *distribution* across players/Tiers, not just its total —
+`totalPendingExtraTierTurns` alone couldn't distinguish that. Mutates nothing, read by no gameplay
+logic — same basis as every prior read-only accessor added for this research line. A parallel
+per-(player, Tier) skip-debt accessor was considered but not added: Part B scopes to
+`totalPendingExtraTierTurns` only, so it would have been unused.
+
+**Part A — covariance structure: not "one condition," except for one literal mathematical identity.**
+Pairwise correlation among the 6 predictors, computed within player count and averaged: only 1 of 15
+pairs is near-redundant (mean |r|>=0.7) — `playersOnTier4` and `inPlayTokens@Tier4`, at r=1.000 exactly
+at every player count. This isn't a coincidence: the 4th Tier's own max-in-play cap is 1 per player, so
+"count of players with an in-play 4th-Tier token" and "sum of in-play 4th-Tier tokens across players"
+are the same number by construction, not merely correlated. The other 5 predictors remain largely
+distinct from each other (mean |r| across all 15 pairs: 0.196) — the initial hypothesis that these 6
+were mostly restating one underlying condition does not hold beyond that one identity pair.
+
+**Part A — forward relationship survives elapsed-turns conditioning almost entirely unchanged, a
+different pattern from regeneration depth's own near-total collapse.** Partial correlation (controlling
+for elapsed turns) vs. raw correlation: mean |partial r − raw r| across all 30 predictor/player-count
+cells is 0.001 — essentially no movement at all. This is because these 6 predictors are, unlike
+regeneration depth (raw r with elapsed turns ~0.99), only weakly correlated with elapsed turns
+themselves — token counts on the upper Tiers rise and fall with promotion/destruction/movement rather
+than monotonically tracking game length. The raw associations (|r| roughly 0.05–0.19) are real and
+survive conditioning, though modest in magnitude, not large. A temporary, explicitly-labeled
+`AnalysisOnlyUpperTierProgressScore` (mean of the 6 predictors' own within-player-count z-scores, never
+a canonical metric) was tested against its own components and adds only modest information over the
+single best predictor, consistent with the redundancy finding.
+
+**Classification: Upper-Tier progress family = A** (robust forward predictor). The largest partial
+correlation across all cells is 0.187 — the signal is real and survives conditioning essentially intact,
+though its magnitude keeps it modest rather than large.
+
+**Part B — the two facets of `totalPendingExtraTierTurns` diverge sharply, and the divergence is the
+finding.** The continuous relationship with turns-remaining was already small in its raw form (|r|
+roughly 0.01–0.09, not even sign-consistent across player counts) and barely moves under elapsed-turns
+conditioning (max partial: 0.054) — a borderline, noisy signal either way. The **tail-membership**
+relationship — the original, larger r=0.336-class finding that motivated this whole validation pass —
+tells a completely different story: raw r(debt, tail90 membership) rises with player count up to 0.450,
+but the **partial** r once elapsed turns are controlled for collapses to essentially nothing (max 0.026
+across every player count). **This specific finding is a near-complete confirmation of the task's own
+stated exposure hypothesis**: a longer-elapsed game simply has more opportunity to accumulate
+unconsumed extra-tier-turn debt, and that accumulation — not any independent effect of the debt itself
+— is what produced the original tail association.
+
+**Distribution and persistence (Part B, secondary findings).** Breadth (distinct (player, Tier) cells
+with debt) and concentration (largest single cell) both track the plain debt total closely and add no
+independent signal of their own. Lag-1 autocorrelation of debt within a game rises sharply with player
+count (0.235 at 2P to 0.923 at 6P) — expected, since more players means proportionally slower debt
+turnover per Tier-Phase cycle. A persistent-nonzero vs. transient-new-nonzero comparison (pooled across
+player counts) found a statistically distinguishable but structurally-caveated difference (+463.7 turns,
+z=7.36) — flagged explicitly as likely an artifact of category-size imbalance (debt only changes on a
+rare card/square draw, so most consecutive event pairs are trivially zero→zero) rather than treated as
+independent evidence.
+
+**Classification: Pending extra-Tier-turn debt family = B** (real but weak/context-dependent), driven by
+the weaker-surviving continuous-relationship facet, not by the larger tail finding that motivated the
+investigation — that finding alone would classify C. The report is explicit about this: the
+classification is determined by the more conservative of the two facets per its own stated methodology,
+even though the more striking, original result (the tail association) is the one that turned out to be
+a near-complete exposure artifact.
+
+**A real internal-inconsistency bug was found and fixed twice during report review, both before
+finalizing (the same "review actual output before trusting the first draft" discipline that has caught
+a real bug in every Phase 1C pass so far).** First: Section 10's classification text made a hardcoded
+claim ("a majority of pairs at mean |r|>=0.7") that directly contradicted Section 3's own dynamically-
+computed finding in the same report ("Not a majority near-redundant") — fixed by having Section 10
+recompute and cite the same redundancy fact Section 3 computes, rather than asserting an unverified
+narrative. Second, and more substantive: Section 4's "Direct answer" paragraph asserted "every other
+cell collapses toward zero relative to its own raw r" as the default framing carried over from the
+prior report's regeneration-depth finding — but the actual generated table showed partial r values
+nearly identical to raw r for all 6 predictors, the opposite of a collapse. Fixed by computing the mean
+|partial r − raw r| delta directly from the data and writing the paragraph to state whichever pattern
+actually occurred, rather than assuming the depth-predictor pattern would repeat for a different signal
+family. A related fix folded Section 6's own tail90 partial correlations into Section 10's debt
+classification (the first draft only used the turns-remaining partials, missing the far more decisive
+tail-collapse result entirely) — reran after all three fixes; both bugs found were text/analysis bugs
+in the report-generation code, not data bugs, so the underlying numbers were unaffected and the rerun
+reproduced identical statistics, confirmed against the published corrected baseline (0 invariant
+violations, exact match).
+
+**Observation-point caveat, stated explicitly per the task's own instruction.** Every measurement here
+and in the structural-predictor report is sampled at Fate Harvest regeneration events specifically,
+because that's where this whole research line's instrumentation lives — not because regeneration
+events are a representative sampling point for game state in general. Regeneration timing is driven by
+deck exhaustion, not by anything about board progress or turn debt, so "the state observed when
+regeneration occurs" is a different claim from "the state that is caused by or appropriate for
+controlling regeneration" — nothing in this report or its predecessor establishes the latter, and a
+future anti-stagnation mechanism's placement (inside Fate Harvest regeneration specifically vs. some
+other turn-level checkpoint) remains an open question this pass does not resolve.
+
+**Per the task's own stop condition: does not justify moving from characterization into mechanism
+design.** Even with the upper-Tier family classifying A, the report's own answer is "partially, with
+caution" — any surviving signal was validated only at regeneration events, not at arbitrary turns, so
+whether it's specifically a property of regeneration (vs. game state in general) is unresolved. No
+`StagnationPressureConfig` weights, no `ANTI_STAGNATION` changes, no canonical progress metric, no
+probability tuning, and no new candidate anti-stagnation configuration were created — per the task's
+explicit scope, this is a measurement and interpretation pass only. Card identity/rarity stayed recorded
+in the dataset for future-catalog comparison but was not reanalyzed or reweighted. Full report:
+`docs/benchmarks/anti-stagnation-resolution-state-validation.md`.
+
 ## Deferred — post-baseline simulation/design questions (retained, not acted upon)
 
 The user has explicitly deferred the items below until after the canonical 2-6-player probability
