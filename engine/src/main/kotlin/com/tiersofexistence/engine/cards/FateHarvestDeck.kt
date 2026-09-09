@@ -29,6 +29,17 @@ class FateHarvestDeck private constructor(
     val drawPileSize: Int get() = drawPile.size
     val discardPileSize: Int get() = discardPile.size
 
+    /** Read-only snapshots of each pile's actual contents (defensive copies — mutating the
+     * returned list never affects this deck) — for card-conservation/multiplicity checking that
+     * needs more than just a count (e.g. verifying no card type's copy count ever drifts from its
+     * canonical multiplicity, not just that the aggregate total stays right). Every
+     * [FateHarvestCard] is a plain value description with no per-copy identity (two physical
+     * copies of the same named card are the literal same object — see [FateHarvestCatalog
+     * .buildDeck]), so "which zone a card is in" is meaningful only in aggregate, by name — these
+     * are for exactly that. */
+    val drawPileCards: List<FateHarvestCard> get() = drawPile.toList()
+    val discardPileCards: List<FateHarvestCard> get() = discardPile.toList()
+
     /** Draws the top card, reshuffling the discard pile into a fresh draw pile first if needed,
      * using this deck's own [random] (see class doc) rather than a caller-supplied one. */
     fun draw(): FateHarvestCard {

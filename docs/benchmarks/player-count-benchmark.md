@@ -66,31 +66,31 @@ Every game removes exactly one card (its restricted color's own, always `SINGLE`
 
 | Player count | Games | Finished | Capped | Cap rate | Mean turns | SEM | 95% CI (mean) | Median turns | p90 | p95 | Mean Rounds | Mean human-seat turns | Mean decision opportunities/seat | Total runtime (s) | Mean runtime/game (ms) | Mean runtime/turn (ms) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 2 | 250 | 250 | 0 | 0.0% | 583.5 | 23.01 | [538.4, 628.6] | 480 | 1030 | 1256 | 202.9 | 291.8 | 1728.1 | 0.36 | 1.459 | 0.0025 |
-| 3 | 250 | 250 | 0 | 0.0% | 906.8 | 36.28 | [835.7, 977.9] | 748 | 1768 | 2174 | 218.4 | 302.3 | 2201.9 | 0.58 | 2.303 | 0.0025 |
-| 4 | 250 | 250 | 0 | 0.0% | 1254.9 | 58.87 | [1139.5, 1370.3] | 979 | 2780 | 3237 | 233.0 | 313.7 | 2726.8 | 0.86 | 3.440 | 0.0027 |
-| 5 | 250 | 249 | 1 | 0.4% | 1931.7 | 97.80 | [1740.0, 2123.4] | 1378 | 3974 | 5219 | 292.6 | 386.3 | 3942.5 | 1.54 | 6.145 | 0.0032 |
-| 6 | 250 | 247 | 3 | 1.2% | 2289.9 | 106.79 | [2080.6, 2499.2] | 1961 | 4791 | 5961 | 297.5 | 381.7 | 4468.8 | 2.13 | 8.510 | 0.0037 |
+| 2 | 250 | 250 | 0 | 0.0% | 583.5 | 23.01 | [538.4, 628.6] | 480 | 1030 | 1256 | 202.9 | 291.8 | 1728.1 | 0.86 | 3.424 | 0.0059 |
+| 3 | 250 | 250 | 0 | 0.0% | 906.8 | 36.28 | [835.7, 977.9] | 748 | 1768 | 2174 | 218.4 | 302.3 | 2201.9 | 1.33 | 5.318 | 0.0059 |
+| 4 | 250 | 250 | 0 | 0.0% | 1254.9 | 58.87 | [1139.5, 1370.3] | 979 | 2780 | 3237 | 233.0 | 313.7 | 2726.8 | 1.92 | 7.673 | 0.0061 |
+| 5 | 250 | 249 | 1 | 0.4% | 1931.7 | 97.80 | [1740.0, 2123.4] | 1378 | 3974 | 5219 | 292.6 | 386.3 | 3942.5 | 3.28 | 13.138 | 0.0068 |
+| 6 | 250 | 247 | 3 | 1.2% | 2289.9 | 106.79 | [2080.6, 2499.2] | 1961 | 4791 | 5961 | 297.5 | 381.7 | 4468.8 | 4.21 | 16.825 | 0.0073 |
 
 ## Table C - Stage 2 scaling sample (1500 games/cohort)
 
 | Player count | Games | Finished | Capped | Cap rate | Mean turns | SEM | 95% CI (mean) | Median turns | p90 | p95 | Mean Rounds | Mean human-seat turns | Mean decision opportunities/seat | Total runtime (s) | Mean runtime/game (ms) | Mean runtime/turn (ms) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 2 | 1500 | 1500 | 0 | 0.0% | 633.3 | 11.43 | [610.9, 655.7] | 503 | 1204 | 1516 | 220.4 | 316.6 | 1877.7 | 1.87 | 1.246 | 0.0020 |
-| 3 | 1500 | 1500 | 0 | 0.0% | 926.9 | 17.33 | [892.9, 960.9] | 724 | 1774 | 2207 | 223.8 | 309.0 | 2251.4 | 3.23 | 2.153 | 0.0023 |
-| 4 | 1500 | 1498 | 2 | 0.1% | 1286.2 | 25.65 | [1235.9, 1336.5] | 1001 | 2502 | 3233 | 239.7 | 321.5 | 2799.2 | 5.07 | 3.380 | 0.0026 |
-| 5 | 1500 | 1493 | 7 | 0.5% | 1757.7 | 36.81 | [1685.6, 1829.9] | 1291 | 3621 | 4745 | 267.2 | 351.5 | 3580.9 | 7.84 | 5.224 | 0.0030 |
-| 6 | 1500 | 1460 | 40 | 2.7% | 2419.2 | 49.18 | [2322.8, 2515.6] | 1821 | 5241 | 6737 | 312.8 | 403.2 | 4739.5 | 12.42 | 8.278 | 0.0034 |
+| 2 | 1500 | 1500 | 0 | 0.0% | 633.3 | 11.43 | [610.9, 655.7] | 503 | 1204 | 1516 | 220.4 | 316.6 | 1877.7 | 4.91 | 3.272 | 0.0052 |
+| 3 | 1500 | 1500 | 0 | 0.0% | 926.9 | 17.33 | [892.9, 960.9] | 724 | 1774 | 2207 | 223.8 | 309.0 | 2251.4 | 7.78 | 5.186 | 0.0056 |
+| 4 | 1500 | 1498 | 2 | 0.1% | 1286.2 | 25.65 | [1235.9, 1336.5] | 1001 | 2502 | 3233 | 239.7 | 321.5 | 2799.2 | 11.65 | 7.765 | 0.0060 |
+| 5 | 1500 | 1493 | 7 | 0.5% | 1757.7 | 36.81 | [1685.6, 1829.9] | 1291 | 3621 | 4745 | 267.2 | 351.5 | 3580.9 | 17.84 | 11.894 | 0.0068 |
+| 6 | 1500 | 1460 | 40 | 2.7% | 2419.2 | 49.18 | [2322.8, 2515.6] | 1821 | 5241 | 6737 | 312.8 | 403.2 | 4739.5 | 26.71 | 17.804 | 0.0074 |
 
 ## Table D - Scaling comparison (Stage 2, 2-player = 1.00x baseline)
 
 | Player count | Turn-length ratio vs 2P | Round ratio vs 2P | Engine-runtime ratio vs 2P | Runtime/turn ratio vs 2P |
 |---|---|---|---|---|
 | 2 | 1.00x | 1.00x | 1.00x | 1.00x |
-| 3 | 1.46x | 1.02x | 1.73x | 1.18x |
-| 4 | 2.03x | 1.09x | 2.71x | 1.34x |
-| 5 | 2.78x | 1.21x | 4.19x | 1.51x |
-| 6 | 3.82x | 1.42x | 6.64x | 1.74x |
+| 3 | 1.46x | 1.02x | 1.59x | 1.08x |
+| 4 | 2.03x | 1.09x | 2.37x | 1.17x |
+| 5 | 2.78x | 1.21x | 3.64x | 1.31x |
+| 6 | 3.82x | 1.42x | 5.44x | 1.42x |
 
 ## Table E - One-human local-app duration model (Stage 2 data)
 
@@ -131,9 +131,9 @@ Only the **mean** has a closed-form standard error here (SEM via the central lim
 ## Analysis
 
 1. **Game length, 2 to 6 players (raw endpoints only - see item 12 for the full, non-monotonicity-assuming picture)**: mean turns/game is 633.3 at 2P and 2419.2 at 6P, a 3.82x ratio between just those two endpoints (see Table D) - this endpoint ratio does NOT by itself imply the relationship is monotonic in between; item 12 reports the actual ordering.
-2. **Computational cost, 2 to 6 players**: mean engine runtime/game moves 1.25ms -> 8.28ms, a 6.64x ratio; mean runtime/turn moves 0.002ms -> 0.003ms (1.74x). This is game-structure scaling (A) times per-turn engine cost (B) - see items 2a/2b.
+2. **Computational cost, 2 to 6 players**: mean engine runtime/game moves 3.27ms -> 17.80ms, a 5.44x ratio; mean runtime/turn moves 0.005ms -> 0.007ms (1.42x). This is game-structure scaling (A) times per-turn engine cost (B) - see items 2a/2b.
 2a. **Game-structure scaling (turns/game, Rounds/game) by player count**: 2P: 633.3 turns / 220.4 Rounds, 3P: 926.9 turns / 223.8 Rounds, 4P: 1286.2 turns / 239.7 Rounds, 5P: 1757.7 turns / 267.2 Rounds, 6P: 2419.2 turns / 312.8 Rounds.
-2b. **Computational scaling (engine runtime) by player count, kept separate from 2a rather than conflated**: 2P: 1.25ms/game, 0.0020ms/turn, 3P: 2.15ms/game, 0.0023ms/turn, 4P: 3.38ms/game, 0.0026ms/turn, 5P: 5.22ms/game, 0.0030ms/turn, 6P: 8.28ms/game, 0.0034ms/turn.
+2b. **Computational scaling (engine runtime) by player count, kept separate from 2a rather than conflated**: 2P: 3.27ms/game, 0.0052ms/turn, 3P: 5.19ms/game, 0.0056ms/turn, 4P: 7.77ms/game, 0.0060ms/turn, 5P: 11.89ms/game, 0.0068ms/turn, 6P: 17.80ms/game, 0.0074ms/turn.
 3. **Does one human seat get roughly the same, more, or fewer turns as player count rises?**: 2P: 316.6, 3P: 309.0, 4P: 321.5, 5P: 351.5, 6P: 403.2 - mean human-seat turns/game does not decrease from 2P to 6P (endpoints only - see item 12 for the full ordering, which need not be monotonic).
 4. **Shortest/longest mean-duration player count**: shortest is 2P (633.3 turns), longest is 6P (2419.2 turns).
 5. **Shortest/longest median-duration player count**: shortest is 2P (503 turns), longest is 6P (1821 turns). This agrees with the mean-based ranking in item 4.

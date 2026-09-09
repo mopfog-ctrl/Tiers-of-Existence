@@ -305,7 +305,12 @@ class PlayerCountBenchmarkTest {
 
     // --- deck construction: canonical base deck minus unseated colors' own cards ---
 
-    private data class DeckConstruction(val deck: FateHarvestDeck, val removedCardNames: Set<String>, val actualSize: Int)
+    private data class DeckConstruction(
+        val deck: FateHarvestDeck,
+        val removedCardNames: Set<String>,
+        val actualSize: Int,
+        val expectedMultiplicity: Map<String, Int>,
+    )
 
     /** Builds the canonical deck for a game seating exactly [colors]: the full 70-card catalog
      * minus every [FateHarvestCatalog.colorCards] entry belonging to a [PlayerColor] not in
@@ -321,7 +326,15 @@ class PlayerCountBenchmarkTest {
         // Pass the same seeded `random` through for later reshuffles too (see FateHarvestDeck's
         // own class doc — a deck that reshuffles from an unseeded generator breaks this whole
         // benchmark's reproducible-seed guarantee the moment a long game exhausts its draw pile).
-        return DeckConstruction(FateHarvestDeck.forTesting(shuffled, random), removedNames, filtered.size)
+        return DeckConstruction(
+            deck = FateHarvestDeck.forTesting(shuffled, random),
+            removedCardNames = removedNames,
+            actualSize = filtered.size,
+            // Per-card-name multiplicity this exact game's deck must conserve for its whole
+            // lifetime — the aggregate total alone (checked below too) can't catch a duplicated
+            // card silently replacing a lost one of a different name at the same total count.
+            expectedMultiplicity = filtered.groupingBy { it.name }.eachCount(),
+        )
     }
 
     // --- game driving ---
@@ -364,13 +377,13 @@ class PlayerCountBenchmarkTest {
         val start = System.nanoTime()
         try {
             state.skipEmptyPhases()
-            checkInvariants(state, playerCount, gameIndex, seed, turnsTaken, deckConstruction.actualSize)
+            checkInvariants(state, playerCount, gameIndex, seed, turnsTaken, deckConstruction)
             while (turnsTaken < MAX_TURNS_PER_GAME && state.winners.isEmpty() && state.currentTurn != null) {
                 val turnPlayer = state.currentTurn
                 driver.driveOneTurn(state)
                 turnsTaken += 1
                 if (turnPlayer != null) seatTurnCounts[turnPlayer] = (seatTurnCounts[turnPlayer] ?: 0) + 1
-                checkInvariants(state, playerCount, gameIndex, seed, turnsTaken, deckConstruction.actualSize)
+                checkInvariants(state, playerCount, gameIndex, seed, turnsTaken, deckConstruction)
             }
             completed = state.winners.isNotEmpty()
         } catch (e: InvariantViolation) {
@@ -400,10 +413,14 @@ class PlayerCountBenchmarkTest {
     }
 
     /** Same checks as `GameSimulationTest.checkInvariants`, deliberately duplicated rather than
-     * shared (see class doc) - throws [InvariantViolation] on any real violation. [expectedDeckSize]
-     * replaces that file's hardcoded 70 - since [buildDeckForColors] removes unseated colors' own
-     * cards, the correct conserved total is per-game (`64 + playerCount`), not a fixed constant. */
-    private fun checkInvariants(state: GameState, playerCount: Int, gameIndex: Int, seed: Long, turnNumber: Int, expectedDeckSize: Int) {
+     * shared (see class doc) - throws [InvariantViolation] on any real violation. Card
+     * conservation is checked two ways against [deckConstruction] (never a hardcoded 70 - since
+     * [buildDeckForColors] removes unseated colors' own cards, the correct conserved total is
+     * per-game, `64 + playerCount`): the aggregate total, and — the stronger check — every
+     * individual card name's exact multiplicity, which the aggregate total alone can't catch a
+     * violation of (e.g. one card's copy silently replaced by a duplicate of a different card,
+     * same total either way). */
+    private fun checkInvariants(state: GameState, playerCount: Int, gameIndex: Int, seed: Long, turnNumber: Int, deckConstruction: DeckConstruction) {
         fun fail(message: String): Nothing = throw InvariantViolation(playerCount, gameIndex, seed, turnNumber, message)
 
         state.players.forEach { (color, ps) ->
@@ -417,10 +434,23 @@ class PlayerCountBenchmarkTest {
 
         if (state.currentPhase !in Phase.ROUND_ORDER) fail("currentPhase ${state.currentPhase} is not a member of Phase.ROUND_ORDER")
 
+        val expectedDeckSize = deckConstruction.actualSize
         val handTotal = state.players.values.sumOf { it.hand.size }
         val total = state.deck.drawPileSize + state.deck.discardPileSize + handTotal
         if (total != expectedDeckSize) {
             fail("Card conservation violated: draw=${state.deck.drawPileSize} discard=${state.deck.discardPileSize} hands=$handTotal total=$total (expected $expectedDeckSize)")
+        }
+
+        // Per-card-name multiplicity, not just the aggregate total (see this method's own doc).
+        // Every card that isn't held in a player's hand right now lives in either pile.
+        val actualMultiplicity = (state.deck.drawPileCards + state.deck.discardPileCards + state.players.values.flatMap { it.hand })
+            .groupingBy { it.name }
+            .eachCount()
+        if (actualMultiplicity != deckConstruction.expectedMultiplicity) {
+            val allNames = (actualMultiplicity.keys + deckConstruction.expectedMultiplicity.keys)
+            val mismatches = allNames.filter { name -> (actualMultiplicity[name] ?: 0) != (deckConstruction.expectedMultiplicity[name] ?: 0) }
+                .joinToString(", ") { name -> "$name: actual=${actualMultiplicity[name] ?: 0} expected=${deckConstruction.expectedMultiplicity[name] ?: 0}" }
+            fail("Per-card multiplicity conservation violated: $mismatches")
         }
 
         if (state.pendingRoll != null) fail("GameState.pendingRoll is still set after driveOneTurn returned: ${state.pendingRoll}")

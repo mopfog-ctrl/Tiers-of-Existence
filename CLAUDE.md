@@ -1355,6 +1355,68 @@ every figure; AI-seat compute time is separately shown to be negligible next to 
 tier. No game-length, pacing, deck-size, card-balance, or player-count optimization was performed
 or recommended — per the addendum's explicit scope, this pass is observational only.
 
+## Phase 1 close-out: explicit card-conservation and recycle guarantees
+
+Before Phase 1 (the benchmark above) could be considered closed, three gaps were closed —
+strengthening what the benchmark itself checks, and adding focused regression coverage
+independent of both `PlayerCountBenchmarkTest` and `GameSimulationTest` for the deck lifecycle
+those two only ever exercise indirectly through whole games:
+
+1. **Strengthened the benchmark's own card-conservation invariant.** It already compared the
+   aggregate card total against that specific game's actual legal deck size (`64 + playerCount`,
+   never a hardcoded 70 — this was already true from the color-filtering work above). What it
+   didn't check: *per-card-name* multiplicity — the aggregate total alone can't catch one card's
+   copy count silently drifting while another's compensates, keeping the total unchanged.
+   `PlayerCountBenchmarkTest.checkInvariants` now also computes the exact expected per-card-name
+   multiplicity at deck-construction time (`DeckConstruction.expectedMultiplicity`, built from the
+   same filtered card list `buildDeckForColors` already produces) and compares it, every turn,
+   against the actual per-name counts across the draw pile + discard pile + every player's hand —
+   `FateHarvestDeck` gained two small read-only accessors (`drawPileCards`/`discardPileCards`,
+   defensive-copy snapshots) to make this observable at all, since it previously only exposed
+   pile *sizes*, not contents. Verified against the full 8,750-game benchmark: 0 violations.
+2. **New `FateHarvestDeckLifecycleTest`** (`engine/src/test/kotlin/com/tiersofexistence/engine
+   /cards/`) — focused, deterministic coverage of `FateHarvestDeck` itself, independent of any
+   whole-game harness: a single draw removes exactly one card from the draw pile; full-deck
+   conservation holds after *every* draw across complete exhaustion, a forced discard-pile
+   reshuffle, and continued draws past that boundary (run for both the full 70-card deck and a
+   canonical filtered deck with 3 colors' cards removed, confirming a removed card never resurfaces
+   via any reshuffle); the same seed produces an identical draw sequence across the reshuffle
+   boundary in two independently constructed decks; and a dedicated check that `discard`/`draw`'s
+   own bookkeeping never fabricates a card. Since [`FateHarvestCard`] is a plain value type with no
+   per-copy identity (two physical copies of the same card are the literal same object — see
+   `FateHarvestCatalog.buildDeck`), every check verifies exact *counts* per card name, not
+   object-level "is this the same card" identity, per that class's own doc.
+3. **New `TurnEngineDeckReshuffleDeterminismTest`** (`engine/src/test/kotlin/com/tiersofexistence
+   /engine/rules/`) — proves the `FateHarvestDeck` determinism fix holds specifically at the exact
+   integration point the original defect lived at (`TurnEngine`'s own `state.deck.draw()` call
+   sites, reached only through a real driven game via `TurnDriver`/`TurnEngine`, not a hand-rolled
+   draw loop). Uses a deliberately small 3-card deck (3 unrestricted `CardTiming.IMMEDIATE` cards —
+   Galactic Roundabout, Parallel Phasing, Divine Assistance — chosen specifically because an
+   Immediate card is always resolved and discarded within the same turn it's drawn regardless of
+   what a `TurnDecisionProvider` decides, unlike a Held card that can sit unplayed in a hand
+   indefinitely, which is what actually guarantees fast, reliable reshuffling within a small turn
+   budget) so ordinary randomized play reshuffles it repeatedly within 300 turns rather than
+   needing hundreds/thousands to exhaust a full-size deck. Two independently constructed games from
+   the same seed produce an identical turn-by-turn fingerprint (deck pile sizes, every player's
+   hand contents, every Tier's token positions/Staging Piles/Zone residents, Marauder counts,
+   winners, current turn/phase) across the whole run, including past the reshuffle boundary — plus
+   a sanity check that the small deck actually does reshuffle within the turn budget, so the test
+   can't silently pass without ever exercising the boundary it exists to test.
+
+**Verification**: 332 tests total (325 + 5 new `FateHarvestDeckLifecycleTest` + 2 new
+`TurnEngineDeckReshuffleDeterminismTest` cases), full suite green; the strengthened per-card-name
+multiplicity invariant re-run against the complete 8,750-game benchmark (Stage 1 + Stage 2, full
+counts) found 0 violations. No new discrepancy exposed beyond the reshuffle-determinism defect
+already found and fixed in the prior pass.
+
+**Phase 1 is now closed**: canonical player-count baseline established; canonical filtered-deck
+behavior established (and now enforced, not just documented); benchmark card conservation tied to
+the actual legal deck size, at both the aggregate and per-card-name level; the deck draw/removal
+lifecycle explicitly tested; discard-pile recycling explicitly tested; deterministic replay across
+the reshuffle boundary explicitly tested, both at the deck level and at the real
+`TurnEngine`/`TurnDriver` integration point. Phase 2 (presentation-pacing research — see "Phased
+plan for deferred next steps" below) has not been started and needs its own explicit go-ahead.
+
 ## Deferred — post-baseline simulation/design questions (retained, not acted upon)
 
 The user has explicitly deferred the items below until after the canonical 2-6-player probability
