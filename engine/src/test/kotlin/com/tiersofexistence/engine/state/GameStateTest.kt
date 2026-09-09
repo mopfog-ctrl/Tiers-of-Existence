@@ -300,31 +300,202 @@ class GameStateTest {
         assertEquals(3, game.roundNumber) // Round 2's 1st Tier turn was the one skipped
     }
 
+    // --- Stacked SkipNextTierTurn debt: confirmed canon — independent triggers against the
+    // same (player, Tier) stack, each removing exactly one distinct future eligible turn, never
+    // collapsed together. Tracked as an explicit per-(player, Tier) counter (GameState
+    // .pendingSkips), not a list, specifically to make the earlier collapse bug structurally
+    // impossible — see GameState.queueSkipNextTierTurn's own doc. ---
+
     @Test
-    fun `multiple SkipNextTierTurn entries for the same player and Tier collapse into one skipped occurrence, not stacked skips`() {
-        // GameState.buildTurnQueue() collects EVERY SkipNextTierTurn entry matching (tier,
-        // player in base) in one pass, removes the player from base once, then removes ALL of
-        // those matching entries from deferredModifiers in the same call — not one entry per
-        // future occurrence. So two independent triggers against the same (player, Tier) (e.g.
-        // two separate Phase Loss draws before the player's next turn on that Tier) are spent
-        // together the very next time that Tier's queue is built, same as a single trigger would
-        // be — they do NOT defer eligibility across two separate future occurrences.
-        val game = GameState.newGame(listOf(RED))
+    fun `two independent SkipNextTierTurn triggers against the same player and Tier stack, each removing a separate future turn`() {
+        // Uses 2 players specifically so each skipped occurrence is independently observable —
+        // GREEN's own eligible turn keeps skipEmptyPhases() from searching straight past both
+        // skipped occurrences in one call the way it would in a single-player game (its loop
+        // only pauses once it finds SOMEONE eligible, not at every individual filtered-out
+        // player).
+        val game = GameState.newGame(listOf(RED, GREEN))
+        game.skipEmptyPhases()
+        assertEquals(RED, game.currentTurn)
+
+        game.queueSkipNextTierTurn(RED, TierLevel.FIRST)
+        game.queueSkipNextTierTurn(RED, TierLevel.FIRST) // a second, independent trigger, same (player, Tier)
+        game.endTurn() // RED's current (unaffected) turn
+        assertEquals(GREEN, game.currentTurn)
+        game.endTurn() // GREEN's turn ends -> Round 2's 1st Tier Phase
+
+        // Round 2: debt 2 -> 1, RED is skipped, only GREEN plays.
+        assertEquals(2, game.roundNumber)
+        assertEquals(GREEN, game.currentTurn)
+        game.endTurn()
+
+        // Round 3: RED is STILL skipped (debt 1 -> 0) — this is exactly what distinguishes
+        // stacking from the old collapse bug, where RED would already be back by Round 3.
+        assertEquals(3, game.roundNumber)
+        assertEquals(GREEN, game.currentTurn)
+        game.endTurn()
+
+        // Round 4: debt is fully spent, RED is eligible again.
+        assertEquals(4, game.roundNumber)
+        assertEquals(RED, game.currentTurn)
+    }
+
+    @Test
+    fun `a skip queued for one Tier never affects another Tier, even for the same player`() {
+        val game = GameState.newGame(listOf(RED, GREEN)) // both start with a 1st Tier token
         game.skipEmptyPhases()
         assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
         assertEquals(RED, game.currentTurn)
 
         game.queueSkipNextTierTurn(RED, TierLevel.FIRST)
-        game.queueSkipNextTierTurn(RED, TierLevel.FIRST) // a second, independent trigger, same (player, Tier)
-        game.endTurn(grantAnotherTurn = false)
+        game.players.getValue(RED).tierPool(TierLevel.SECOND).startToken() // RED also gains a 2nd Tier token
+        game.endTurn() // RED's current 1st Tier turn already happened before the skip takes effect
+        assertEquals(GREEN, game.currentTurn)
+        game.endTurn() // GREEN's 1st Tier turn ends -> Round 2 begins
 
-        // If skips stacked across separate occurrences, RED would still be ineligible here (only
-        // the first of the two consumed). Both are actually consumed together, so RED is
-        // eligible again on the very next occurrence — identical outcome/roundNumber to the
-        // single-skip case above, proving the second entry added no extra deferral.
+        // Round 2's 2nd Tier Phase (reached before the 1st Tier Phase re-occurs, since 2nd comes
+        // before 1st in Phase.ROUND_ORDER) is completely unaffected by the 1st-Tier-only debt —
+        // RED plays normally here.
+        assertEquals(2, game.roundNumber)
+        assertEquals(Phase.Tier(TierLevel.SECOND), game.currentPhase)
+        assertEquals(RED, game.currentTurn)
+        game.endTurn()
+
+        // Round 2's 1st Tier Phase: the 1st-Tier-specific skip IS honored here — only GREEN plays.
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(GREEN, game.currentTurn)
+    }
+
+    @Test
+    fun `different players have independent skip debt on the same Tier`() {
+        val game = GameState.newGame(listOf(RED, GREEN))
+        game.skipEmptyPhases()
+        assertEquals(RED, game.currentTurn)
+
+        game.queueSkipNextTierTurn(RED, TierLevel.FIRST) // only RED is skipped
+        game.endTurn() // RED's current turn
+        assertEquals(GREEN, game.currentTurn)
+        game.endTurn() // GREEN's current turn — Round 2's 1st Tier Phase begins
+
+        // Round 2: RED is skipped (debt consumed), GREEN plays completely normally — one
+        // player's skip debt never bleeds into another player's eligibility.
+        assertEquals(2, game.roundNumber)
+        assertEquals(GREEN, game.currentTurn)
+        game.endTurn()
+
+        // Round 3: RED's debt is spent, back to normal for both.
+        assertEquals(3, game.roundNumber)
+        assertEquals(RED, game.currentTurn)
+    }
+
+    @Test
+    fun `skip debt stays pending while a player has no eligible turn on that Tier, and is honored once they gain one`() {
+        // Queue a skip for a Tier RED doesn't even have a token on yet — the debt must not be
+        // silently dropped or consumed just because that Tier's Phase occurs with RED
+        // ineligible; it stays pending until RED is actually eligible there.
+        val game = GameState.newGame(listOf(RED, GREEN)) // RED: 1st Tier only, no 2nd Tier token yet
+        game.players.getValue(GREEN).tierPool(TierLevel.SECOND).startToken()
+        game.queueSkipNextTierTurn(RED, TierLevel.SECOND)
+        game.skipEmptyPhases()
+        assertEquals(Phase.Tier(TierLevel.SECOND), game.currentPhase)
+        assertEquals(listOf(GREEN), game.turnOrder.turnsFor(Phase.Tier(TierLevel.SECOND), game.players)) // RED has no 2nd Tier turn at all yet — nothing to skip
+        game.endTurn() // GREEN's 2nd Tier turn; RED's debt untouched, still pending
+        assertEquals(1, game.roundNumber) // still Round 1 (1st Tier hasn't been reached yet)
         assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
         assertEquals(RED, game.currentTurn)
+
+        // Now RED gains a 2nd Tier token mid-game (e.g. a Wormhole promotion), during RED's own
+        // 1st Tier turn this Round.
+        game.players.getValue(RED).tierPool(TierLevel.SECOND).startToken()
+        game.endTurn() // RED's 1st Tier turn ends
+        assertEquals(GREEN, game.currentTurn) // GREEN still has their own 1st Tier turn this Round
+        game.endTurn() // GREEN's 1st Tier turn ends — only now does Round 2 begin
+
+        assertEquals(2, game.roundNumber)
+        // Round 2's 2nd Tier Phase: RED is NOW eligible per raw turnsFor, so the long-pending
+        // skip is finally consumed here — the first occurrence where it could have been.
+        assertEquals(Phase.Tier(TierLevel.SECOND), game.currentPhase)
+        assertEquals(listOf(RED, GREEN), game.turnOrder.turnsFor(Phase.Tier(TierLevel.SECOND), game.players)) // RED would be eligible per raw turnsFor...
+        assertEquals(GREEN, game.currentTurn) // ...but is skipped, so only GREEN actually plays
+    }
+
+    @Test
+    fun `a skip and a queued ExtraTierTurn for the same player and Tier don't lose either`() {
+        val game = GameState.newGame(listOf(RED, GREEN))
+        assertEquals(Phase.Marauder, game.currentPhase) // neither queued while Tier(FIRST) is active,
+        // so queueExtraTierTurn defers into deferredModifiers rather than splicing live
+
+        game.queueSkipNextTierTurn(RED, TierLevel.FIRST)
+        game.queueExtraTierTurn(RED, TierLevel.FIRST)
+        game.skipEmptyPhases()
+
+        // Round 1's 1st Tier Phase: RED's normal turn is skipped (debt consumed) — RED never
+        // appears in this occurrence's base turn list at all, so the queued extra turn has
+        // nothing to attach after and is NOT granted this Round either; it stays queued rather
+        // than being lost.
+        assertEquals(1, game.roundNumber)
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(GREEN, game.currentTurn)
+        game.endTurn()
+
+        // Round 2: the skip is fully spent, RED is back to normal AND the still-pending extra
+        // turn is finally granted right after RED's normal turn.
+        assertEquals(2, game.roundNumber)
+        assertEquals(RED, game.currentTurn)
+        game.endTurn()
+        assertEquals(RED, game.currentTurn) // the extra turn, granted immediately after
+        game.endTurn()
+        assertEquals(GREEN, game.currentTurn)
+    }
+
+    @Test
+    fun `stacked skip debt on the 1st Tier is independent of 1st Tier auto-replenishment`() {
+        // 1st Tier auto-replenishment (TierTokenPool.refillInPlayIfRoom) keeps a player's
+        // inPlayCount topped off after a destroy — completely orthogonal to skip debt, which is
+        // tracked per (player, Tier) regardless of how many tokens are currently in play there.
+        val game = GameState.newGame(listOf(RED, GREEN))
+        game.skipEmptyPhases()
+        game.queueSkipNextTierTurn(RED, TierLevel.FIRST)
+        game.queueSkipNextTierTurn(RED, TierLevel.FIRST)
+        val redPool = game.players.getValue(RED).tierPool(TierLevel.FIRST)
+        redPool.destroyInPlay(0) // auto-replenishes back to inPlayCount > 0, per existing behavior
+        assertTrue(redPool.inPlayCount > 0)
+
+        game.endTurn() // RED's current (unaffected) turn
+        game.endTurn() // GREEN's turn ends -> Round 2's 1st Tier Phase
+
+        assertEquals(2, game.roundNumber)
+        assertEquals(GREEN, game.currentTurn) // debt #1 consumed, RED skipped
+        game.endTurn()
+
         assertEquals(3, game.roundNumber)
+        assertEquals(GREEN, game.currentTurn) // debt #2 consumed, RED still skipped
+        game.endTurn()
+
+        assertEquals(4, game.roundNumber)
+        assertEquals(RED, game.currentTurn) // debt fully spent — the replenished pool never affected it
+    }
+
+    @Test
+    fun `50 stacked skips against a single sparse player's only Tier does not falsely trigger the stalled-state fail-safe`() {
+        // Confirms STALLED_STATE_PHASE_THRESHOLD (500) still comfortably holds after the
+        // collapse-to-stacking correction, per the user's explicit request to re-verify rather
+        // than assume — N=50 stacked skips need N+1=51 occurrences (5*51 = 255 Phases) before
+        // RED is eligible again, well under the 500-Phase threshold. Single-player specifically
+        // because that's the sparsest legitimate shape the fail-safe itself has to tell apart
+        // from a genuinely stalled/corrupted state — the same debt in a 2+ player game would
+        // never come remotely close to mattering, since skipEmptyPhases's search pauses at any
+        // other player's own eligible turn long before it would need to count this high.
+        val game = GameState.newGame(listOf(RED))
+        game.skipEmptyPhases()
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(RED, game.currentTurn)
+
+        repeat(50) { game.queueSkipNextTierTurn(RED, TierLevel.FIRST) }
+        game.endTurn(grantAnotherTurn = false) // must not throw GameStalledException
+
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(RED, game.currentTurn)
+        assertEquals(52, game.roundNumber) // 1 (initial) + 51 fully-skipped occurrences
     }
 
     @Test

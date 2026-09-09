@@ -205,70 +205,91 @@ loss, elimination, or any other gameplay outcome, purely an engine-invariant dia
 
 **Corrected: the threshold is many Phase cycles (500), not one.** The first version of this
 fail-safe used exactly one cycle (`Phase.ROUND_ORDER.size`, 5) — a real test caught this being
-too tight: `DeferredTurnModifier.SkipNextTierTurn` (Phase Loss, or the 1st Tier's "Lose next
-turn on this Tier" Time Wrinkle square) can legitimately defer a sparse single-player game's
-only eligible turn past one full cycle — it took a full cycle of the Round the skip consumes
-*plus* a full cycle of the next Round before that player's 1st Tier turn became eligible again
-(10 Phase-advances, found via `TurnDriverCardIntegrationTest`'s Fate Harvest integration
-randomly drawing Phase Loss — see "Fate Harvest integration" below). None of this is reachable
-in ordinary 2-6 player play (some other player almost always has *some* eligible turn within
-the same Round), but a legitimately sparse `GameState` can hit it without being corrupted at
-all — a truly malformed state (every pool emptied out) never finds anyone eligible no matter
-how far the search goes, while a legitimate skip gap always resolves within a handful of
-cycles, so a generous threshold (500 Phases, ~100 Rounds) tells the two apart without ever
-mistaking the latter for the former.
+too tight: skip debt (see "Stacked skip debt" below) can legitimately defer a sparse
+single-player game's only eligible turn past one full cycle — even a single queued skip takes
+a full cycle of the Round it consumes *plus* a full cycle of the next Round before that
+player's Tier turn becomes eligible again (10 Phase-advances, found via `TurnDriverCardIntegrationTest`'s
+Fate Harvest integration randomly drawing Phase Loss — see "Fate Harvest integration" below).
+None of this is reachable in ordinary 2-6 player play (some other player almost always has
+*some* eligible turn within the same Round), but a legitimately sparse `GameState` can hit it
+without being corrupted at all — a truly malformed state (every pool emptied out) never finds
+anyone eligible no matter how far the search goes, while a legitimate skip gap always resolves
+within a bounded (if occasionally large) number of cycles, so a generous threshold (500
+Phases, ~100 Rounds) tells the two apart without ever mistaking the latter for the former.
 
-**Correction to an earlier (wrong) claim about stacking.** An earlier version of this doc
-said multiple independent `SkipNextTierTurn` triggers against the same (player, Tier) each
-consume a separate *future* occurrence, compounding the deferral beyond the 2-cycle gap above.
-Re-checking `GameState.buildTurnQueue()` directly shows that's not what the code does:
-```kotlin
-val skips = deferredModifiers.filterIsInstance<DeferredTurnModifier.SkipNextTierTurn>()
-    .filter { it.tier == tier && it.player in base }
-base = base.filterNot { color -> skips.any { it.player == color } }
-deferredModifiers.removeAll(skips)
-```
-Every `SkipNextTierTurn` entry matching the current (tier, player-in-base) is collected into
-`skips` in one pass, the player is removed from `base` once, and *all* of those matching
-entries are removed from `deferredModifiers` together — so two, three, or more stacked
-triggers against the same (player, Tier) are consumed in the very same `buildTurnQueue()` call
-that consumes one, and produce the identical 2-cycle gap, not a longer one. Verified
-empirically, not just by reading: `GameStateTest`'s "multiple SkipNextTierTurn entries for the
-same player and Tier collapse into one skipped occurrence, not stacked skips" test queues two
-independent triggers and confirms the player is eligible again at exactly the same Round the
-single-skip test reaches (Round 3), not one Round later.
+## Stacked skip debt: independent `SkipNextTierTurn` triggers genuinely stack — confirmed canon
 
-**This collapsing behavior is an implementation fact, not a settled rule.** The rulebook's
-Phase Loss text ("You lose the next turn on this Tier... This card must be played
-immediately," rulebook.txt:671-674) and the "Lose next turn on this Tier" Time Wrinkle square
-both describe a single occurrence in isolation; neither addresses what should happen if two
-independently-triggered skips land on the same (player, Tier) before the first is consumed.
-`docs/card-mechanics-matrix.md` §3.5's "no turn may repeat more than once from a single
-triggering effect... not the total number of independent triggers in a Round" is about
-`ExtraTierTurn` not self-chaining from one trigger — it doesn't resolve whether *independent*
-`SkipNextTierTurn` triggers against the same (player, Tier) should collapse (current behavior)
-or stack across separate future occurrences. Left as-is pending confirmation — not changed
-without a confirmed rule, per the user's explicit instruction not to alter gameplay semantics
-speculatively.
+**This is now confirmed canonical behavior, ruled by the user, correcting two earlier
+mistakes in this same area** (first an incorrectly-implemented collapse, then briefly
+mis-documented as intentional): independent skip triggers against the same (player, Tier) —
+two separate Phase Loss draws, or Phase Loss plus the 1st Tier's "Lose next turn on this Tier"
+Time Wrinkle square, both landing before the first is consumed — **stack**. Each one removes
+exactly one distinct future eligible turn on that Tier, not a shared/collapsed one.
 
-Given the proven single-skip gap is only 2 cycles (10 Phases) regardless of stacking, a
-tighter threshold than 500 would also have worked — kept generous anyway, per the user's own
-guidance not to over-optimize a safeguard normal legal gameplay should never reach, and because
-this hasn't exhaustively proven a tight bound for every possible interaction between
-`SkipNextTierTurn`/`ExtraTierTurn` and multiple players/Tiers at once.
+**Representation**: `GameState.pendingSkips` — a `MutableMap<Pair<PlayerColor, TierLevel>,
+Int>` debt counter, replacing the earlier list-based `DeferredTurnModifier.SkipNextTierTurn`
+entirely (that sealed class now only has `ExtraTierTurn`, which keeps its own unchanged,
+already-correct stacking behavior — see below). `GameState.queueSkipNextTierTurn(player,
+tier)` increments the counter by 1 per call; `GameState.buildTurnQueue()` consumes debt one
+unit at a time, and only for a player who would otherwise actually be eligible for a turn on
+that Tier this occurrence (a player not in that Phase's base turn list — because they simply
+have no token there yet — has their debt left completely untouched, however large; per-Tier,
+per-player, so a skip queued for one Tier never touches another Tier or another player's own
+debt).
+
+**Why a counter, not a list.** The original (wrong) implementation stored one
+`DeferredTurnModifier.SkipNextTierTurn` list entry per trigger and, at the next matching
+occurrence, collected *every* entry matching that (tier, player) and consumed them all
+together in one `buildTurnQueue()` call — collapsing N stacked triggers into a single skipped
+occurrence instead of N separate ones. An intermediate pass through this same area
+(mis)documented that collapse as intentional/confirmed before checking with the user. Neither
+was correct. The counter representation makes the collapse bug structurally impossible to
+reintroduce, rather than something a future "simplification" back to a list could silently
+bring back — see `DeferredTurnModifier`'s own class doc and `GameState.pendingSkips`'s.
+
+**`ExtraTierTurn` already stacked correctly and needed no changes** — it was never affected by
+the collapse bug (each queued instance already grants its own separate extra turn; see
+`GameState.queueExtraTierTurn`'s existing behavior, unchanged). The one interaction point
+between the two: if a player's *normal* turn on a Tier is skipped this occurrence (debt still
+pending), a queued `ExtraTierTurn` for that same (player, Tier) has nothing to attach after —
+it is *not* granted this occurrence either, and stays queued for whenever the player's normal
+turn is next actually granted there (never lost).
+
+**Audited interactions, all covered by `GameStateTest`'s "Stacked SkipNextTierTurn debt"
+section**: one skip + the next normal turn (pre-existing single-skip test, unchanged
+semantics); two stacked skips consuming two separate future occurrences (new — the
+distinguishing case vs. the old collapse bug); a skip on one Tier never affecting another
+Tier for the same player; independent players' skip debt never crossing over; debt queued
+for a Tier the player has no token on yet staying pending — untouched, not dropped or
+consumed — until they actually gain eligibility there; a skip plus a queued `ExtraTierTurn`
+for the same (player, Tier) losing neither; and stacked skip debt being fully independent of
+1st-Tier auto-replenishment (a replenished token pool has no bearing on debt, which is tracked
+per (player, Tier) regardless of `inPlayCount`). A large-N case (50 stacked skips, single
+sparse player) confirms the 500-Phase `STALLED_STATE_PHASE_THRESHOLD` still comfortably holds
+after this correction — 51 occurrences (255 Phases) needed, well under the threshold — per the
+user's explicit request to re-verify rather than assume; the threshold itself was left
+unchanged (not tuned tighter), matching the user's own instruction not to over-optimize a
+safeguard normal legal gameplay should never reach.
+
+**Whether stacking (vs. the old collapse) is what "You lose the next turn on this Tier"
+canonically means for two independently-drawn Phase Loss cards was genuinely unresolved by
+the rulebook's own text** (`docs/card-mechanics-matrix.md` §3.5's "no turn may repeat more
+than once from a single triggering effect... not the total number of independent triggers in
+a Round" is about `ExtraTierTurn` not self-chaining from *one* trigger, and doesn't by itself
+settle how *multiple* independent `SkipNextTierTurn` triggers should interact) — this section
+existed specifically to flag that ambiguity for a ruling rather than guess. **The user has now
+ruled: independent skip-next-turn effects stack, each player tracking pending skip count
+separately per Tier** — implemented exactly as described above, matching that ruling.
 
 See `GameStateTest`'s "skipEmptyPhases: canonical skipping, and the fail-safe stalled-state
 guard" section: one empty upper-Tier Phase, several consecutive empty Tier Phases, and
 reaching the correct next Phase with the correct player queued all still skip normally (no
 exception); a single sparse player's queued Phase-Loss-style skip resumes normally after the
-10-Phase gap described above, not as a stalled state (the regression test for the
-too-tight-threshold bug above); two stacked skips against the same (player, Tier) collapse
-into that same 10-Phase gap rather than compounding it (the regression test for the corrected
-stacking claim above); a deliberately-constructed all-empty `GameState` (raw
-`PlayerState`s, no tokens started anywhere, bypassing `GameState.newGame`) still throws
-`GameStalledException` instead of hanging; and a dedicated test demonstrates 1st-Tier
-auto-replenishment is exactly the mechanism that keeps ordinary play from ever reaching the
-stalled state in the first place.
+10-Phase gap described above, not as a stalled state; a deliberately-constructed all-empty
+`GameState` (raw `PlayerState`s, no tokens started anywhere, bypassing `GameState.newGame`)
+still throws `GameStalledException` instead of hanging; and a dedicated test demonstrates
+1st-Tier auto-replenishment is exactly the mechanism that keeps ordinary play from ever
+reaching the stalled state in the first place.
 
 ## Turn-resolution engine: base mechanics
 

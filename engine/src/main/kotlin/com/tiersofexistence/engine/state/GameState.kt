@@ -57,8 +57,21 @@ class GameState(
     /** Players still owed a turn in [currentPhase], in the order they'll take it. */
     private var turnQueue: ArrayDeque<PlayerColor> = ArrayDeque()
 
-    /** Queued [DeferredTurnModifier]s not yet consumed — see [queueSkipNextTierTurn]/[queueExtraTierTurn]. */
+    /** Queued [DeferredTurnModifier]s not yet consumed — see [queueExtraTierTurn]. */
     private val deferredModifiers: MutableList<DeferredTurnModifier> = mutableListOf()
+
+    /**
+     * Pending skip debt per (player, Tier) — **confirmed canon**: independent
+     * [queueSkipNextTierTurn] triggers against the same (player, Tier) stack; each one removes
+     * exactly one future turn that player would otherwise actually receive on that Tier. An
+     * explicit counter rather than one list entry per trigger specifically to avoid the
+     * collapse bug an earlier list-based representation had (multiple entries matching the same
+     * occurrence were consumed together in one `buildTurnQueue()` call instead of one entry
+     * consuming one future occurrence each) — see [buildTurnQueue] for where debt is actually
+     * consumed, only when the player is otherwise eligible for a turn there, never merely
+     * because the Phase occurs.
+     */
+    private val pendingSkips: MutableMap<Pair<PlayerColor, TierLevel>, Int> = mutableMapOf()
 
     /** The in-progress turn's roll, once rolled but before it's been used to move a token — the
      * checkpoint Delayed Motion needs (see [PendingRoll]'s class doc). Null whenever no roll is
@@ -85,17 +98,26 @@ class GameState(
         turnQueue = buildTurnQueue()
     }
 
-    /** The seating-order turn list for [currentPhase], with any queued [DeferredTurnModifier]s
-     * for the current Tier applied and consumed. Marauder Phase is untouched — deferred
-     * modifiers are always Tier-turn-specific (see the class doc on [DeferredTurnModifier]). */
+    /** The seating-order turn list for [currentPhase], with any pending skip debt
+     * ([pendingSkips]) and queued [DeferredTurnModifier]s for the current Tier applied and
+     * consumed. Marauder Phase is untouched — both are always Tier-turn-specific (see the class
+     * docs on [pendingSkips] and [DeferredTurnModifier]). */
     private fun buildTurnQueue(): ArrayDeque<PlayerColor> {
         var base = turnOrder.turnsFor(currentPhase, players)
         val tier = (currentPhase as? Phase.Tier)?.tier
         if (tier != null) {
-            val skips = deferredModifiers.filterIsInstance<DeferredTurnModifier.SkipNextTierTurn>()
-                .filter { it.tier == tier && it.player in base }
-            base = base.filterNot { color -> skips.any { it.player == color } }
-            deferredModifiers.removeAll(skips)
+            // Consume exactly one pending skip per otherwise-eligible player — never merely
+            // because this Tier's Phase occurred while they had no eligible turn here at all
+            // (a player not in `base` has no debt touched, so it stays pending for whenever
+            // they're next actually eligible on this Tier).
+            base = base.filterNot { color ->
+                val key = color to tier
+                val debt = pendingSkips[key] ?: 0
+                if (debt <= 0) return@filterNot false
+                val remaining = debt - 1
+                if (remaining > 0) pendingSkips[key] = remaining else pendingSkips.remove(key)
+                true
+            }
 
             val extras = deferredModifiers.filterIsInstance<DeferredTurnModifier.ExtraTierTurn>()
                 .filter { it.tier == tier && it.player in base }
@@ -112,12 +134,21 @@ class GameState(
         return ArrayDeque(base)
     }
 
-    /** Queues [player] to skip their next turn on [tier] only — Phase Loss, or the "Lose next
+    /**
+     * Queues [player] to skip one future turn on [tier] only — Phase Loss, or the "Lose next
      * turn on this Tier" Time Wrinkle square. Never affects a turn already in progress (the
      * card/square is always resolved as part of the current turn's own move) — takes effect
-     * starting the next time [tier]'s Phase turn queue is built, per confirmed canon. */
+     * starting the next time [player] would otherwise actually be eligible for a turn when
+     * [tier]'s Phase turn queue is built (see [buildTurnQueue]).
+     *
+     * **Confirmed canon: independent skip triggers against the same (player, Tier) stack.**
+     * Calling this twice before either skip is consumed queues 2 separate future turns to skip,
+     * not 1 — tracked as debt in [pendingSkips], incremented here by exactly 1 each call. A skip
+     * queued for one Tier never affects any other Tier, and never affects the Marauder Phase.
+     */
     fun queueSkipNextTierTurn(player: PlayerColor, tier: TierLevel) {
-        deferredModifiers += DeferredTurnModifier.SkipNextTierTurn(player, tier)
+        val key = player to tier
+        pendingSkips[key] = (pendingSkips[key] ?: 0) + 1
     }
 
     /**
@@ -172,33 +203,38 @@ class GameState(
      *
      * **[STALLED_STATE_PHASE_THRESHOLD] is deliberately many full Phase cycles, not one.** An
      * earlier version of this fail-safe used exactly one cycle ([Phase.ROUND_ORDER]'s length,
-     * 5) — this was too tight, and a real test caught it: [DeferredTurnModifier.SkipNextTierTurn]
-     * (Phase Loss, or the 1st Tier's own "Lose next turn on this Tier" Time Wrinkle square) can
+     * 5) — this was too tight, and a real test caught it: skip debt (see [pendingSkips]) can
      * legitimately defer a player's next eligible turn on a Tier past one full cycle, in a very
-     * sparse game (few players/Tiers active) — the Round whose occurrence the skip consumes,
+     * sparse game (few players/Tiers active) — the Round whose occurrence a skip consumes,
      * *plus* the following Round before that (player, Tier) is checked again, needs 2 full
-     * cycles (10 Phases) in the sparsest case, not 1. **Note on stacking, corrected**: an
-     * earlier draft of this doc claimed multiple independent [DeferredTurnModifier.SkipNextTierTurn]
-     * entries against the same (player, Tier) each consume a separate future occurrence,
-     * compounding the deferral — that is NOT what [buildTurnQueue] actually does. It collects
-     * every matching entry for the current (tier, player-in-base) in one pass, removes the
-     * player from the queue once, and removes *all* of those matching entries from
-     * [deferredModifiers] together — so two, three, or more stacked triggers against the same
-     * (player, Tier) are all spent the very next time that Tier's queue is built, identically to
-     * a single trigger; they do not extend the gap. See `GameStateTest`'s "multiple
-     * SkipNextTierTurn entries for the same player and Tier collapse into one skipped
-     * occurrence" test, which proves this empirically. Whether that collapsing behavior (vs.
-     * genuinely stacking across separate future occurrences) is the canonically intended
-     * reading of "You lose the next turn on this Tier" for two independently-drawn Phase Loss
-     * cards is not resolved by the rulebook's own text — flagged as an open rules question, not
-     * changed without confirmation. None of this — collapsed or hypothetically stacked — is
-     * remotely reachable in ordinary 2-6 player play (some other player almost always has *some*
-     * eligible turn within the same Round); a legitimately sparse/edge-case [GameState] can hit
-     * the 2-cycle single-skip gap without being corrupted at all. The threshold here is kept
-     * generously above that proven 2-cycle minimum (rather than tuned tightly to it) as a
-     * defensive margin against other deferred-turn interactions this doc doesn't claim to have
-     * exhaustively bounded — a truly malformed state (e.g. every pool emptied out) never finds
-     * anyone eligible no matter how far this searches, so a generous margin costs nothing.
+     * cycles (10 Phases) in the sparsest case for just one queued skip, not 1.
+     *
+     * **Confirmed canon: independent skip triggers against the same (player, Tier) genuinely
+     * stack.** [pendingSkips] tracks this as an explicit debt count — 2 independent triggers
+     * mean 2 separate future occurrences are each skipped (consuming one unit of debt each)
+     * before the player is eligible again, not one shared occurrence. (An earlier version of
+     * both [pendingSkips]'s implementation and this doc had that backwards — a list-based
+     * representation collapsed multiple matching entries together in one `buildTurnQueue()`
+     * call instead of one at a time; fixed and confirmed as genuine canon, not just an
+     * implementation detail, by the user.) In the sparsest single-player case, N stacked skips
+     * against the same (player, Tier) need N+1 occurrences — 5×(N+1) Phases — before that
+     * player is eligible again; see `GameStateTest`'s stacking test section for the concrete
+     * N=1 and N=2 cases (and the 1st-Tier-auto-replenishment-independence and cross-Tier/
+     * cross-player isolation cases alongside them).
+     *
+     * This is still not remotely reachable in ordinary 2-6 player play — some other player
+     * almost always has *some* eligible turn within the same Round, so [skipEmptyPhases]'s
+     * search pauses there long before any single player's skip debt would matter to it; a
+     * legitimately sparse/edge-case [GameState] can hit the 5×(N+1)-Phase gap for a real
+     * (if artificially large) N without being corrupted at all. The threshold is kept
+     * generously above even a large N (500 Phases comfortably covers N up to 99) rather than
+     * tuned tightly to whatever the most plausible N is, since legitimate stacking has no hard
+     * ceiling this class can cheaply prove and a generous margin costs nothing — see
+     * `GameStateTest`'s "50 stacked skips...does not falsely trigger the stalled-state
+     * fail-safe" test for a concrete large-N confirmation this threshold still comfortably
+     * holds after the collapse-to-stacking correction. A truly malformed state (e.g. every pool
+     * emptied out) never finds anyone eligible no matter how far this searches, so it's never
+     * confused with a legitimate stacked-skip gap regardless of how large.
      */
     fun skipEmptyPhases() {
         var phasesTraversedThisSearch = 0

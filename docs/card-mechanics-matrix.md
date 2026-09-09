@@ -66,11 +66,12 @@ the same primitive is reused across cards that need it instead of reinvented per
 - **StagingPileMutation** — a shared pool primitive (add-with-promotion-check,
   remove-one-arbitrary) used by both Nebula landings and any card that touches a Staging
   Pile directly.
-- **DeferredTurnModifier** — a queued, bounded turn-state change:
-  `SkipNextTierTurn(player, tier)` or `ExtraTierTurn(player, tier)`, consumed the next time
-  that Tier's turn queue is built for that player. Both `Phase Loss` and the "Lose next turn
-  on this Tier" Time Wrinkle square need the first; both `Phase Control` and the "Take an
-  extra turn, First Tier" Time Wrinkle square need the second.
+- **Deferred turn-state changes, consumed the next time the matching Tier's turn queue is
+  built for that player** — two shapes, see §3.5 for the full detail: `ExtraTierTurn(player,
+  tier)`, a `DeferredTurnModifier` instance (`Phase Control`, "Take an extra turn, First
+  Tier"); and a per-(player, Tier) skip-debt counter (`GameState.pendingSkips`, **not** a
+  `DeferredTurnModifier`) that independent triggers stack against — `Phase Loss` and "Lose
+  next turn on this Tier" both queue against it.
 - **TemporaryMarauderAllowance** — a Marauder-Phase-turn countdown (see §4 Q2 — scaffolding
   only; not yet attached to a specific card, because none of the 4 Marauder-adding cards'
   printed text says "temporary").
@@ -745,11 +746,15 @@ the same primitive is reused across cards that need it instead of reinvented per
 - **Can another card respond to it:** Precedence only, pre-resolution.
 - **Can it respond to another card:** No.
 - **Annulment behavior:** Standard — cancels the deferred skip before it's ever queued.
-- **Required engine state:** DeferredTurnModifier: `SkipNextTierTurn(player, tier)`,
-  applied wherever `TurnOrder.turnsFor` (or its caller) builds the next turn queue for that
-  Tier — must consume-and-clear the flag rather than re-skip every subsequent turn.
-- **Known interactions:** Shares its exact mechanic with the "Lose next turn on this Tier"
-  Time Wrinkle square — implement once, use from both trigger sites.
+- **Required engine state:** `GameState.pendingSkips` debt counter for (player, tier),
+  applied wherever `GameState.buildTurnQueue` builds the next turn queue for that Tier — must
+  consume exactly one unit of debt per otherwise-eligible occurrence, never re-skip forever and
+  never collapse multiple independently-queued units together (confirmed canon: they stack —
+  see §3.5).
+- **Known interactions:** Shares its exact mechanic (and its `pendingSkips` debt counter) with
+  the "Lose next turn on this Tier" Time Wrinkle square — implement once, use from both trigger
+  sites; a Phase Loss draw and a Time Wrinkle landing both contributing debt to the same
+  (player, Tier) stack together the same as two Phase Loss draws would.
 - **Rulebook citation:** rulebook.txt:671-678; `BoardLayouts.kt:62` for the matching Time
   Wrinkle square text.
 - **Ambiguities:** None on the rule itself.
@@ -1354,23 +1359,52 @@ pass), with the open ownership-exemption question flagged in §4 Q14.
 
 ### 3.5 Deferred turn-state modifiers
 
-Two shapes cover every turn-manipulation card and Time Wrinkle square found in this audit:
+Two turn-state effects cover every turn-manipulation card and Time Wrinkle square found in
+this audit, though only one is still modeled as a `DeferredTurnModifier` instance:
 
-- `SkipNextTierTurn(player, tier)` — Phase Loss, "Lose next turn on this Tier" (1st Tier,
-  index 5).
+- **Skip a future turn** — Phase Loss, "Lose next turn on this Tier" (1st Tier, index 5).
+  Modeled as `GameState.pendingSkips`, an explicit `Map<(player, Tier), Int>` debt counter —
+  **not** a `DeferredTurnModifier` subtype (an earlier version was; see below for why it was
+  changed). `queueSkipNextTierTurn` increments the counter by 1 per call; the next time that
+  (player, Tier)'s turn queue is built, exactly one unit of debt is consumed *only if* the
+  player would otherwise actually be eligible for a turn there this occurrence — a player with
+  no token on that Tier yet has their debt left completely untouched, however large, until
+  they're actually eligible.
+  - **Confirmed canon (resolves what this section originally left ambiguous):
+    independent triggers against the same (player, Tier) stack.** Two separate Phase Loss
+    draws, or Phase Loss plus the matching Time Wrinkle square, landing before the first is
+    consumed, must each remove one distinct future eligible turn — not collapse into a single
+    skipped occurrence. This was genuinely unresolved by the rulebook's own printed text (the
+    card and square both describe one occurrence in isolation, never two independent triggers
+    interacting) until the user directly ruled on it. An earlier engine version had this
+    backwards regardless of the rule question — a list-based representation
+    (`DeferredTurnModifier.SkipNextTierTurn`) collected every entry matching a given occurrence
+    and consumed them all together in one `buildTurnQueue()` call, collapsing N stacked
+    triggers into one skipped occurrence — fixed by replacing it with the counter above, which
+    makes that collapse structurally impossible to reintroduce. See
+    `engine/src/test/kotlin/.../state/GameStateTest.kt`'s "Stacked SkipNextTierTurn debt"
+    section for the full audited interaction matrix (cross-Tier isolation, cross-player
+    isolation, debt-stays-pending-while-ineligible, interaction with a same-(player,Tier)
+    `ExtraTierTurn`, independence from 1st-Tier auto-replenishment, and a large-N confirmation
+    that the stalled-state fail-safe's threshold still holds).
 - `ExtraTierTurn(player, tier)` — Phase Control (free Tier choice, two sub-cases per card
   30), "Take an extra turn, First Tier" (2nd Tier, index 7, hardcoded to Tier 1), "Go again"
   (already supported via `GameState.endTurn(grantAnotherTurn = true)` for the *simple*
   same-Phase-continuation case — the 1st Tier's two "Go again" squares and 3rd Tier's one
   don't need the full deferred-modifier machinery, only Phase Control's cross-Phase case
-  does).
+  does). Still the sole member of the `DeferredTurnModifier` sealed class — unaffected by the
+  `SkipNextTierTurn` representation change above, and its own stacking (multiple independent
+  `ExtraTierTurn` triggers each granting their own separate extra turn) was never subject to
+  the collapse bug in the first place.
 
-Both need the bound from confirmed canon: **no turn may repeat more than once from a single
-triggering effect** — i.e., a granted extra turn cannot itself grant another extra turn from
-the *same* originating play (playing a second Phase Control card, or landing on a second
-"Go again" square during the extra turn itself, is a *new* triggering effect and is allowed;
-what's bounded is recursion from one trigger, not the total number of independent triggers
-in a Round).
+`ExtraTierTurn` needs the bound from confirmed canon: **no turn may repeat more than once from
+a single triggering effect** — i.e., a granted extra turn cannot itself grant another extra
+turn from the *same* originating play (playing a second Phase Control card, or landing on a
+second "Go again" square during the extra turn itself, is a *new* triggering effect and is
+allowed; what's bounded is recursion from one trigger, not the total number of independent
+triggers in a Round). This bound is unrelated to, and doesn't resolve, the separate
+skip-stacking question above — recursion-from-one-trigger and stacking-of-independent-triggers
+are different questions, confirmed independently.
 
 ### 3.6 Temporary Marauder allowance — unresolved
 

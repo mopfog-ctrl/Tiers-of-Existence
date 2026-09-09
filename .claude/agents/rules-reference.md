@@ -226,6 +226,30 @@ that maps to the `engine` module's Kotlin code — you do not write game feature
   card still reads `pendingRoll.total` back out through the caller rather than trying to make
   movement itself roll-aware.
 
+- **Independent `SkipNextTierTurn` triggers against the same (player, Tier) stack — confirmed
+  by the user, resolving a genuine ambiguity the rulebook's own text didn't settle.** Two
+  separate Phase Loss draws (or Phase Loss plus the 1st Tier's "Lose next turn on this Tier"
+  Time Wrinkle square) landing before the first is consumed must each remove one distinct
+  future eligible turn on that Tier, never collapse into a single skipped occurrence. Tracked
+  as `GameState.pendingSkips`, an explicit `Map<Pair<PlayerColor, TierLevel>, Int>` debt
+  counter — `queueSkipNextTierTurn` increments it, `buildTurnQueue` decrements it by exactly 1
+  only for a player who'd otherwise actually be eligible for a turn on that occurrence (a
+  player with no token on that Tier yet has their debt left untouched, however large, until
+  they're actually eligible there). **This went through two wrong states before landing here —
+  watch for a regression back to either**: (1) an original implementation genuinely collapsed
+  multiple matching entries together (a list-based `DeferredTurnModifier.SkipNextTierTurn`,
+  now removed from that sealed class entirely — it only has `ExtraTierTurn` now, which already
+  stacked correctly and needed no change); (2) an intermediate documentation pass then
+  mis-described that collapse as intentional/confirmed canon without actually checking with
+  the user first. If a future change ever reintroduces a list-of-instances representation for
+  skip debt, or re-derives "these should collapse" from first principles, treat that as
+  regressing past a confirmed ruling, not a neutral implementation choice — verify against
+  `GameStateTest`'s "Stacked SkipNextTierTurn debt" test section (which locks in: two stacked
+  skips consuming two separate occurrences, cross-Tier and cross-player isolation, debt staying
+  pending while ineligible then honored once eligible, interaction with a same-(player,Tier)
+  `ExtraTierTurn`, and independence from 1st-Tier auto-replenishment) before trusting any claim
+  about how this behaves.
+
 All 32 Fate Harvest cards are implemented as of this entry — this checklist stays useful for
 double-checking confirmed rulings any time the relevant code changes, not for tracking what's
 still missing.
