@@ -118,9 +118,11 @@ class TurnDriver(
         val tier = (phase as? Phase.Tier)?.tier
 
         offerHeldCardPlay(state, player, decisions.chooseHeldCardBeforeRoll(state, player))
+        if (endTurnIfGameWon(state)) return true
 
         val roll = state.beginPendingRoll(player, rollForPhase(phase))
         offerHeldCardPlay(state, player, decisions.chooseCardAfterRollBeforeMove(state, player, roll.total))
+        if (endTurnIfGameWon(state)) return true
 
         val candidates = movableCandidates(state, player, tier)
 
@@ -150,10 +152,39 @@ class TurnDriver(
         // Annulment with no preceding chain entry has nothing to cancel here — see
         // InteractionChain's own class doc), so the move always proceeds afterward.
         resolvePrecedenceWindow(state, SuspendedAction.PendingMove(player))
+        if (endTurnIfGameWon(state)) return true
 
         val grantAnotherTurn = moveAndResolve(state, decisions, player, chosen, roll.total)
         state.clearPendingRoll()
         state.endTurn(grantAnotherTurn)
+        return true
+    }
+
+    /**
+     * "The first player to land on You Win! wins the game" (rulebook p.1) means the game ends
+     * the instant that happens — not "once whatever else this turn was already doing finishes."
+     * `GameState.declareWinner`/`declareSimultaneousWinners` themselves don't remove the winning
+     * token from play or otherwise freeze anything (a winning token stays a perfectly ordinary
+     * in-play token afterward, per `TurnEngine`'s own YOU_WIN landing) — nothing previously
+     * stopped THIS turn's own remaining steps once a win happened mid-turn (a pre-roll held-card
+     * play that itself wins, mid-turn, still let the SAME turn go on to also roll and move
+     * another (or even the very same, now-winning) token afterward, and a Precedence response to
+     * someone else's win could still destroy the winning token before this check ever ran). That
+     * let the winner's own recorded color stay correct (`declareWinner`'s "first sticks" no-op
+     * already made that safe) but let the "finished" game keep mutating regardless — found by
+     * `GameSimulationTest`'s randomized-play harness across ~4000 simulated games as a winner
+     * declared with the winning token later moved away from (or destroyed off of) its own
+     * YOU_WIN square, within the very same turn that won. Checked after every point in
+     * [driveOneTurn] that could newly produce a winner before its own turn-ending move — a
+     * held-card play (either window) or a Precedence response to the pending move; nothing needs
+     * checking after the move itself, since that's already the last thing [driveOneTurn] does.
+     * Returns true (turn handled) if the game is now won, ending the turn immediately without
+     * doing anything further.
+     */
+    private fun endTurnIfGameWon(state: GameState): Boolean {
+        if (state.winners.isEmpty()) return false
+        state.clearPendingRoll()
+        state.endTurn()
         return true
     }
 

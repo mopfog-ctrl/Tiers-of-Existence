@@ -1119,3 +1119,29 @@ slots" (a queued player's eligibility legitimately going stale before their own 
 per finding #5/#6's root cause) are tracked and reported by the harness as an expected, now-
 gracefully-handled occurrence (not a violation) — several hundred were observed across the
 combined 300 games, all handled without incident post-fix.
+
+**Scaled to 2000 games (`GAME_COUNT` is now permanently 2000, ~25-50s added to the suite) — found
+and fixed a 9th defect, this one only surfacing at the larger sample size.** The first 2000-game
+run (original base seed) was clean, but a second 2000-game batch at a different base seed caught
+2 new violations, both "Winner declared but has no 4th-Tier in-play token on a YOU_WIN square" —
+one with the winning token found elsewhere on the board (moved away), one with it gone entirely
+(destroyed). Root cause: **`TurnDriver.driveOneTurn` never stopped mid-turn once a win happened
+partway through it.** `GameState.declareWinner`/`declareSimultaneousWinners` don't remove the
+winning token from play or freeze anything — a winning token is a perfectly ordinary in-play
+token afterward, per `TurnEngine`'s own YOU_WIN landing (correctly so; nothing in the rulebook
+says otherwise). But nothing previously stopped the REST of that same turn once the win happened
+partway through it: a pre-roll held-card play that itself won the game still let the same turn
+go on to roll and move another token afterward (sometimes the very token that just won, moving
+it off YOU_WIN), and a Precedence response to the pending move — from *any* seated player, not
+just the one whose win it was — could still destroy the winning token before the turn ended.
+`declareWinner`'s "first sticks" no-op already kept the recorded winner's *color* correct either
+way, which is why this took 4000 games to surface at all — it's a real rules violation ("the
+first player to land on You Win! wins the game" means the game ends right then, not "once this
+turn finishes whatever else it was doing"), not a wrong-outcome bug. Fixed with a new
+`TurnDriver.endTurnIfGameWon` check called after every point in `driveOneTurn` that could newly
+produce a winner before its own turn-ending move (both held-card-play windows, and the
+Precedence window around the pending move) — ends the turn immediately, doing nothing further,
+the instant `state.winners` becomes non-empty. Re-verified: the batch that found the 2 violations
+now runs clean at 0/2000, plus 2 more independent 2000-game batches (including the original)
+also clean — 6000 total games, 0 violations, after this fix. Full suite and NPE-trigger sample
+stayed green throughout.

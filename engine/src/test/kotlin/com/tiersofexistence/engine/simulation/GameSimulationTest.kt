@@ -89,7 +89,7 @@ private data class GameOutcome(
 class GameSimulationTest {
 
     companion object {
-        private const val GAME_COUNT = 100
+        private const val GAME_COUNT = 2000
         private const val MAX_TURNS_PER_GAME = 8000
         private const val BASE_SEED = 20260909L
     }
