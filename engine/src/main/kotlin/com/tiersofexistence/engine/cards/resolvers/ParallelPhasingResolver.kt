@@ -10,7 +10,9 @@ import com.tiersofexistence.engine.cards.play.TokenLocation
 import com.tiersofexistence.engine.cards.play.TokenLocator
 import com.tiersofexistence.engine.model.TokenKind
 import com.tiersofexistence.engine.rules.TurnEngine
+import com.tiersofexistence.engine.rules.ZoneMoveResult
 import com.tiersofexistence.engine.state.GameState
+import com.tiersofexistence.engine.state.TokenId
 
 /**
  * Parallel Phasing: "Move any one of your tokens (of any type) forward four spaces and move any
@@ -48,31 +50,38 @@ object ParallelPhasingResolver {
             )
         }
 
-        val ownCheck = validateMovable(state, request, ownTarget, ownTokenMovementAllowed = true)
-        if (ownCheck is MovableCheck.Blocked) return ownCheck.result
-        val opponentCheck = validateMovable(state, request, opponentTarget, ownTokenMovementAllowed = false)
-        if (opponentCheck is MovableCheck.Blocked) return opponentCheck.result
+        val ownBlocked = validateMovable(state, request, ownTarget, ownTokenMovementAllowed = true)
+        if (ownBlocked != null) return ownBlocked
+        val opponentBlocked = validateMovable(state, request, opponentTarget, ownTokenMovementAllowed = false)
+        if (opponentBlocked != null) return opponentBlocked
 
         val playResult = CardLifecycle.attemptPlay(state, request)
         if (playResult !is CardPlayResult.Resolved) return playResult
 
-        move(state, ownTarget, ownCheck)
-        move(state, opponentTarget, opponentCheck)
+        // Move identity-based, re-locating each target fresh right at the moment it actually
+        // moves rather than trusting either target's pre-validated position — moving the OWN
+        // token first can have a side effect that invalidates the ALREADY-validated opponent
+        // target before its own move happens (e.g. the own token's landing chains into a
+        // Hyperthrust pass-through that destroys the opponent's token, or the own token simply
+        // lands on the same square the opponent's token already occupied and a stale recorded
+        // position would then silently move the wrong occupant). Found by GameSimulationTest's
+        // randomized-play harness as a genuine "No in-play token at position N" crash. If a
+        // target has vanished by the time its own move is attempted, that half of the compound
+        // effect simply doesn't apply — the play itself is already committed (the card is
+        // legitimately expended either way), matching this codebase's established "a
+        // resolution-time-vanished target is a graceful no-op, never a crash" pattern.
+        move(state, ownTarget.id)
+        move(state, opponentTarget.id)
         return playResult
     }
 
-    /** The outcome of checking whether one target can legally be moved — either its current
-     * position (in play or in a Zone), or the [CardPlayResult.Rejected] to return instead. */
-    private sealed class MovableCheck {
-        data class InPlayAt(val fromPosition: Int) : MovableCheck()
-        data object InZone : MovableCheck()
-        data class Blocked(val result: CardPlayResult.Rejected) : MovableCheck()
-    }
-
-    private fun validateMovable(state: GameState, request: CardPlayRequest, target: CardTarget.Token, ownTokenMovementAllowed: Boolean): MovableCheck {
+    /** Checks [target] can actually be moved by this card right now — still exists, and legal
+     * per [TargetValidator.validateZoneOfProtection] — without moving anything. Returns the
+     * [CardPlayResult.Rejected] to return instead, or null if clear to proceed. */
+    private fun validateMovable(state: GameState, request: CardPlayRequest, target: CardTarget.Token, ownTokenMovementAllowed: Boolean): CardPlayResult.Rejected? {
         val location = TokenLocator.locate(state, target.id)
         if (location is TokenLocation.NoLongerExists) {
-            return MovableCheck.Blocked(CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${target.id} no longer exists")))
+            return CardPlayResult.Rejected(request, TargetValidationError.NoLegalTarget("${target.id} no longer exists"))
         }
         val zoneError = TargetValidator.validateZoneOfProtection(
             request.card,
@@ -81,22 +90,22 @@ object ParallelPhasingResolver {
             location,
             ownTokenMovementAllowed = ownTokenMovementAllowed,
         )
-        if (zoneError != null) return MovableCheck.Blocked(CardPlayResult.Rejected(request, zoneError))
-        return when (location) {
-            is TokenLocation.InZone -> MovableCheck.InZone // legal per rule 12; the ZoP check above already rejects any other case
-            is TokenLocation.InPlay -> MovableCheck.InPlayAt(location.position)
-            is TokenLocation.NoLongerExists -> error("unreachable — handled above")
-        }
+        return zoneError?.let { CardPlayResult.Rejected(request, it) }
     }
 
-    private fun move(state: GameState, target: CardTarget.Token, check: MovableCheck) {
-        when (check) {
-            is MovableCheck.InZone -> TurnEngine.moveZoneToken(state, target.id, spaces = 4)
-            is MovableCheck.InPlayAt -> when (target.id.kind) {
-                TokenKind.TIER_TOKEN -> TurnEngine.moveTierToken(state, target.id.owner, target.id.tier, check.fromPosition, spaces = 4)
-                TokenKind.MARAUDER -> TurnEngine.moveMarauder(state, target.id.owner, target.id.tier, check.fromPosition, spaces = 4)
+    /** Re-locates [id] fresh (never a stale snapshot) and moves it 4 spaces via the
+     * identity-based movers — a no-op if [id] no longer exists at all by this moment. */
+    private fun move(state: GameState, id: TokenId) {
+        when (val location = TokenLocator.locate(state, id)) {
+            is TokenLocation.NoLongerExists -> Unit
+            is TokenLocation.InZone -> when (val zoneResult = TurnEngine.moveZoneToken(state, id, spaces = 4)) {
+                is ZoneMoveResult.StillInZone -> discardStrandedImmediateCard(state, zoneResult.effect)
+                is ZoneMoveResult.ExitedZone -> discardStrandedImmediateCard(state, zoneResult.moveResult.effect)
             }
-            is MovableCheck.Blocked -> error("unreachable — caller already handled Blocked before calling move()")
+            is TokenLocation.InPlay -> when (id.kind) {
+                TokenKind.TIER_TOKEN -> discardStrandedImmediateCard(state, TurnEngine.moveTierTokenById(state, id, spaces = 4).effect)
+                TokenKind.MARAUDER -> TurnEngine.moveMarauderById(state, id, spaces = 4)
+            }
         }
     }
 }

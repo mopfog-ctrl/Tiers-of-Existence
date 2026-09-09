@@ -124,11 +124,23 @@ class TurnDriver(
 
         val candidates = movableCandidates(state, player, tier)
 
-        // Every player in the turn queue was already filtered on having something movable
-        // (PlayerState.hasTierTurn/hasMarauderTurn), so an empty candidate list here would mean
-        // that eligibility check and this one have drifted out of sync — stay defensive rather
-        // than silently ending an ineligible "turn."
-        check(candidates.isNotEmpty()) { "$player has a turn in $phase but no movable token/Marauder — turn-eligibility and movable-candidate logic have drifted apart" }
+        // Every player in the turn queue was already filtered on having something movable at the
+        // moment the queue was built (PlayerState.hasTierTurn/hasMarauderTurn) — but that's a
+        // point-in-time snapshot, not a standing guarantee: a Fate Harvest card played earlier
+        // this same Phase, by any player (Divine Assistance, Graviton Rift, Plasma Burst,
+        // Galactic Roundabout, ...), can legitimately destroy the last token this queued player
+        // had left on this Tier before their own slot in the queue is reached, and this turn's
+        // own pre-roll/post-roll held-card windows above can do the same. An earlier version
+        // crashed here on exactly that (found by GameSimulationTest's randomized-play harness,
+        // reachable within a few hundred turns of ordinary multi-card play) — there's nothing
+        // malformed about this state, so end the turn gracefully instead: no token to choose,
+        // nothing to move, same as a Phase with no eligible player at all, just discovered one
+        // player-slot later than usual.
+        if (candidates.isEmpty()) {
+            state.clearPendingRoll()
+            state.endTurn()
+            return true
+        }
 
         val chosen = decisions.chooseTokenToMove(state, player, candidates)
         require(chosen in candidates) { "TurnDecisionProvider.chooseTokenToMove must return one of the offered candidates, got $chosen" }
@@ -183,11 +195,35 @@ class TurnDriver(
                             null
                         }
                     }
-                    TokenLocation.NoLongerExists -> error("TurnDecisionProvider chose $id, but it no longer exists")
+                    // Legitimately reachable, not a TurnDecisionProvider bug: chooseTokenToMove
+                    // returned a token that DID exist at that moment, but the Precedence window
+                    // opened right afterward (SuspendedAction.PendingMove, rule 23's own
+                    // checkpoint) can destroy exactly this token before it ever moves — e.g. an
+                    // opponent responds with a destruction card targeting the chosen token
+                    // instead of rescuing something else, the mirror image of the rule 23 worked
+                    // example this driver already handles (found by GameSimulationTest's
+                    // randomized-play harness, which previously crashed the whole turn loop
+                    // here). Nothing to move and nothing landed on, so there's no landing effect
+                    // to resolve — the turn simply ends without a move, same as any other turn
+                    // that doesn't chain into a "Go again."
+                    TokenLocation.NoLongerExists -> null
                 }
                 moveResult?.let { resolveTierEffect(state, decisions, player, id.tier, it) } ?: false
             }
-            TokenKind.MARAUDER -> resolveMarauderEffect(state, decisions, player, id.tier, TurnEngine.moveMarauderById(state, id, spaces))
+            TokenKind.MARAUDER -> {
+                // Same legitimately-reachable staleness as the TIER_TOKEN branch above (rule
+                // 23's PendingMove Precedence window can destroy the chosen Marauder before it
+                // moves — e.g. an opponent's Divine Assistance targeting it instead of rescuing
+                // something else) — TurnEngine.moveMarauderById `require`s the Marauder still
+                // exists and previously crashed the whole turn loop on this exact input (found
+                // by GameSimulationTest's randomized-play harness). Nothing to move, so no
+                // Marauder-landing effect to resolve — the turn simply ends without a move.
+                if (TokenLocator.locate(state, id) is TokenLocation.NoLongerExists) {
+                    false
+                } else {
+                    resolveMarauderEffect(state, decisions, player, id.tier, TurnEngine.moveMarauderById(state, id, spaces))
+                }
+            }
         }
 
     /** Acts on a Tier token's landing effect, asking [decisions] about any optional offer and

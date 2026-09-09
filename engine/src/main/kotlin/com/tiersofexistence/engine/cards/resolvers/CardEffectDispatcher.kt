@@ -79,6 +79,22 @@ object CardEffectDispatcher {
             // --- Roll modification ---
             "Delayed Motion" -> DelayedMotionResolver.resolve(state, request)
 
+            // Annulment is handled structurally by InteractionChain itself (splicing out the
+            // preceding entry it cancels, or cancelling a pending card resolution directly) — a
+            // resolved chain's own entries already have every Annulment spliced out before
+            // dispatchAll ever runs, per that class's contract. The only way this branch is ever
+            // reached is a TurnDecisionProvider offering Annulment as a standalone top-level
+            // Held-card play (chooseHeldCardBeforeRoll/chooseCardAfterRollBeforeMove) with
+            // nothing preceding it to cancel — not a legal play at all ("Cancel the effect of
+            // any card that is played" has no card to cancel here), so this rejects gracefully
+            // instead of the `error` fallback below, which previously crashed the whole turn
+            // loop on exactly this player-reachable input (found by GameSimulationTest's
+            // randomized-play harness).
+            "Annulment (Antimatter)" -> CardPlayResult.Rejected(
+                request,
+                TargetValidationError.NoLegalTarget("Annulment can only be played as a Precedence response to another card, never as a standalone play"),
+            )
+
             else -> error("No resolver registered yet for ${request.card.name}")
         }
     }

@@ -996,3 +996,126 @@ fix continues to hold under every reproduction shape that ever found the origina
 same stress-testing pass is also what caught the `skipEmptyPhases` threshold bug described
 above — a genuinely different issue, unrelated to this NPE, surfaced by the same repeated-run
 discipline.)
+
+## Whole-game randomized simulation: `GameSimulationTest`, 8 real defects found and fixed
+
+`engine/src/test/kotlin/com/tiersofexistence/engine/simulation/` is a new kind of test in this
+suite — not a targeted unit/integration test exercising one rule in isolation, but a broad,
+unscripted stress test that drives full games end to end through the real `TurnDriver` with
+every decision made randomly-but-plausibly, then re-checks a fixed set of engine invariants
+after every single completed turn. `RandomLegalDecisionProvider` (`RandomLegalDecisionProvider
+.kt`) makes a randomized choice at every `TurnDecisionProvider` decision point — which token to
+move, whether to take each optional offer, which held/Immediate/Precedence-response card to
+play and at what shape-correct (not necessarily rules-legal) target, via `CardTargetSampler`.
+"Shape-correct but not pre-validated" is deliberate: an illegal attempt exercises the engine's
+own rejection path (card stays in hand / gracefully discarded) rather than needing this
+provider to duplicate `TargetValidator`'s legality logic. `GameSimulationTest.kt` drives 100
+full games (fixed seeds, reproducible) to completion (or an 8000-turn cap), checking every
+turn: Tier-token conservation (`TierTokenPool.totalOwned` always equals `tokensPerPlayer`),
+deck+hand+discard card conservation (always exactly 70), no impossible Phase state, no
+unresolved `pendingRoll` after a turn, and winner-state correctness (a declared winner always
+has an in-play 4th-Tier token on a `YOU_WIN` square) — plus the harness's own exception handling
+catching any crash as a reportable violation with full seed/turn repro context. (Precedence
+chain leakage and "no vanished tokens" aren't separately probed — `InteractionChain` is never
+stored on `GameState` so there's no field to leak into, and both would manifest as a card-
+conservation violation or a crash, both already covered.)
+
+**This found 8 genuine, previously-unknown engine defects, all reachable in ordinary randomized
+2-6 player play — none required inventing new gameplay rules to fix, only closing gaps against
+already-established engine invariants/precedent:**
+
+1. **`CorpuscleRotResolver`** used a raw `require(target.tierOrNull == TierLevel.FOURTH)` — a
+   wrong-Tier target crashed with `IllegalArgumentException` instead of `CardPlayResult
+   .Rejected`, the one resolver in the whole deck inconsistent with the uniform "an illegal
+   target is always Rejected, never a crash" pattern the Phase 6 audit had otherwise confirmed
+   deck-wide. Fixed to return `Rejected(..., TargetValidationError.WrongTokenType(...))`,
+   matching `InfernalAbyssResolver`'s own-owner check right above it in the same file. The old
+   test asserting the crash (`assertFailsWith<IllegalArgumentException>`) was itself testing the
+   bug — rewritten to assert graceful rejection instead.
+2. **`TierTokenPool.addToStagingPileDirectly`** (Lucky/Luckier/Emitting Nebula's "place a
+   Dimensional Token in your Staging Pile") did `stagingPile += 1` with no corresponding
+   decrement anywhere — manufacturing a brand-new physical token from nothing every time one of
+   these 3 cards was played, breaking `totalOwned`'s own conservation invariant (`ionBattery +
+   hatchery + stagingPile + inPlayCount == tokensPerPlayer`, checked in `TierTokenPool`'s own
+   `init`, but never re-checked after construction until this harness did). Fixed to draw from
+   Hatchery-then-Ion-Battery first, same source order `startToken()` already uses, gracefully
+   placing nothing (returns false, same as "no promotion") if both are empty — "matter is
+   neither destroyed nor created" applies here exactly as everywhere else a token changes zones.
+3. **`CardEffectDispatcher.dispatch`** crashed with `IllegalStateException: No resolver
+   registered yet for Annulment (Antimatter)` whenever a `TurnDecisionProvider` offered Annulment
+   as a standalone top-level Held-card play (`chooseHeldCardBeforeRoll`/
+   `chooseCardAfterRollBeforeMove`) rather than as a Precedence-chain response — nothing in
+   `TurnDriver`/the interface prevented this, even though Annulment ("cancel the effect of any
+   card that is played") has nothing to cancel with no preceding play. Fixed by adding an
+   explicit `"Annulment (Antimatter)" -> CardPlayResult.Rejected(...)` case rather than falling
+   through to the `error(...)` meant for a genuinely unregistered card name.
+4. **`TurnEngine`'s `MARAUDER_CONSTRUCTION_FACILITY` landing** unconditionally produced
+   `SquareEffect.MayBuildMarauder` regardless of whether the landing player already had a
+   Marauder in play on that Tier — contradicting the square's own doc ("only if you don't
+   already have one in play on this Tier"). Accepting that misleading offer crashed
+   `TurnEngine.buildMarauder`'s uncapped `placeOnBirthCanal` call
+   (`IllegalArgumentException: <Tier> already has a Marauder in play for this player`). Fixed by
+   only offering `MayBuildMarauder` when `marauders.inPlayCount(tier) == 0`, matching the rule
+   text exactly and closing the crash at its root rather than only at the accept site.
+5. **`TurnDriver.moveAndResolve`**'s `TokenLocation.NoLongerExists` branch (for a Tier token) was
+   a bare `error("TurnDecisionProvider chose $id, but it no longer exists")` — but this is
+   legitimately reachable, not a provider bug: `chooseTokenToMove` returns a token that DOES
+   exist at that moment, then the rule-23 Precedence window opened right after
+   (`SuspendedAction.PendingMove`) can let an opponent destroy exactly that token before it
+   moves (the mirror image of the already-tested "rescue a token" worked example — here the
+   response destroys the mover's own chosen token instead). Fixed to treat this as a graceful
+   no-op turn (nothing to move, turn simply ends) instead of crashing the whole turn loop.
+6. **The same class of bug existed for Marauders**, one layer worse: `moveAndResolve`'s
+   `TokenKind.MARAUDER` branch had no existence check *at all* before calling `TurnEngine
+   .moveMarauderById`, which `require`s the Marauder still exists
+   (`IllegalArgumentException: Marauder <id> is not in play on <Tier>`) — reachable the same way
+   as #5, just for a Marauder-Phase turn. Fixed with the same `TokenLocator`-based check-and-
+   no-op pattern as #5.
+7. **The most severe finding: every card resolver that moves a token via `TurnEngine
+   .moveTierToken`/`moveMarauder`/`moveZoneToken`/`moveTierTokenById`/`moveMarauderById` discarded
+   the returned `MoveResult`/`ZoneMoveResult` entirely** — `MovementCardResolver` (Tactical
+   Motion/Tactical Step/Evasive Action/Skip-Hop-and-Jump/Sidestep), `ParallelPhasingResolver`,
+   `LastGaspResolver`, and `GalacticRoundaboutResolver`'s whole-board sweep. Most of what a
+   landing does is already unconditional inside `TurnEngine` itself regardless of caller (Nebula
+   staging, Wormhole promotion, You Win, Vortex, Infernal Abyss, Time Wrinkle's two mandatory
+   variants) — genuinely caller-blind by design, not a bug. The *optional offers* (Zone entry /
+   Marauder Construction / Transport) are ALSO deliberately not surfaced for a card-driven move —
+   already documented precedent, not a bug either, since a token landed there by a card's own
+   move just stays an ordinary token, same as declining would. But **a Fate Harvest draw of an
+   `IMMEDIATE` card is different**: the draw itself already happened unconditionally
+   (`state.deck.draw()`), and unlike a `HELD` card (safely added straight to hand by `TurnEngine`
+   regardless of caller), an Immediate card is never resolved/discarded by `TurnEngine` itself —
+   that's always `TurnDriver.resolveImmediateCard`'s job, which none of these resolvers can
+   reach. The result: any card-driven move that happened to land a token on a Fate Harvest square
+   and draw an Immediate card lost that card for good — not in a hand, not resolved, not
+   discarded, just gone, a genuine deck/discard/hand-conservation violation (this is what
+   `GameSimulationTest` actually caught first, as `draw + discard + hands != 70`). Fixed with a
+   new shared helper, `discardStrandedImmediateCard` (`cards/resolvers/CardDrivenMoveEffects.kt`)
+   — discards a stranded Immediate card rather than losing it or inventing a substitute
+   resolution, the exact same precedent already established for "an Immediate card genuinely has
+   nowhere to land" (`resolveImmediateCard`'s own doc) — wired into all 4 affected resolvers.
+8. **`ParallelPhasingResolver`** validated both targets' legality up front (correctly, all-or-
+   nothing, before either moves) but then moved each one using a *snapshot* position captured at
+   validation time (`MovableCheck.InPlayAt(fromPosition)`) rather than re-locating fresh — if
+   moving the own-token target first chained into a Hyperthrust pass-through that destroyed the
+   already-validated opponent target, the second `move()` call used the now-stale position and
+   crashed (`IllegalArgumentException: No in-play token at position N`). Fixed by re-locating
+   each target via `TokenLocator` fresh at the exact moment it's moved (identity-based movers
+   throughout, no position-based lookups at all), gracefully skipping that half of the compound
+   effect if the target has since vanished — the play itself stays committed (the card is
+   legitimately expended either way) — rather than trusting either target's pre-validated
+   position, matching this codebase's established "never trust a stale recorded position"
+   philosophy (see `TokenId`'s own class doc) that this resolver had, ironically, reintroduced
+   internally despite using the stale-position-proof `CardTarget.Token` externally.
+
+**Verification**: after all 8 fixes, 100 simulated games (fixed base seed) ran with 0 invariant
+violations, 100/100 reaching a winner within the 8000-turn cap (avg ~1400 turns, max ~6400).
+Two additional 100-game batches at different base seeds also ran clean (0 violations each; one
+batch had 2/100 games hit the turn cap without a winner — not a violation, just a slow game
+under fully-random undirected play, reported by the harness rather than silently ignored). The
+full engine suite (317 tests) and the historical multi-class `--tests` NPE-trigger sample both
+stayed green across repeated reruns after these fixes, confirming no regression. "Stale queue
+slots" (a queued player's eligibility legitimately going stale before their own turn arrives,
+per finding #5/#6's root cause) are tracked and reported by the harness as an expected, now-
+gracefully-handled occurrence (not a violation) — several hundred were observed across the
+combined 300 games, all handled without incident post-fix.

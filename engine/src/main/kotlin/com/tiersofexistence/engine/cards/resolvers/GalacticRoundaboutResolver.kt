@@ -65,14 +65,18 @@ object GalacticRoundaboutResolver {
             if (pool.positionOf(id) == null) continue
             val result = TurnEngine.moveTierTokenById(state, id, SPACES)
             if (result.effect is SquareEffect.Won) winners += id.owner
+            discardStrandedImmediateCard(state, result.effect)
         }
 
         for (id in zoneResidentIds) {
             val pool = state.players.getValue(id.owner).tierPool(id.tier)
             if (pool.zoneOf(id) == null) continue
-            val result = TurnEngine.moveZoneToken(state, id, SPACES)
-            if (result is ZoneMoveResult.ExitedZone && result.moveResult.effect is SquareEffect.Won) {
-                winners += id.owner
+            when (val result = TurnEngine.moveZoneToken(state, id, SPACES)) {
+                is ZoneMoveResult.ExitedZone -> {
+                    if (result.moveResult.effect is SquareEffect.Won) winners += id.owner
+                    discardStrandedImmediateCard(state, result.moveResult.effect)
+                }
+                is ZoneMoveResult.StillInZone -> discardStrandedImmediateCard(state, result.effect)
             }
         }
 

@@ -279,11 +279,33 @@ class TierTokenPool(val tier: TierLevel, val owner: PlayerColor) {
         refillInPlayIfRoom()
     }
 
-    /** Adds a token directly to the Staging Pile (Lucky/Luckier/Emitting Nebula), running the
-     * same promotion check a Nebula landing would. Returns true if a promotion was triggered
-     * (caller must then start a token on the next Tier), matching [sendToStagingPile]'s caller
-     * contract via [tryPromoteFromStagingPile]. */
+    /**
+     * Adds a token directly to the Staging Pile (Lucky/Luckier/Emitting Nebula: "Place a
+     * Dimensional Token in your Staging Pile"), running the same promotion check a Nebula
+     * landing would. Returns true if a promotion was triggered (caller must then start a token
+     * on the next Tier), matching [sendToStagingPile]'s caller contract via
+     * [tryPromoteFromStagingPile].
+     *
+     * **Fixed: this token must come from somewhere.** An earlier version simply did
+     * `stagingPile += 1` with no corresponding decrement anywhere else — manufacturing a brand
+     * new physical token out of nothing, breaking [totalOwned]'s own invariant (caught by
+     * `GameSimulationTest`'s randomized-play harness: every game that played a Lucky/Luckier/
+     * Emitting Nebula drifted to `totalOwned == tokensPerPlayer + 1` for that Tier). "Place a
+     * Dimensional Token in your Staging Pile" is exactly what an ordinary Nebula landing already
+     * does for an in-play token — moving an *existing* token into the pile, never creating one —
+     * so this direct version needs the same source [startToken] already draws from: a
+     * Hatchery-waiting token preferred over a fresh one from the Ion Battery (same order
+     * [startToken] uses). Gracefully places nothing (returns false, same as "no promotion") when
+     * both are empty, matching [startToken]'s own "must wait" contract rather than going
+     * negative — the rulebook's "matter is neither destroyed nor created" applies here exactly as
+     * everywhere else a Tier token changes zones.
+     */
     fun addToStagingPileDirectly(): Boolean {
+        when {
+            hatchery > 0 -> hatchery -= 1
+            ionBattery > 0 -> ionBattery -= 1
+            else -> return false
+        }
         stagingPile += 1
         return tryPromoteFromStagingPile()
     }

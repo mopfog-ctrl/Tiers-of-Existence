@@ -9,6 +9,7 @@ import com.tiersofexistence.engine.cards.play.TokenLocation
 import com.tiersofexistence.engine.cards.play.TokenLocator
 import com.tiersofexistence.engine.model.TokenKind
 import com.tiersofexistence.engine.rules.TurnEngine
+import com.tiersofexistence.engine.rules.ZoneMoveResult
 import com.tiersofexistence.engine.state.GameState
 
 /**
@@ -50,14 +51,22 @@ object LastGaspResolver {
         if (playResult !is CardPlayResult.Resolved) return playResult
 
         when (location) {
-            is TokenLocation.InZone -> TurnEngine.moveZoneToken(
-                state, target.id, SPACES,
-                destroysPassedTokens = true, exemptMoverOwnTokens = false,
-            )
-            is TokenLocation.InPlay -> when (target.id.kind) {
-                TokenKind.TIER_TOKEN -> TurnEngine.moveTierToken(
-                    state, target.id.owner, target.id.tier, location.position, SPACES,
+            is TokenLocation.InZone -> when (
+                val zoneResult = TurnEngine.moveZoneToken(
+                    state, target.id, SPACES,
                     destroysPassedTokens = true, exemptMoverOwnTokens = false,
+                )
+            ) {
+                is ZoneMoveResult.StillInZone -> discardStrandedImmediateCard(state, zoneResult.effect)
+                is ZoneMoveResult.ExitedZone -> discardStrandedImmediateCard(state, zoneResult.moveResult.effect)
+            }
+            is TokenLocation.InPlay -> when (target.id.kind) {
+                TokenKind.TIER_TOKEN -> discardStrandedImmediateCard(
+                    state,
+                    TurnEngine.moveTierToken(
+                        state, target.id.owner, target.id.tier, location.position, SPACES,
+                        destroysPassedTokens = true, exemptMoverOwnTokens = false,
+                    ).effect,
                 )
                 TokenKind.MARAUDER -> TurnEngine.moveMarauder(
                     state, target.id.owner, target.id.tier, location.position, SPACES,

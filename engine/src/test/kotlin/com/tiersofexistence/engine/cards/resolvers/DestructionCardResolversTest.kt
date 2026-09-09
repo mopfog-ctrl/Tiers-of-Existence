@@ -14,7 +14,6 @@ import com.tiersofexistence.engine.model.TierLevel
 import com.tiersofexistence.engine.state.GameState
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -213,11 +212,22 @@ class DestructionCardResolversTest {
     }
 
     @Test
-    fun `Corpuscle Rot rejects a target that isn't on the 4th Tier`() {
+    fun `Corpuscle Rot rejects a target that isn't on the 4th Tier, gracefully rather than crashing`() {
+        // Regression test: an earlier version of this check was a raw `require` that threw
+        // IllegalArgumentException instead of returning CardPlayResult.Rejected — the one
+        // inconsistency in an otherwise uniform "an illegal target is always Rejected, never a
+        // crash" pattern across every other resolver in this file (found by
+        // GameSimulationTest's randomized-play harness, which hit it on a real, player-reachable
+        // target choice within the first few hundred simulated turns).
         val state = GameState.newGame(listOf(YELLOW, GREEN))
         val id = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).idAt(0)!!
 
-        assertFailsWith<IllegalArgumentException> { CorpuscleRotResolver.resolve(state, requestFor(YELLOW, "Corpuscle Rot"), CardTarget.Token(id)) }
+        val result = CorpuscleRotResolver.resolve(state, requestFor(YELLOW, "Corpuscle Rot"), CardTarget.Token(id))
+
+        assertIs<CardPlayResult.Rejected>(result)
+        assertIs<TargetValidationError.WrongTokenType>(result.reason)
+        assertEquals(1, state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayCount) // untouched
+        assertEquals(0, state.deck.discardPileSize) // Corpuscle Rot itself never discarded on an illegal target
     }
 
     @Test

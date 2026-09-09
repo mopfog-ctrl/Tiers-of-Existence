@@ -150,7 +150,12 @@ object GravitonRiftResolver {
  */
 object CorpuscleRotResolver {
     fun resolve(state: GameState, request: CardPlayRequest, target: CardTarget.Token): CardPlayResult {
-        require(target.tierOrNull == TierLevel.FOURTH) { "Corpuscle Rot's destroy target must be on the 4th Tier, was $target" }
+        if (target.tierOrNull != TierLevel.FOURTH) {
+            return CardPlayResult.Rejected(
+                request,
+                TargetValidationError.WrongTokenType("Corpuscle Rot's destroy target must be on the 4th Tier, was $target"),
+            )
+        }
 
         val destroyResult = DestructionCardResolver.resolve(state, request, target)
         if (destroyResult !is CardPlayResult.Resolved) return destroyResult

@@ -10,6 +10,7 @@ import com.tiersofexistence.engine.cards.play.TokenLocation
 import com.tiersofexistence.engine.cards.play.TokenLocator
 import com.tiersofexistence.engine.model.TokenKind
 import com.tiersofexistence.engine.rules.TurnEngine
+import com.tiersofexistence.engine.rules.ZoneMoveResult
 import com.tiersofexistence.engine.state.GameState
 
 /**
@@ -31,6 +32,14 @@ import com.tiersofexistence.engine.state.GameState
  * the user, resolving §4 Q17), so this card's own printed distance is simply applied to the
  * token's position within its Zone, exiting back onto the main loop if that overflows past the
  * Zone's last slot.
+ *
+ * The resulting landing's optional offers (Zone entry / Marauder Construction / Transport) are
+ * deliberately not surfaced here — this resolver has no [com.tiersofexistence.engine.rules
+ * .TurnDecisionProvider] to ask, so a token landed here by this card just stays an ordinary token,
+ * same as declining the offer would; only [TurnDriver][com.tiersofexistence.engine.rules
+ * .TurnDriver]'s own dice-driven moves see and act on those. [discardStrandedImmediateCard] is the
+ * one landing outcome this resolver DOES still need to handle — see that function's doc for why a
+ * drawn Immediate card can't just be silently dropped the way an offer can.
  */
 object MovementCardResolver {
     fun resolve(state: GameState, request: CardPlayRequest, target: CardTarget.Token, spaces: Int): CardPlayResult {
@@ -54,7 +63,10 @@ object MovementCardResolver {
             // resident (see MarauderPool's class doc), so this is always a Tier token.
             val playResult = CardLifecycle.attemptPlay(state, request)
             if (playResult !is CardPlayResult.Resolved) return playResult
-            TurnEngine.moveZoneToken(state, target.id, spaces)
+            when (val zoneResult = TurnEngine.moveZoneToken(state, target.id, spaces)) {
+                is ZoneMoveResult.StillInZone -> discardStrandedImmediateCard(state, zoneResult.effect)
+                is ZoneMoveResult.ExitedZone -> discardStrandedImmediateCard(state, zoneResult.moveResult.effect)
+            }
             return playResult
         }
         val fromPosition = (location as TokenLocation.InPlay).position
@@ -63,7 +75,7 @@ object MovementCardResolver {
         if (playResult !is CardPlayResult.Resolved) return playResult
 
         when (target.id.kind) {
-            TokenKind.TIER_TOKEN -> TurnEngine.moveTierToken(state, target.id.owner, target.id.tier, fromPosition, spaces)
+            TokenKind.TIER_TOKEN -> discardStrandedImmediateCard(state, TurnEngine.moveTierToken(state, target.id.owner, target.id.tier, fromPosition, spaces).effect)
             TokenKind.MARAUDER -> TurnEngine.moveMarauder(state, target.id.owner, target.id.tier, fromPosition, spaces)
         }
         return playResult

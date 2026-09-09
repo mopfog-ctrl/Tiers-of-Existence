@@ -411,7 +411,17 @@ object TurnEngine {
                 MoveResult(square.index, emptyList(), square.type, SquareEffect.DrewCard(card))
             }
             SquareType.MARAUDER_CONSTRUCTION_FACILITY -> {
-                MoveResult(square.index, emptyList(), square.type, SquareEffect.MayBuildMarauder)
+                // "Build a Marauder here (only if you don't already have one in play on this
+                // Tier)" (SquareType.MARAUDER_CONSTRUCTION_FACILITY's own doc). Fixed: this used
+                // to unconditionally offer MayBuildMarauder regardless of that check, so a
+                // player who already had a Marauder here and landed on this square again (a
+                // second Marauder Construction Facility, or simply passing back over the same
+                // one — entirely reachable in ordinary play) was offered a choice that would
+                // crash TurnEngine.buildMarauder's own uncapped placeOnBirthCanal call the
+                // moment it was accepted, instead of the square simply having no offer to make
+                // (found by GameSimulationTest's randomized-play harness).
+                val effect = if (state.players.getValue(color).marauders.inPlayCount(tier) > 0) SquareEffect.None else SquareEffect.MayBuildMarauder
+                MoveResult(square.index, emptyList(), square.type, effect)
             }
             SquareType.HYPERTHRUST -> {
                 val magnitude = requireNotNull(square.magnitude) { "Hyperthrust square on $tier has no magnitude set" }
