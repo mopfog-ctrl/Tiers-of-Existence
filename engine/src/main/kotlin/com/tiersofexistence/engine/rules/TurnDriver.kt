@@ -4,10 +4,12 @@ import com.tiersofexistence.engine.cards.CardTiming
 import com.tiersofexistence.engine.cards.FateHarvestCard
 import com.tiersofexistence.engine.cards.play.CardPlayRequest
 import com.tiersofexistence.engine.cards.play.CardPlayResult
+import com.tiersofexistence.engine.cards.play.PendingDecision
 import com.tiersofexistence.engine.cards.play.TokenLocation
 import com.tiersofexistence.engine.cards.play.TokenLocator
 import com.tiersofexistence.engine.cards.play.TriggeringEvent
 import com.tiersofexistence.engine.cards.resolvers.CardEffectDispatcher
+import com.tiersofexistence.engine.cards.resolvers.CleansingResolver
 import com.tiersofexistence.engine.model.PlayerColor
 import com.tiersofexistence.engine.model.TierLevel
 import com.tiersofexistence.engine.model.TokenKind
@@ -304,7 +306,39 @@ class TurnDriver(
             state.deck.discard(request.card)
             return null
         }
-        return CardEffectDispatcher.dispatch(state, request)
+        val result = CardEffectDispatcher.dispatch(state, request)
+        resolveAwaitingDecision(state, result)
+        return result
+    }
+
+    /**
+     * If [result] is [CardPlayResult.AwaitingDecision], resolves the pending decision right
+     * away — currently only ever [PendingDecision.OpponentDiscardChoice] (Cleansing; no resolver
+     * produces [PendingDecision.PrecedenceWindowOpen] today, since this class's own
+     * [resolvePrecedenceWindow] handles every Precedence window directly rather than routing
+     * through this pending-decision vocabulary). For anything else, this is a no-op.
+     *
+     * Cleansing's own text is explicit that the *targeted opponent* — never the player who
+     * played Cleansing — chooses which of their own held cards to discard, so this always asks
+     * [decidingPlayer]'s own [TurnDecisionProvider] (via [decisionsFor]), never [result]
+     * .request's source player's, and never reads [decidingPlayer]'s hand into anything the
+     * source player's own provider could see — the eligible-cards list is built here and handed
+     * only to [decidingPlayer]'s provider.
+     */
+    private fun resolveAwaitingDecision(state: GameState, result: CardPlayResult) {
+        if (result !is CardPlayResult.AwaitingDecision) return
+        when (val pending = result.pending) {
+            is PendingDecision.OpponentDiscardChoice -> {
+                val decidingPlayer = pending.decidingPlayer
+                val eligibleCards = state.players.getValue(decidingPlayer).hand.toList()
+                val chosen = decisionsFor(decidingPlayer).chooseCleansingDiscard(state, decidingPlayer, result.request.sourcePlayer, eligibleCards)
+                require(chosen in eligibleCards) {
+                    "chooseCleansingDiscard must return one of the offered eligibleCards, got $chosen"
+                }
+                CleansingResolver.completeDiscard(state, decidingPlayer, chosen)
+            }
+            is PendingDecision.PrecedenceWindowOpen -> Unit
+        }
     }
 
     /**
@@ -315,12 +349,15 @@ class TurnDriver(
      *
      * Every chain-response card was removed from its player's hand the moment it was played into
      * the chain (see [offerResponseRounds]) and is never returned there regardless of how it
-     * resolves — once revealed as a response, it's spent, the same way a real card game doesn't
-     * let you take back a played response whose target another response sniped first. A
+     * resolves — **confirmed canon**: once played, a card is expended; Annulment (or a stale
+     * target) nullifies what it *does*, not the historical fact that it was played. A
      * [CardPlayResult.Resolved] entry already discarded its own card via
-     * [com.tiersofexistence.engine.cards.play.CardLifecycle.attemptPlay]; anything else
-     * (practically only [CardPlayResult.Rejected] — see below) needs an explicit discard here so
-     * the physical card doesn't just vanish from the game's total-card accounting. (Every
+     * [com.tiersofexistence.engine.cards.play.CardLifecycle.attemptPlay]; every other entry in
+     * [InteractionChain.entriesSnapshot] needs an explicit discard here, not just the ones
+     * [InteractionChain.resolutionOrder]/[CardEffectDispatcher.dispatchAll] actually saw —
+     * that excludes cancelled entries AND Annulment entries themselves (an Annulment never has
+     * an effect of its own to resolve), both of which still need their own card discarded per
+     * the same confirmed canon, even though [CardEffectDispatcher] never touches them. (Every
      * Precedence card is [CardTiming.HELD] — see `FateHarvestCatalog` — so none can produce
      * [CardPlayResult.EnteredHand], and none of the 6 currently trigger
      * [CardPlayResult.AwaitingDecision].)
@@ -335,8 +372,9 @@ class TurnDriver(
         val order = chain.resolve()
         val results = CardEffectDispatcher.dispatchAll(state, order)
         chain.finishResolving()
-        order.zip(results).forEach { (entry, result) ->
-            if (result !is CardPlayResult.Resolved) state.deck.discard(entry.request.card)
+        val resolvedEntryIds = order.zip(results).filter { (_, result) -> result is CardPlayResult.Resolved }.map { it.first.id }.toSet()
+        chain.entriesSnapshot().forEach { entry ->
+            if (entry.id !in resolvedEntryIds) state.deck.discard(entry.request.card)
         }
         return chain
     }

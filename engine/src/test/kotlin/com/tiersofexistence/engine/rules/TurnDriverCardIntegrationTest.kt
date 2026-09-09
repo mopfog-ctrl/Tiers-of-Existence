@@ -10,6 +10,7 @@ import com.tiersofexistence.engine.cards.play.CardTarget
 import com.tiersofexistence.engine.cards.play.TokenLocation
 import com.tiersofexistence.engine.cards.play.TokenLocator
 import com.tiersofexistence.engine.model.PlayerColor
+import com.tiersofexistence.engine.model.PlayerColor.BLACK
 import com.tiersofexistence.engine.model.PlayerColor.GREEN
 import com.tiersofexistence.engine.model.PlayerColor.RED
 import com.tiersofexistence.engine.model.TierLevel
@@ -55,6 +56,8 @@ class TurnDriverCardIntegrationTest {
         val cardAfterRollBeforeMove: (GameState, PlayerColor, Int) -> CardChoice? = { _, _, _ -> null },
         val immediateTargets: (GameState, PlayerColor, com.tiersofexistence.engine.cards.FateHarvestCard) -> List<CardTarget> = { _, _, _ -> emptyList() },
         val precedenceResponse: (GameState, PlayerColor, com.tiersofexistence.engine.rules.precedence.InteractionChain) -> CardChoice? = { _, _, _ -> null },
+        val cleansingDiscard: (GameState, PlayerColor, PlayerColor, List<com.tiersofexistence.engine.cards.FateHarvestCard>) -> com.tiersofexistence.engine.cards.FateHarvestCard =
+            { _, _, _, eligible -> eligible.first() },
     ) : TurnDecisionProvider {
         override fun chooseTokenToMove(state: GameState, player: PlayerColor, candidates: List<TokenId>) = tokenChoice(candidates)
         override fun chooseEnterZone(state: GameState, player: PlayerColor, tier: TierLevel, zoneNumber: Int) = false
@@ -66,6 +69,12 @@ class TurnDriverCardIntegrationTest {
             immediateTargets(state, player, card)
         override fun choosePrecedenceResponse(state: GameState, player: PlayerColor, chain: com.tiersofexistence.engine.rules.precedence.InteractionChain) =
             precedenceResponse(state, player, chain)
+        override fun chooseCleansingDiscard(
+            state: GameState,
+            decidingPlayer: PlayerColor,
+            sourcePlayer: PlayerColor,
+            eligibleCards: List<com.tiersofexistence.engine.cards.FateHarvestCard>,
+        ) = cleansingDiscard(state, decidingPlayer, sourcePlayer, eligibleCards)
     }
 
     @Test
@@ -209,5 +218,151 @@ class TurnDriverCardIntegrationTest {
         assertEquals(listOf(2), state.players.getValue(GREEN).tierPool(TierLevel.FIRST).inPlayPositions)
         assertTrue(state.players.getValue(GREEN).hand.isEmpty()) // Tactical Step was played, not lost
         assertEquals(2, state.players.getValue(RED).marauders.positionOf(state.players.getValue(RED).marauders.inPlayIds(TierLevel.FIRST).single()))
+    }
+
+    @Test
+    fun `Cleansing lets the targeted opponent, not the source player, choose which of their own cards to discard`() {
+        // Covers: source player legally plays Cleansing; an opponent with cards can be targeted;
+        // the targeted opponent (not the source player) receives the discard choice; the
+        // selected card is discarded; the non-selected card remains; the source player's own
+        // provider is never consulted for the victim's private choice.
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), plain(1))
+        val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
+        state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        val cleansing = cardNamed("Cleansing (Atmospheric)")
+        state.players.getValue(RED).hand += cleansing
+        val keep = cardNamed("Tactical Step")
+        val discard = cardNamed("Tactical Motion")
+        state.players.getValue(GREEN).hand += listOf(keep, discard)
+        state.skipEmptyPhases()
+
+        val redDecisions = ScriptedDecisions(
+            heldCardBeforeRoll = { _, _ -> CardChoice(cleansing, listOf(CardTarget.PlayerChoice(GREEN))) },
+            // RED must never be asked to choose GREEN's discard — the victim's own provider
+            // handles that. If TurnDriver ever routed the decision to the wrong player, this
+            // would throw instead of silently passing.
+            cleansingDiscard = { _, _, _, _ -> error("the source player's provider must never be asked to choose the victim's discard") },
+        )
+        val greenDecisions = ScriptedDecisions(
+            cleansingDiscard = { _, decidingPlayer, sourcePlayer, eligibleCards ->
+                assertEquals(GREEN, decidingPlayer) // the targeted opponent decides...
+                assertEquals(RED, sourcePlayer) // ...about the play RED made
+                assertEquals(listOf(keep, discard), eligibleCards) // exactly GREEN's own hand
+                discard
+            },
+        )
+        val driver = TurnDriver(mapOf(RED to redDecisions, GREEN to greenDecisions), rollForPhase = { 1 })
+
+        driver.driveOneTurn(state)
+
+        assertEquals(listOf(keep), state.players.getValue(GREEN).hand) // discard is gone, keep remains
+        assertTrue(state.players.getValue(RED).hand.isEmpty()) // Cleansing itself was played and discarded
+        assertEquals(2, state.deck.discardPileSize) // Cleansing + the discarded card
+    }
+
+    @Test
+    fun `Cleansing against an empty-handed opponent is illegal and never consumes the card or the Phase allowance`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), plain(1))
+        val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
+        state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()
+        val cleansing = cardNamed("Cleansing (Atmospheric)")
+        state.players.getValue(RED).hand += cleansing
+        assertTrue(state.players.getValue(GREEN).hand.isEmpty())
+        state.skipEmptyPhases()
+        val decisions = ScriptedDecisions(
+            heldCardBeforeRoll = { _, _ -> CardChoice(cleansing, listOf(CardTarget.PlayerChoice(GREEN))) },
+        )
+        val driver = TurnDriver(decisions, rollForPhase = { 1 })
+
+        driver.driveOneTurn(state)
+
+        assertEquals(listOf(cleansing), state.players.getValue(RED).hand) // rejected, not consumed
+        assertEquals(0, state.deck.discardPileSize) // never discarded
+        assertEquals(false, state.players.getValue(RED).hasPlayedCardThisPhase) // Phase allowance untouched
+    }
+
+    // --- Confirmed canon (per the user): a played card is expended once played — Precedence
+    // response cards are never returned to hand regardless of how they resolve, and a card
+    // Annulment cancels is discarded, not returned, since Annulment nullifies the effect, not
+    // the historical fact that the card was played. ---
+
+    @Test
+    fun `a Precedence response that rejects at resolution time (stale target) is discarded, not returned to the responder's hand`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), plain(1), plain(2))
+        val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN, BLACK))
+        val redId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
+        val greenId = state.players.getValue(GREEN).tierPool(TierLevel.FIRST).startToken()!!
+        val tacticalMotion = cardNamed("Tactical Motion") // Held, not Precedence — RED's own play
+        state.players.getValue(RED).hand += tacticalMotion
+        val tacticalStep = cardNamed("Tactical Step") // Precedence — GREEN's response, targets GREEN's own token
+        state.players.getValue(GREEN).hand += tacticalStep
+        val gravitonRift = cardNamed("Graviton Rift") // Precedence — BLACK's response, destroys GREEN's token
+        state.players.getValue(BLACK).hand += gravitonRift
+        state.skipEmptyPhases()
+
+        var greenResponded = false
+        var blackResponded = false
+        val redDecisions = ScriptedDecisions(
+            heldCardBeforeRoll = { _, _ -> CardChoice(tacticalMotion, listOf(CardTarget.Token(redId))) },
+        )
+        val greenDecisions = ScriptedDecisions(
+            precedenceResponse = { _, _, _ ->
+                if (greenResponded) null else { greenResponded = true; CardChoice(tacticalStep, listOf(CardTarget.Token(greenId))) }
+            },
+        )
+        val blackDecisions = ScriptedDecisions(
+            precedenceResponse = { _, _, _ ->
+                if (blackResponded) null else { blackResponded = true; CardChoice(gravitonRift, listOf(CardTarget.Token(greenId))) }
+            },
+        )
+        val driver = TurnDriver(mapOf(RED to redDecisions, GREEN to greenDecisions, BLACK to blackDecisions), rollForPhase = { 1 })
+
+        driver.driveOneTurn(state)
+
+        // GREEN responded first (resolves LAST, after BLACK's Graviton Rift already destroyed
+        // the target) — GREEN's Tactical Step rejects at resolution time with a stale target,
+        // per TokenLocator. Confirmed canon: it does NOT return to GREEN's hand even though the
+        // play was rejected — a played response is spent regardless of how it resolves. (The
+        // original greenId is gone for good even though the 1st Tier auto-replenishes a fresh,
+        // unrelated token afterward — see TokenLocator, not a raw inPlayCount check.)
+        assertTrue(state.players.getValue(GREEN).hand.isEmpty())
+        assertTrue(state.players.getValue(BLACK).hand.isEmpty())
+        assertIs<TokenLocation.NoLongerExists>(TokenLocator.locate(state, greenId))
+    }
+
+    @Test
+    fun `Annulment cancelling a top-level Held-card play discards that card rather than returning it to hand`() {
+        val board = boardOf(TierLevel.FIRST, Square(0, SquareType.BIRTH_CANAL), plain(1))
+        val state = gameWith(TierLevel.FIRST, board, colors = listOf(RED, GREEN))
+        val redId = state.players.getValue(RED).tierPool(TierLevel.FIRST).startToken()!!
+        val tacticalMotion = cardNamed("Tactical Motion") // Held, not Precedence — RED's own play
+        state.players.getValue(RED).hand += tacticalMotion
+        val annulment = cardNamed("Annulment (Antimatter)") // Precedence — GREEN cancels RED's play outright
+        state.players.getValue(GREEN).hand += annulment
+        state.skipEmptyPhases()
+
+        var greenResponded = false
+        val redDecisions = ScriptedDecisions(
+            heldCardBeforeRoll = { _, _ -> CardChoice(tacticalMotion, listOf(CardTarget.Token(redId))) },
+        )
+        val greenDecisions = ScriptedDecisions(
+            precedenceResponse = { _, _, _ ->
+                if (greenResponded) null else { greenResponded = true; CardChoice(annulment) }
+            },
+        )
+        val driver = TurnDriver(mapOf(RED to redDecisions, GREEN to greenDecisions), rollForPhase = { 1 })
+
+        driver.driveOneTurn(state)
+
+        // RED's Tactical Motion was legitimately played (removed from hand, targeting/legality
+        // already passed) and then Annulled before its own +2-space effect applied — driveOneTurn
+        // still performs RED's ordinary roll-based move afterward regardless (roll = 1), so the
+        // token ends at 1, not at the 3 it would reach if Tactical Motion's own move had also
+        // applied (0 -> 2 from the card, then -> 3 from the roll). Per confirmed canon, RED's
+        // card does NOT return to hand even though it never took effect: Annulment nullifies the
+        // effect, not the historical fact that RED played it.
+        assertEquals(listOf(1), state.players.getValue(RED).tierPool(TierLevel.FIRST).inPlayPositions)
+        assertTrue(state.players.getValue(RED).hand.isEmpty()) // not returned
+        assertTrue(state.players.getValue(GREEN).hand.isEmpty()) // Annulment itself also spent
     }
 }

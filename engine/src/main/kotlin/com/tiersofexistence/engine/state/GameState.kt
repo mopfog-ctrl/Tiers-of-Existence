@@ -175,17 +175,30 @@ class GameState(
      * 5) — this was too tight, and a real test caught it: [DeferredTurnModifier.SkipNextTierTurn]
      * (Phase Loss, or the 1st Tier's own "Lose next turn on this Tier" Time Wrinkle square) can
      * legitimately defer a player's next eligible turn on a Tier past one full cycle, in a very
-     * sparse game (few players/Tiers active) — and per that class's own doc, independent
-     * triggers stack, so more than one queued skip against the same (player, Tier) can defer
-     * eligibility by more than one cycle, consumed one at a time. None of this is remotely
-     * reachable in ordinary 2-6 player play (some other player almost always has *some* eligible
-     * turn within the same Round), but a legitimately sparse/edge-case [GameState] can hit it
-     * without being corrupted at all. A generous multi-cycle threshold tells the two apart: a
-     * truly malformed state (e.g. every pool emptied out) never finds anyone eligible no matter
-     * how far this searches, while a legitimate stacked-skip gap always resolves within a small,
-     * bounded number of cycles — see `GameStateTest`'s "a queued Phase Loss on a single sparse
-     * player's only Tier resumes normally, not as a stalled state" regression test for the
-     * concrete case that caught this.
+     * sparse game (few players/Tiers active) — the Round whose occurrence the skip consumes,
+     * *plus* the following Round before that (player, Tier) is checked again, needs 2 full
+     * cycles (10 Phases) in the sparsest case, not 1. **Note on stacking, corrected**: an
+     * earlier draft of this doc claimed multiple independent [DeferredTurnModifier.SkipNextTierTurn]
+     * entries against the same (player, Tier) each consume a separate future occurrence,
+     * compounding the deferral — that is NOT what [buildTurnQueue] actually does. It collects
+     * every matching entry for the current (tier, player-in-base) in one pass, removes the
+     * player from the queue once, and removes *all* of those matching entries from
+     * [deferredModifiers] together — so two, three, or more stacked triggers against the same
+     * (player, Tier) are all spent the very next time that Tier's queue is built, identically to
+     * a single trigger; they do not extend the gap. See `GameStateTest`'s "multiple
+     * SkipNextTierTurn entries for the same player and Tier collapse into one skipped
+     * occurrence" test, which proves this empirically. Whether that collapsing behavior (vs.
+     * genuinely stacking across separate future occurrences) is the canonically intended
+     * reading of "You lose the next turn on this Tier" for two independently-drawn Phase Loss
+     * cards is not resolved by the rulebook's own text — flagged as an open rules question, not
+     * changed without confirmation. None of this — collapsed or hypothetically stacked — is
+     * remotely reachable in ordinary 2-6 player play (some other player almost always has *some*
+     * eligible turn within the same Round); a legitimately sparse/edge-case [GameState] can hit
+     * the 2-cycle single-skip gap without being corrupted at all. The threshold here is kept
+     * generously above that proven 2-cycle minimum (rather than tuned tightly to it) as a
+     * defensive margin against other deferred-turn interactions this doc doesn't claim to have
+     * exhaustively bounded — a truly malformed state (e.g. every pool emptied out) never finds
+     * anyone eligible no matter how far this searches, so a generous margin costs nothing.
      */
     fun skipEmptyPhases() {
         var phasesTraversedThisSearch = 0

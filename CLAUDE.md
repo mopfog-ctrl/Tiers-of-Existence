@@ -210,22 +210,61 @@ turn on this Tier" Time Wrinkle square) can legitimately defer a sparse single-p
 only eligible turn past one full cycle — it took a full cycle of the Round the skip consumes
 *plus* a full cycle of the next Round before that player's 1st Tier turn became eligible again
 (10 Phase-advances, found via `TurnDriverCardIntegrationTest`'s Fate Harvest integration
-randomly drawing Phase Loss — see "Fate Harvest integration" below), and per
-`DeferredTurnModifier`'s own doc, independent triggers stack, so more than one queued skip
-against the same (player, Tier) can defer eligibility even further. None of this is reachable
+randomly drawing Phase Loss — see "Fate Harvest integration" below). None of this is reachable
 in ordinary 2-6 player play (some other player almost always has *some* eligible turn within
 the same Round), but a legitimately sparse `GameState` can hit it without being corrupted at
 all — a truly malformed state (every pool emptied out) never finds anyone eligible no matter
-how far the search goes, while a legitimate stacked-skip gap always resolves within a handful
-of cycles, so a generous threshold (500 Phases, ~100 Rounds) tells the two apart without ever
+how far the search goes, while a legitimate skip gap always resolves within a handful of
+cycles, so a generous threshold (500 Phases, ~100 Rounds) tells the two apart without ever
 mistaking the latter for the former.
+
+**Correction to an earlier (wrong) claim about stacking.** An earlier version of this doc
+said multiple independent `SkipNextTierTurn` triggers against the same (player, Tier) each
+consume a separate *future* occurrence, compounding the deferral beyond the 2-cycle gap above.
+Re-checking `GameState.buildTurnQueue()` directly shows that's not what the code does:
+```kotlin
+val skips = deferredModifiers.filterIsInstance<DeferredTurnModifier.SkipNextTierTurn>()
+    .filter { it.tier == tier && it.player in base }
+base = base.filterNot { color -> skips.any { it.player == color } }
+deferredModifiers.removeAll(skips)
+```
+Every `SkipNextTierTurn` entry matching the current (tier, player-in-base) is collected into
+`skips` in one pass, the player is removed from `base` once, and *all* of those matching
+entries are removed from `deferredModifiers` together — so two, three, or more stacked
+triggers against the same (player, Tier) are consumed in the very same `buildTurnQueue()` call
+that consumes one, and produce the identical 2-cycle gap, not a longer one. Verified
+empirically, not just by reading: `GameStateTest`'s "multiple SkipNextTierTurn entries for the
+same player and Tier collapse into one skipped occurrence, not stacked skips" test queues two
+independent triggers and confirms the player is eligible again at exactly the same Round the
+single-skip test reaches (Round 3), not one Round later.
+
+**This collapsing behavior is an implementation fact, not a settled rule.** The rulebook's
+Phase Loss text ("You lose the next turn on this Tier... This card must be played
+immediately," rulebook.txt:671-674) and the "Lose next turn on this Tier" Time Wrinkle square
+both describe a single occurrence in isolation; neither addresses what should happen if two
+independently-triggered skips land on the same (player, Tier) before the first is consumed.
+`docs/card-mechanics-matrix.md` §3.5's "no turn may repeat more than once from a single
+triggering effect... not the total number of independent triggers in a Round" is about
+`ExtraTierTurn` not self-chaining from one trigger — it doesn't resolve whether *independent*
+`SkipNextTierTurn` triggers against the same (player, Tier) should collapse (current behavior)
+or stack across separate future occurrences. Left as-is pending confirmation — not changed
+without a confirmed rule, per the user's explicit instruction not to alter gameplay semantics
+speculatively.
+
+Given the proven single-skip gap is only 2 cycles (10 Phases) regardless of stacking, a
+tighter threshold than 500 would also have worked — kept generous anyway, per the user's own
+guidance not to over-optimize a safeguard normal legal gameplay should never reach, and because
+this hasn't exhaustively proven a tight bound for every possible interaction between
+`SkipNextTierTurn`/`ExtraTierTurn` and multiple players/Tiers at once.
 
 See `GameStateTest`'s "skipEmptyPhases: canonical skipping, and the fail-safe stalled-state
 guard" section: one empty upper-Tier Phase, several consecutive empty Tier Phases, and
 reaching the correct next Phase with the correct player queued all still skip normally (no
 exception); a single sparse player's queued Phase-Loss-style skip resumes normally after the
 10-Phase gap described above, not as a stalled state (the regression test for the
-too-tight-threshold bug above); a deliberately-constructed all-empty `GameState` (raw
+too-tight-threshold bug above); two stacked skips against the same (player, Tier) collapse
+into that same 10-Phase gap rather than compounding it (the regression test for the corrected
+stacking claim above); a deliberately-constructed all-empty `GameState` (raw
 `PlayerState`s, no tokens started anywhere, bypassing `GameState.newGame`) still throws
 `GameStalledException` instead of hanging; and a dedicated test demonstrates 1st-Tier
 auto-replenishment is exactly the mechanism that keeps ordinary play from ever reaching the
@@ -329,38 +368,69 @@ from direct test calls.
   resolver/chain level, now proven through `driveOneTurn` end to end.
 
 **New hand/discard bookkeeping `TurnDriver` needed, since `InteractionChain`/
-`CardEffectDispatcher` themselves never touch a hand or the deck's discard pile — deliberate,
-documented choices on genuinely rulebook-silent questions, not inventions dressed up as
-established rules:**
+`CardEffectDispatcher` themselves never touch a hand or the deck's discard pile.** Two of these
+were flagged as provisional (implementation convenience, not yet confirmed canon) when this
+integration first landed — **both are now confirmed canon by the user**: "yes, both cards go to
+discard. A card that has been played has been expended; Annulment nullifies what it does, not
+the historical fact that the player played it."
 - A card played into a Precedence chain (`offerResponseRounds`) is removed from the responder's
   hand the moment they choose to respond, and is **never returned to hand regardless of how it
   resolves** — a `Resolved` entry already discards itself via `CardLifecycle.attemptPlay`;
-  anything else (in practice only `Rejected`, since all 6 Precedence cards are `CardTiming.HELD`
-  and none currently produce `AwaitingDecision`) is explicitly discarded by `resolvePrecedenceWindow`
-  so the physical card doesn't vanish from the game's card accounting. Once revealed as a
-  response, it's spent — the same way a real card game doesn't let you take back a response
-  whose target another response sniped first.
+  anything else is explicitly discarded by `resolvePrecedenceWindow` so the physical card doesn't
+  vanish from the game's card accounting. Once revealed as a response, it's spent — the same way
+  a real card game doesn't let you take back a response whose target another response sniped
+  first. Depended on by `TurnDriverCardIntegrationTest`'s "a Precedence response that rejects at
+  resolution time (stale target) is discarded, not returned to the responder's hand" (new, added
+  alongside this confirmation) and, less directly, its "rule 23 worked example" test (which
+  wouldn't distinguish "discarded" from "returned but the card just wasn't checked," since that
+  response happens to resolve `Resolved` either way).
 - If an Annulment cancels the top-level suspended play (`InteractionChain
   .isSuspendedActionCancelled`, only meaningful for `PendingCardResolution`), that card is also
-  explicitly discarded, never returned to hand — it was legitimately played and would have
-  resolved; Annulment cancelled its *effect*, not the fact that it was played. This mirrors how a
-  cancelled *chain entry*'s own card already behaved before this integration (excluded from
-  `InteractionChain.resolutionOrder()`, so `CardEffectDispatcher.dispatchAll` never reaches it
-  either) — a pre-existing asymmetry in the underlying engine this integration didn't introduce,
-  just made consistent rather than leaving the top-level case undefined.
+  explicitly discarded, never returned to hand. Depended on by `TurnDriverCardIntegrationTest`'s
+  "Annulment cancelling a top-level Held-card play discards that card rather than returning it to
+  hand" (new).
+- **Bug found and fixed while adding that last test**: Annulment's OWN card, once played into a
+  chain, was never being discarded at all — `InteractionChain.resolutionOrder()` (and therefore
+  `CardEffectDispatcher.dispatchAll`) excludes every Annulment entry unconditionally (it has no
+  effect of its own to dispatch), so `resolvePrecedenceWindow`'s original discard loop, which
+  only walked `order` (the dispatched entries), never saw it — the card vanished from hand
+  without ever reaching the discard pile. Same root cause applied to a *cancelled* chain entry
+  (also excluded from `order`). Fixed by discarding every entry in
+  `InteractionChain.entriesSnapshot()` that isn't among the ones that actually dispatched
+  `Resolved`, rather than only walking `order` — now a cancelled entry's card and an Annulment's
+  own card both reach the discard pile, matching the same confirmed canon. Covered by the new
+  "Annulment cancelling..." test above (asserts GREEN's hand — the Annulment player — is empty)
+  and, for a cancelled non-Annulment entry, implicitly by the reverse-order tests in
+  `PrecedenceCardEffectIntegrationTest` (which don't check hands, only board state, since those
+  are constructed from raw `CardPlayRequest`s rather than real hands).
 - `FateHarvestDeck.forTesting(cards)` is a new, minimal test-only factory (a deck whose draw
   pile is exactly the given cards, in order) — added because these integration tests need a
   deterministic next draw, unlike the default shuffled 70-card deck every earlier test that drew
   cards was content to leave random.
 
-**Known remaining gap, not addressed by this pass**: Cleansing's second half (the targeted
-opponent's own choice of which held card to discard, `CardPlayResult.AwaitingDecision`/
-`PendingDecision.OpponentDiscardChoice`) still has no orchestration wired into `TurnDriver` —
-`CleansingResolver.completeDiscard` exists and is tested at the resolver level, but nothing in
-the turn-driving path calls it yet. `TurnDecisionProvider` would need one more method for this
-(the opponent's own choice, not the player who chose to play Cleansing); deliberately left
-out of scope here rather than guessing at that interface shape without a clearer sense of how a
-real UI would present it.
+**Fixed: Cleansing's second half is now fully wired into `TurnDriver`.** Previously flagged as
+a known gap — no orchestration existed for the targeted opponent's own held-card discard
+choice. Ruled by the user: the targeted opponent decides, never the source player, and once
+Cleansing has legally reached the discard decision (an empty-handed opponent is already an
+illegal target, per the existing ruling), choosing one card is mandatory. Added
+`TurnDecisionProvider.chooseCleansingDiscard(state, decidingPlayer, sourcePlayer,
+eligibleCards): FateHarvestCard` (defaults to `eligibleCards.first()`, matching
+`FirstCandidateDecisionProvider`'s "first candidate" convention, so existing implementations
+keep compiling); `TurnDriver.resolveAwaitingDecision` calls it — via `decisionsFor(decidingPlayer)`,
+never the source player's provider — whenever a play resolves to `CardPlayResult
+.AwaitingDecision(_, PendingDecision.OpponentDiscardChoice(decidingPlayer))` (routed through
+`playWithPrecedenceWindow`, so it's reached from both Held-card-play checkpoints), validates
+the returned card is one of `eligibleCards`, then calls `CleansingResolver.completeDiscard`.
+The eligible-cards list is built from `decidingPlayer`'s own hand and handed only to
+`decidingPlayer`'s provider — the source player's provider is never given the opponent's hand
+contents to choose from. `PendingDecision.PrecedenceWindowOpen` is handled as a no-op in the
+same switch, since no resolver actually produces it (`TurnDriver`'s own `resolvePrecedenceWindow`
+handles every Precedence window directly instead). See `TurnDriverCardIntegrationTest`'s two
+new Cleansing tests: the targeted opponent's provider makes the choice (and the source
+player's provider throws if ever asked, proving it's never consulted), the selected card is
+discarded and the other remains; and a second test confirming an empty-handed opponent stays
+an illegal target that never discards Cleansing itself or consumes the Phase's card-play
+allowance.
 
 **`TurnDecisionProvider`** is the pluggable seam (the user's explicit choice over a
 default-policy-only loop) for every real choice a player makes in this loop: which eligible

@@ -94,6 +94,30 @@ interface TurnDecisionProvider {
      * enforces this defensively rather than trusting the provider.
      */
     fun choosePrecedenceResponse(state: GameState, player: PlayerColor, chain: InteractionChain): CardChoice? = null
+
+    /**
+     * Cleansing (Atmospheric): "That opponent must choose and discard one of their cards. The
+     * person discarding chooses which card to discard." [decidingPlayer] is the opponent
+     * [sourcePlayer] targeted with Cleansing — this is [decidingPlayer]'s OWN decision, never
+     * [sourcePlayer]'s; [TurnDriver] always resolves it through [decidingPlayer]'s own
+     * [TurnDecisionProvider] (via its per-player `decisionsFor`), never the source player's, and
+     * never exposes [decidingPlayer]'s hand to [sourcePlayer] to make this choice for them —
+     * that stays strictly a private decision for whichever provider represents [decidingPlayer]
+     * (a real UI would present it as a private prompt / pass-and-play handoff / remote-player
+     * prompt to that player specifically; this interface only models who decides and what their
+     * legal options are, not how it's presented).
+     *
+     * [eligibleCards] is [decidingPlayer]'s own currently-held cards, and is never empty — a
+     * player with no cards in hand isn't a legal Cleansing target at all (see
+     * [com.tiersofexistence.engine.cards.resolvers.CleansingResolver]), so by the time this is
+     * called, choosing one is mandatory, unlike every other decision on this interface. Must
+     * return one of [eligibleCards]; [TurnDriver] validates this rather than trusting the
+     * provider. Defaults to the first eligible card, matching [FirstCandidateDecisionProvider]'s
+     * own "always the first candidate" convention, so an implementation written before this
+     * method existed keeps compiling.
+     */
+    fun chooseCleansingDiscard(state: GameState, decidingPlayer: PlayerColor, sourcePlayer: PlayerColor, eligibleCards: List<FateHarvestCard>): FateHarvestCard =
+        eligibleCards.first()
 }
 
 /**
@@ -112,4 +136,6 @@ object FirstCandidateDecisionProvider : TurnDecisionProvider {
     override fun chooseCardAfterRollBeforeMove(state: GameState, player: PlayerColor, roll: Int): CardChoice? = null
     override fun chooseImmediateCardTargets(state: GameState, player: PlayerColor, card: FateHarvestCard): List<CardTarget> = emptyList()
     override fun choosePrecedenceResponse(state: GameState, player: PlayerColor, chain: InteractionChain): CardChoice? = null
+    override fun chooseCleansingDiscard(state: GameState, decidingPlayer: PlayerColor, sourcePlayer: PlayerColor, eligibleCards: List<FateHarvestCard>): FateHarvestCard =
+        eligibleCards.first()
 }

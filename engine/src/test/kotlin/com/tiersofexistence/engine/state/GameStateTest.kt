@@ -301,6 +301,33 @@ class GameStateTest {
     }
 
     @Test
+    fun `multiple SkipNextTierTurn entries for the same player and Tier collapse into one skipped occurrence, not stacked skips`() {
+        // GameState.buildTurnQueue() collects EVERY SkipNextTierTurn entry matching (tier,
+        // player in base) in one pass, removes the player from base once, then removes ALL of
+        // those matching entries from deferredModifiers in the same call — not one entry per
+        // future occurrence. So two independent triggers against the same (player, Tier) (e.g.
+        // two separate Phase Loss draws before the player's next turn on that Tier) are spent
+        // together the very next time that Tier's queue is built, same as a single trigger would
+        // be — they do NOT defer eligibility across two separate future occurrences.
+        val game = GameState.newGame(listOf(RED))
+        game.skipEmptyPhases()
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(RED, game.currentTurn)
+
+        game.queueSkipNextTierTurn(RED, TierLevel.FIRST)
+        game.queueSkipNextTierTurn(RED, TierLevel.FIRST) // a second, independent trigger, same (player, Tier)
+        game.endTurn(grantAnotherTurn = false)
+
+        // If skips stacked across separate occurrences, RED would still be ineligible here (only
+        // the first of the two consumed). Both are actually consumed together, so RED is
+        // eligible again on the very next occurrence — identical outcome/roundNumber to the
+        // single-skip case above, proving the second entry added no extra deferral.
+        assertEquals(Phase.Tier(TierLevel.FIRST), game.currentPhase)
+        assertEquals(RED, game.currentTurn)
+        assertEquals(3, game.roundNumber)
+    }
+
+    @Test
     fun `a deliberately impossible all-empty state throws GameStalledException instead of looping forever`() {
         // No player has any Tier token or Marauder anywhere, and no winner is declared — every
         // Phase is permanently empty. Constructed directly (bypassing GameState.newGame, which
