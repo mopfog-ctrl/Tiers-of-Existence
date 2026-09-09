@@ -1207,3 +1207,109 @@ independent 2000-game batches at different base seeds also clean, 0 violations e
 total across this pass with no regression; the historical multi-class `--tests` NPE-trigger
 sample stayed green across 3 repeated runs. No behavioral discrepancy found — this was a pure
 structural move plus one additively-named, side-effect-free query.
+
+## Optional rule (documented, not implemented): color-specific cards and player-count deck size
+
+**Not implemented anywhere in the engine today** — `FateHarvestCatalog.buildDeck()`/
+`FateHarvestDeck.newShuffled()` always build/shuffle the complete, unfiltered 70-card deck
+regardless of player count or which `PlayerColor`s are actually seated; neither takes a
+colors/player-count parameter. This section documents an optional variant of that construction
+the user has described as correct for a future mode, kept here as forward-looking documentation
+only — no code implements it yet, and nothing should invent it without a further explicit
+instruction to actually build it.
+
+The rule, as described: use the canonical rulebook multiplicities for every Fate Harvest card,
+but remove any color-specific card whose associated `PlayerColor` isn't participating in that
+particular game before play begins — `FateHarvestCatalog.colorCards` already identifies exactly
+which one card belongs to each color (GREEN→Verdant Growth, RED→Plasma Burst, BLACK→Graviton
+Rift, YELLOW→Corpuscle Rot, WHITE→Dwarf Star, BLUE→Fluidic Wave, all `SINGLE` rarity). Concretely:
+- Start from the full canonical base deck and its rulebook multiplicities.
+- Determine which player colors are actually seated in that simulated/real game.
+- Remove every color-specific card belonging to an unused color before the game begins.
+- Preserve the canonical multiplicity of every remaining card unchanged.
+- Shuffle only the resulting legal deck's order — never randomize composition beyond those
+  required color-card removals.
+
+Under this rule a smaller-than-70-card deck is expected and correct whenever fewer than all 6
+colors are seated (a 2-player game could legally play with as few as 68 cards, a 5-player game
+with as few as 69) — this is NOT a bug or drift if a future mode implements it; the deck-audit
+invariant for that mode would be `actual deck composition = canonical full deck − color-specific
+cards for unused colors`, not an unconditional 70-card assertion. **This is explicitly NOT what
+the current engine does, and NOT what `docs/benchmarks/player-count-benchmark.md` measures** —
+that benchmark deliberately uses the full unconditional 70-card deck in every cohort regardless
+of player count, specifically to avoid conflating a player-count effect with the strategic effect
+of which Color cards happen to be in the deck (see that report's own note). If a future mode
+does implement optional Color-card removal, it should rotate which colors are seated across
+repeated games/benchmarks the same way `PlayerCountBenchmarkTest.rotatedColors` already does, so
+no specific color is systematically present or absent from the analysis.
+
+## T.O.E. Player-Count Gameplay-Length and Performance Benchmark
+
+`engine/src/test/kotlin/com/tiersofexistence/engine/benchmark/` — a heavy, opt-in JUnit test
+(`PlayerCountBenchmarkTest`, gated behind the `toe.benchmark` system property via `assumeTrue`,
+skipped by default so a plain `./gradlew :engine:test` doesn't pay its cost) that drives full
+games through the real `TurnDriver` at each of the 5 canonical player counts (2-6) — fixed per
+cohort, not randomized per game like `GameSimulationTest` — specifically to compare game length
+and engine cost *across* player counts, and to build a defensible estimate of local-app gameplay
+duration with one human seat plus AI opponents. Run explicitly via:
+`./gradlew :engine:test --configure-on-demand -Dtoe.benchmark=true --tests
+"com.tiersofexistence.engine.benchmark.PlayerCountBenchmarkTest"` (the `systemProperty` forwarding
+this needs into the forked test JVM lives in `engine/build.gradle.kts`'s `tasks.test` block).
+
+**Deck composition for this benchmark**: the complete, unfiltered canonical 70-card deck in every
+cohort, every game — deliberately NOT the optional Color-card-removal rule documented above, per
+explicit instruction, so player count stays the only varying factor between cohorts. Verified via
+`buildReport`'s Table A (also independently pinned by
+`engine/src/test/kotlin/com/tiersofexistence/engine/cards/FateHarvestDeckCompositionAuditTest.kt`,
+a new permanent regression guard checking every one of the 32 cards' exact rulebook multiplicity,
+not just the aggregate rarity-bucket counts `FateHarvestCatalogTest` already had) — no discrepancy
+found: `FateHarvestDeck.newShuffled()` already had no player-count/colors parameter at all, so no
+code change was needed to satisfy the benchmark's own full-deck requirement.
+
+**Color rotation**: `rotatedColors(playerCount, gameIndex)` cyclically rotates the fixed 6-color
+`PlayerColor.entries` order, offset by the game's own index within its cohort, truncated to that
+cohort's player count — so across any 6 consecutive games at a given player count, every color
+spends a roughly even share of games seated vs. unseated and cycles through every seat position,
+keeping any one color's own strategic profile (its single Color-restricted Fate Harvest card)
+from systematically biasing one player count's results over another.
+
+**Seat-level decision instrumentation**: `InstrumentedDecisionProvider` (a thin, behavior-
+preserving decorator around `RandomLegalDecisionProvider` — delegates every actual decision
+unchanged, only records it) plus `SeatDecisionStats`/`DecisionType` track, per seat per game, how
+many times each of `TurnDecisionProvider`'s 9 callback types was invoked ("asked") and how many of
+those had more than one meaningfully different legal-shaped outcome available ("substantive" — a
+best-effort, cheaply-computed heuristic per callback, explicitly NOT a full
+`TargetValidator`-legality re-derivation; `chooseImmediateCardTargets` in particular is reported
+asked-only, since distinguishing "one legal target existed" from "several did" isn't cheaply
+knowable without duplicating that legality logic — see that class's own doc for exactly what
+"substantive" means per callback).
+
+**Invariant checking**: `checkInvariants` deliberately duplicates (not refactored into a shared
+helper — this task explicitly excluded further architecture work)
+`GameSimulationTest.checkInvariants`'s exact checks (token conservation, card conservation, Phase
+validity, no dangling `pendingRoll`, winner-square correctness) — correctness stayed the priority
+throughout, per explicit instruction: any real violation would have aborted that game and gated
+Stage 2 from running at all, reported with full player-count/seed/turn repro context exactly like
+the prior 9 `GameSimulationTest`-found defects, never papered over.
+
+**Results (commit baseline `ba2448d`, this benchmark's own commit reported separately)**: Stage 1
+(250 games × 5 cohorts = 1,250 games) and Stage 2 (1,500 games × 5 cohorts = 7,500 games) both ran
+clean — **0 invariant violations across all 8,750 simulated games**, confirming no new defect at
+this scale beyond the 9 already found and fixed by the earlier `GameSimulationTest` campaign. Full
+results, all 5 required tables (deck audit, Stage 1 baseline, Stage 2 scaling sample, scaling
+comparison, one-human duration model), and the 10-question analysis live in the generated report:
+`docs/benchmarks/player-count-benchmark.md` (regenerated by re-running the test above — it
+overwrites that file with fresh data and also prints the same report to stdout). Headline
+findings: mean turns/game scales roughly ~4x from 2 to 6 players (sub-linear relative to the
+player-count increase itself); mean engine runtime/game grows faster (~6x, 2P→6P) since more
+seats means more `driveOneTurn` calls per game even though per-turn engine cost stays essentially
+flat (low-single-digit milliseconds to sub-millisecond) regardless of player count; a small tail
+of 5- and 6-player games hit the 8,000-turn simulation cap without a winner (10/1500 at 5P,
+47/1500 at 6P) — an expected slow-game tail under fully randomized-but-legal play, not a
+violation; Stage 1's 250-game-per-cohort estimates were already reasonably close to Stage 2's
+1,500-game figures, though tail percentiles (p95) shifted somewhat with the larger sample, as
+expected. Table E's one-human-seat duration estimates are explicitly built on stated, adjustable
+pacing assumptions (seconds/decision, seconds/turn-mechanical-overhead for Fast/Typical/Deliberate
+play styles) — never treated as measured quantities — and explicitly exclude UI/animation time,
+which remains unknown and would add to every figure; AI-seat compute time is separately shown to
+be negligible (the measured mean engine runtime/turn) next to any human pacing tier.
