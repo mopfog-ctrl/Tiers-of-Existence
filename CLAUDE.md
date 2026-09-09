@@ -1612,11 +1612,47 @@ any Phase 1C weights"):**
 vs. game-length correlation, pooled across player counts) is the evidence Phase 1C's own
 `StagnationPressureConfig.CORRECTED_BASELINE_STAGNATION_WEIGHTS` must be re-derived from, per the
 user's explicit "only the clean corrected run may supply evidence-derived Phase 1C weights."
-**That re-derivation, and any further whole-game benchmark run under `ANTI_STAGNATION`, has not
-been done yet** — `CORRECTED_BASELINE_STAGNATION_WEIGHTS` still carries its original placeholder
-values, explicitly documented as such in `FateHarvestRegenerationRules.kt`'s own class doc, and
-needs its own explicit go-ahead before being derived and applied, consistent with how every other
-major piece of work in this file has been sequenced.
+
+**Weight re-derivation: done.** `PlayerCountFateHarvestRegenerationCorrectedBenchmarkTest`'s Table
+K5 was extended to print the *full* 32-card correlation table (previously only a top-5/bottom-5
+excerpt) and re-run from the same seed range (deterministic, byte-identical apart from the new
+table — still 0 violations). **A genuine, previously-unknown finding: every one of the 32
+catalog card types shows a positive pooled correlation with game length (r = 0.189 to 0.368),
+none negative.** Almost certainly a base-rate confound rather than a causal effect specific to any
+one card — a longer game mechanically produces more regenerations (Table K4), and more
+regenerations give literally every card type more chances to drift toward a higher final
+multiplicity, so everything ends up correlated with length regardless of what it actually does.
+The correlations aren't uniform, though: 27 cards cluster tightly at r ≈ 0.339–0.368, with 5
+markedly weaker outliers (Planetary Nebula 0.262, Dwarf Star 0.206, Plasma Burst 0.204, Verdant
+Growth 0.194, Corpuscle Rot 0.189) — 4 of those 5 are `SINGLE`-rarity, color-restricted cards (one
+copy in the whole deck, playable by only one color, sometimes entirely absent when that color
+isn't seated), a plausible availability confound of its own. `StagnationPressureConfig
+.CORRECTED_BASELINE_STAGNATION_WEIGHTS` now holds these real, full-table r values verbatim for all
+32 cards (previously 5 placeholder entries carried over from the contaminated run) — the
+pre-existing "exclude non-positively-correlated cards" carve-out is still implemented exactly as
+designed, it simply never fires on this data, since no such card exists in it. Documented as a
+finding in `StagnationPressureConfig`'s own class doc rather than silently adjusted for.
+
+**Benchmark: done.** `PlayerCountAntiStagnationBenchmarkTest` was rewritten to compare
+`FateHarvestRegenerationConfig.ANTI_STAGNATION` against **the clean corrected-model baseline as
+the control** (per the user's explicit instruction — the file previously compared against the
+superseded uncapped Phase 1B model, `BASELINE_B`, which no longer applies), with unmodified
+Baseline A kept alongside for additional context only. 5,000 games (1,000/cohort × 5 player
+counts), independent seed range, report at `docs/benchmarks/anti-stagnation-benchmark-corrected.md`:
+**0 invariant violations.** Result: a **mixed, player-count-dependent, and mostly statistically
+indistinguishable effect** — per-player-count mean-turns difference vs. the control: 2P −44.0, 3P
++41.8, 4P −76.0, 5P +24.4, 6P +48.3 turns; only 2P clears the |z| > 1.96 distinguishability
+threshold (z = −2.15), every other player count does not (|z| ≤ 1.74). The p95 tail effect — the
+mechanism's actual design target — is similarly mixed rather than a consistent compression: negative
+(shorter tail) at 2P/3P/4P/6P but *positive* (longer tail, +260 turns) at 5P. This is consistent
+with the weight-derivation finding above: since nearly all 32 cards carry a similar, tightly
+clustered suppression weight (0.339–0.368), the mechanism behaves close to a broad, roughly-uniform
+mild suppression rather than a sharply differentiated one — there was little room for it to
+concentrate pressure specifically on a small set of stagnation-driving cards, because the evidence
+didn't identify one. **No balance change, canon decision, or recommendation is made based on this
+result** — per the task's own explicit scope, this is a measurement only, and Phase 1C's own future
+disposition (keep investigating, try a different weighting scheme, or set the mechanic aside) is a
+separate, later decision.
 
 ## Deferred — post-baseline simulation/design questions (retained, not acted upon)
 
