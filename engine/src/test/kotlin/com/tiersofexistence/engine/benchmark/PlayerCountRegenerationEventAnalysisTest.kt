@@ -755,6 +755,18 @@ class PlayerCountRegenerationEventAnalysisTest {
                 "to compare reliably.")
         }
         sb.appendLine()
+        val notElevated = byCategory["not-elevated"].orEmpty().size
+        sb.appendLine("**Caveat on the category sizes themselves**: persistent-elevated (${persistent.size}) vastly " +
+            "outnumbers transient-elevated (${transient.size}) and not-elevated ($notElevated) combined. This follows " +
+            "mechanically from `regenerate()`'s own refill step (Section 2/[FateHarvestRegenerationRules]'s own class " +
+            "doc): refill fills empty slots by uniform random draw across every eligible type up to its own ceiling, " +
+            "regardless of how much that type was actually played/discarded, so most cards land near their own ceiling " +
+            "(normalized close to 1.0) after most regenerations by construction, not because of any dynamic being " +
+            "measured here. The large-n side of this comparison is correspondingly dominated by that structural " +
+            "tendency rather than a balanced sample of genuinely varied persistent-vs-transient states - the z-score " +
+            "above is still a correct statistical statement about this dataset, but this imbalance is a reason for " +
+            "caution before reading it as a strong causal signal.")
+        sb.appendLine()
     }
 
     // --- Section 8: tail-specific analysis ---
@@ -798,9 +810,16 @@ class PlayerCountRegenerationEventAnalysisTest {
                 val meanTail = tailGroup.average(); val meanNonTail = nonTailGroup.average()
                 val semTail = sem(stdDev(tailGroup, meanTail), tailGroup.size)
                 val semNonTail = sem(stdDev(nonTailGroup, meanNonTail), nonTailGroup.size)
-                val z = (meanTail - meanNonTail) / kotlin.math.sqrt(semTail * semTail + semNonTail * semNonTail)
+                val pooledSem = kotlin.math.sqrt(semTail * semTail + semNonTail * semNonTail)
+                // A card whose multiplicity never varies across every last-regen observation (e.g.
+                // always exactly at its own ceiling) has zero variance in both groups - the z-score
+                // is genuinely undefined there (0/0), not "no effect": the diff itself is already
+                // 0.000 in every such case, so report that directly instead of a raw NaN.
+                val zOrNull = if (pooledSem > 0.0) (meanTail - meanNonTail) / pooledSem else null
+                val zCell = zOrNull?.let { fmt(it, 2) } ?: "n/a (zero variance)"
+                val distinguishable = zOrNull != null && kotlin.math.abs(zOrNull) > 1.96
                 sb.appendLine("| $name | ${fmt(meanTail, 3)} (${tailGroup.size}) | ${fmt(meanNonTail, 3)} (${nonTailGroup.size}) | " +
-                    "${fmt(meanTail - meanNonTail, 3)} | ${fmt(z, 2)} | ${if (kotlin.math.abs(z) > 1.96) "**Yes**" else "No"} | ${pointBiserial.format()} |")
+                    "${fmt(meanTail - meanNonTail, 3)} | $zCell | ${if (distinguishable) "**Yes**" else "No"} | ${pointBiserial.format()} |")
             } else {
                 sb.appendLine("| $name | n=${tailGroup.size} | n=${nonTailGroup.size} | insufficient | n/a | n/a | ${pointBiserial.format()} |")
             }
@@ -836,11 +855,22 @@ class PlayerCountRegenerationEventAnalysisTest {
             "values within a class cluster tightly around that class's own pooled r, card identity is adding little " +
             "beyond \"how rare is this card,\" which itself would argue against card-specific weighting.")
         sb.appendLine()
-        sb.appendLine("**Evidence insufficient to distinguish**: Section 4's depth-bucket table names exactly which " +
-            "(card, depth) cells fall below the $MIN_N_FOR_CORRELATION-observation threshold - deeper buckets (4, 5+) are " +
-            "underpowered for most cards at this 5,000-game scale, per that section's own reliable-cell counts. Section " +
-            "7's persistent-vs-transient comparison and Section 8's tail comparison each report explicitly when their " +
-            "own sample was too small to support a distinguishability claim, rather than asserting one regardless.")
+        val depthBucketsList = listOf("1", "2", "3", "4", "5+")
+        val reliableAtEveryDepthBucket = cardNames.all { name ->
+            depthBucketsList.all { bucket -> samplesByCard.getValue(name).count { depthBucket(it.depth) == bucket } >= MIN_N_FOR_CORRELATION }
+        }
+        sb.appendLine("**Evidence insufficient to distinguish**: at this 5,000-game scale, the depth-bucket-pooled-" +
+            "across-player-count cells in Section 4 were " +
+            (if (reliableAtEveryDepthBucket) "**not** sparse - every one of the ${cardNames.size} cards reached the " +
+                "$MIN_N_FOR_CORRELATION-observation threshold at every depth bucket including 5+, so depth conditioning " +
+                "itself was adequately powered here" else "sparse for at least one card at some depth bucket - see " +
+                "Section 4's own reliable-cell counts for exactly which") +
+            ". What this report deliberately does NOT compute at all - a per-player-count-AND-per-depth cross for a " +
+            "given card - would be far sparser still (Section 4's own methodology note explains why), so a genuinely " +
+            "underpowered cross-section exists, it is just outside this report's own scope rather than silently " +
+            "asserted as reliable. Section 7's persistent-vs-transient comparison and Section 8's tail comparison each " +
+            "report explicitly when their own sample was too small to support a distinguishability claim, rather than " +
+            "asserting one regardless.")
         sb.appendLine()
         sb.appendLine("**Causal hypothesis**: none is asserted anywhere in this report. Every relationship above is " +
             "correlational; the base-rate confound the original pooled analysis had (more regenerations happen in " +
