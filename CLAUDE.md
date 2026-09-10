@@ -1906,6 +1906,88 @@ explicit scope, this is a measurement and interpretation pass only. Card identit
 in the dataset for future-catalog comparison but was not reanalyzed or reweighted. Full report:
 `docs/benchmarks/anti-stagnation-resolution-state-validation.md`.
 
+## Phase 1C: intervention-point validation — upper-Tier progress classifies A; regeneration is an observation point, not the signal's source
+
+**Directly closes the open question `446cde9`'s own Section 9 caveat left standing**: every one of that
+report's observations was sampled at a Fate Harvest regeneration event, so it couldn't distinguish "a
+general property of settled game state" from "a relationship specific to regeneration." This pass
+answers that, without designing or implementing any anti-stagnation mechanism (explicitly out of scope,
+per the task's own stop condition).
+
+**Sampling design: matched pairs against the immediately preceding completed turn**, not a new gameplay
+event. For every regeneration event, the settled state at the end of the turn that completed
+immediately before it is also recorded — an already-existing, semantically stable boundary (state is
+guaranteed settled between turns, per every prior benchmark's own invariant checks). This gives an
+automatic 1:1 sample-size match (never more ordinary observations than regeneration observations,
+directly avoiding the oversampling the task warned against) and, because it's the *immediately*
+preceding turn, an elapsed-turn gap of essentially zero between a matched pair — confirmed directly in
+the report's own methodology table (mean gap 0.00 turns at every player count, after a real bug in an
+early draft — see below — was fixed).
+
+**Predictor family narrowed to 5 distinct variables**, per the task's own explicit instruction:
+`playersOnTier4`/`inPlayTokens@Tier4` (proven mathematically identical in the prior report) are no longer
+treated as two pieces of evidence — only `playersOnTier4` is used as the canonical representative in
+every analysis and regression control set here (including both would make a multi-covariate control
+matrix exactly singular).
+
+**Primary comparison (Section 3): 0 of 25 predictor/player-count cells show a materially different
+regeneration-vs-ordinary partial correlation.** For every one of the 5 predictors at every player count,
+partial r (controlling for elapsed turns) computed separately on the regeneration-only and matched-
+ordinary-only subsets came out nearly identical (a Fisher r-to-z test for comparing two independent
+correlations found no cell distinguishable at |z|>1.96) — e.g. `highestTierInPlay` at 2P: regen partial
+r=-0.169 vs. ordinary partial r=-0.170. Tail behavior (Section 4: p90/p95/capped-tail point-biserial)
+shows the same pattern — regen and ordinary correlations track each other closely for every predictor,
+though all remain modest in magnitude (|r| roughly 0.01-0.05), consistent with the task's own instruction
+not to promote statistical reliability into a practically large effect size.
+
+**Regeneration-as-intervention-point test (Section 5): a new multi-covariate partial-correlation
+technique, not previously needed in this research line.** "Does regeneration's own timing carry
+information after conditioning on the measured state AND elapsed turns simultaneously" needs controlling
+for 6 covariates (5 predictors + elapsed turns) at once, which the single-control partial-correlation
+formula used everywhere else in Phase 1C can't do — implemented `olsResiduals`/`multiPartialCorrelation`
+(ordinary least squares via Gaussian elimination with partial pivoting, written from scratch, no external
+library, matching this codebase's established convention) specifically for this. Result: multi-partial
+r(isRegen, turnsRemaining | 5 predictors + elapsed) is ≈0.000 at every player count (max magnitude
+0.000, to 3 decimals) — once the measured state is already accounted for, whether an observation happened
+to be a regeneration event carries no additional information at all.
+
+**Classification: A (general progress-state signal).** Upper-Tier progress predicts subsequent resolution
+similarly whether measured at a regeneration event or an ordinary settled turn boundary, and regeneration
+timing itself is redundant with the measured state once conditioned on. `446cde9`'s own A classification
+reflects a genuine property of game state, not an artifact of where this research line's instrumentation
+happened to sample it.
+
+**A real bug was found and fixed before finalizing (same "review actual output, don't trust the first
+draft" discipline every Phase 1C pass so far has needed at least once).** The matched-pairs design uses a
+`pairId` counter to link each regeneration observation to its own paired ordinary observation — but that
+counter is per-game-local (restarts at 0 for every new game), while Section 2's own methodology table
+pooled ALL games in a player-count cohort together and matched on `pairId` alone
+(`regen.associateBy { it.obs.pairId }`), silently colliding pairs from unrelated games (game A's pairId=0
+overwritten by game Z's pairId=0, etc.) — caught because the resulting "mean elapsed-turn gap" column
+showed impossible negative values (e.g. -64.54 turns at 5P), when the matched-pair design makes a
+negative gap structurally impossible (the ordinary observation is always from an equal-or-earlier turn
+than its paired regeneration). Fixed by keying the match on `(gameKey, pairId)` instead of `pairId`
+alone. This bug was confined entirely to Section 2's own descriptive "mean gap" statistic — it did not
+affect Section 3/4/5's actual hypothesis tests, which never relied on pairId-based cross-referencing (they
+treat the regen and ordinary subsets as two independent populations for correlation purposes, not as
+paired rows) — reran after the fix; the gap column now reads exactly 0.00 at every player count, matching
+the theoretical expectation directly, and every other section's figures were confirmed unchanged before
+and after the fix.
+
+**Determinism verified twice, not once**: this run's aggregate mean-turns/cap-rate exactly match the
+published corrected baseline (as every prior pass in this lineage has shown), AND — new to this pass —
+this run's own regeneration-only partial correlations for all 5 predictors at all 5 player counts exactly
+match `446cde9`'s own published Section 4 values to 3 decimals, proving the new turn-boundary
+snapshotting doesn't perturb the regeneration observations themselves at all. 0 invariant violations
+across 5,000 games; zero main-source-tree changes this pass (every field read already existed on
+`GameState`).
+
+**No mechanism, weight, or canonical metric was created.** `StagnationPressureConfig`/
+`FateHarvestRegenerationConfig.ANTI_STAGNATION` untouched; no probabilities tuned; card identity's Outcome
+C stays scoped to the present catalog and was not revisited; `totalPendingExtraTierTurns` (the
+B-classified debt family) was entirely out of this task's scope. Full report:
+`docs/benchmarks/anti-stagnation-intervention-point-validation.md`.
+
 ## Deferred — post-baseline simulation/design questions (retained, not acted upon)
 
 The user has explicitly deferred the items below until after the canonical 2-6-player probability

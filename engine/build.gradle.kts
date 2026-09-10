@@ -29,4 +29,6 @@ tasks.test {
     systemProperty("toe.benchmark.structural", System.getProperty("toe.benchmark.structural", "false"))
     // Same mechanism for the Phase 1C resolution-state and turn-debt validation benchmark.
     systemProperty("toe.benchmark.resolutionstate", System.getProperty("toe.benchmark.resolutionstate", "false"))
+    // Same mechanism for the Phase 1C intervention-point validation benchmark.
+    systemProperty("toe.benchmark.interventionpoint", System.getProperty("toe.benchmark.interventionpoint", "false"))
 }
